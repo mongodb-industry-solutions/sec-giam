@@ -1,11 +1,11 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { timingSafeEqual } from 'crypto';
-import { config } from '../../config';
+import { isAdminAuthorized } from './adminAuth';
 import { JwtTokenFormat } from '../../modules/oauth/services/jwtTokenFormat';
 import { KeyRing } from '../../modules/keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../modules/keys/services/signingKeyStore';
 import { RealmService } from '../../modules/realm/services/realm.service';
 import { DecisionService } from '../../modules/authorization/services/decision.service';
+import { SecurityEventService } from '../../modules/audit/services/securityEvent.service';
 
 /**
  * Administering the authority, authorised by the caller's own ROLE.
@@ -27,10 +27,15 @@ const AUTHORITY_RESOURCE_SERVER = 'authority';
 export interface AuthorityCaller {
   /** Absent for the operator credential, which is nobody in particular. */
   subjectId?: string;
+  /** The realm being acted on: the one in the path where there is one, otherwise the token's own. */
   realmId?: string;
+  /** The realm that signed the token. Differs from `realmId` only under a cross-realm grant. */
+  homeRealmId?: string;
   roles: string[];
   permissions: Array<{ resource: string; action: string }>;
   viaOperatorToken: boolean;
+  /** The widest scope any role held grants: `self` sees only its own records, `all` sees the realm. */
+  scopeKind: 'self' | 'all';
   /** The operator credential answers true to everything, which is what makes it break-glass. */
   can(resource: string, action: string): boolean;
 }
@@ -44,14 +49,6 @@ declare module 'fastify' {
 function presentedToken(request: FastifyRequest): string {
   const header = request.headers.authorization ?? '';
   return header.startsWith('Bearer ') ? header.slice(7) : '';
-}
-
-function matchesOperatorToken(presented: string): boolean {
-  const expected = config.app.adminToken;
-  if (!expected || !presented) return false;
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function refuse(reply: FastifyReply, status: number, detail: string) {
@@ -68,6 +65,7 @@ function operatorCaller(): AuthorityCaller {
     roles: [],
     permissions: [],
     viaOperatorToken: true,
+    scopeKind: 'all',
     can: () => true,
   };
 }
@@ -75,15 +73,19 @@ function operatorCaller(): AuthorityCaller {
 function principalCaller(
   subjectId: string,
   realmId: string,
+  homeRealmId: string,
   roles: string[],
   permissions: Array<{ resource: string; action: string }>,
+  scopeKind: 'self' | 'all',
 ): AuthorityCaller {
   return {
     subjectId,
     realmId,
+    homeRealmId,
     roles,
     permissions,
     viaOperatorToken: false,
+    scopeKind,
     can: (resource, action) => permissions.some(
       (permission) => permission.resource === resource && permission.action === action,
     ),
@@ -109,7 +111,7 @@ export async function requireAuthorityCaller(request: FastifyRequest, reply: Fas
  * exists for when the role system itself cannot be relied on, and gating it by a role would make
  * recovery impossible in exactly the situation it is for.
  */
-export function requireAuthority(resource: string, action: 'view' | 'manage') {
+export function requireAuthority(resource: string, action: string) {
   return async function handler(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const resolved = await resolveCaller(request);
     if (!resolved.caller) return refuse(reply, 401, resolved.detail);
@@ -126,7 +128,10 @@ async function resolveCaller(
   {
     const token = presentedToken(request);
 
-    if (matchesOperatorToken(token)) {
+    // Break-glass is checked FIRST, and it is the same credential the operational surface accepts:
+    // the deploy-time token, or the session the operator sign-in mints. It has to work when the role
+    // system cannot be relied on, which is precisely what an identity outage looks like.
+    if (isAdminAuthorized(request.headers.authorization)) {
       return { caller: operatorCaller(), detail: '' };
     }
 
@@ -159,11 +164,44 @@ async function resolveCaller(
       return { caller: null, detail: 'The access token is not valid.' };
     }
 
-    const decision = await new DecisionService(db)
-      .effectivePermissions(realm.realmId, verified.sub, AUTHORITY_RESOURCE_SERVER);
+    /**
+     * The realm being ACTED ON, where the path names one.
+     *
+     * Taking it from the path rather than from a query parameter is the same rule as before: a caller
+     * may not name the realm that authorises them, and here they do not. The token is still verified
+     * against its own issuer's keys above; naming a different realm below only ever narrows what is
+     * granted, because reaching one takes a stored assignment scoped to it.
+     */
+    const named = (request.params as { realm?: string } | undefined)?.realm;
+    const target = named ? await realms.byName(named) : null;
+    if (named && (!target || !target.enabled)) {
+      return { caller: null, detail: 'The path names no realm this authority serves.' };
+    }
+    const targetRealmId = target?.realmId ?? realm.realmId;
+
+    const decision = await new DecisionService(db).effectivePermissionsIn(
+      realm.realmId, verified.sub, AUTHORITY_RESOURCE_SERVER, targetRealmId,
+    );
+
+    if (targetRealmId !== realm.realmId) {
+      await new SecurityEventService(db).record({
+        realmId: targetRealmId,
+        tenantId: target!.tenantId,
+        category: 'authorization',
+        action: 'authorization.cross_realm_access',
+        outcome: decision.permissions.length > 0 ? 'success' : 'failure',
+        decision: decision.permissions.length > 0 ? 'allow' : 'deny',
+        subjectId: verified.sub,
+        // Both realms, because the question about a crossing is which two realms it joined.
+        detail: { homeRealm: realm.name, homeRealmId: realm.realmId, targetRealm: target!.name, targetRealmId },
+        target: { type: 'realm', ref: targetRealmId },
+      });
+    }
 
     return {
-      caller: principalCaller(verified.sub, realm.realmId, decision.roles, decision.permissions),
+      caller: principalCaller(
+        verified.sub, targetRealmId, realm.realmId, decision.roles, decision.permissions, decision.scopeKind,
+      ),
       detail: '',
     };
   }

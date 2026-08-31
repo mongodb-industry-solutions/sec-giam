@@ -235,6 +235,7 @@
     "demoRoster": [
       "manager",
       "security_auditor",
+      "client_administrator",
       "customer"
     ]
   },

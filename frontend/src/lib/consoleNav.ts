@@ -1,7 +1,7 @@
 'use client';
 
-import { Activity, KeyRound, LayoutGrid, ShieldCheck, Layers, SlidersHorizontal, type LucideIcon } from 'lucide-react';
-import { administersIdentity, can, type Claims } from './console';
+import { Activity, AppWindow, KeyRound, LayoutGrid, ShieldCheck, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { can, type Claims } from './console';
 
 /**
  * Every section the console offers, in one list.
@@ -20,8 +20,6 @@ export interface ConsoleSection {
   /** One line, for the sidebar tooltip and the dashboard card. */
   description: string;
   exact?: boolean;
-  /** Leaves the console for the operations surface, which holds its own credential. */
-  external?: boolean;
   visible: (claims: Claims | null) => boolean;
 }
 
@@ -36,11 +34,22 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     visible: () => true,
   },
   {
+    key: 'profile',
+    label: 'Profile',
+    path: '/system/profile',
+    icon: UserRound,
+    description: 'Who the authority says you are, and what your current token allows.',
+    // Everybody can read their own profile, so this one is never hidden.
+    visible: () => true,
+  },
+  {
     key: 'applications',
-    label: 'Applications',
+    // Named for what it holds: consents this person granted, not the registry of registered clients.
+    // "Applications" alone reads as the registry, which is an operator surface and a different thing.
+    label: 'Authorized apps',
     path: '/system/applications',
     icon: Layers,
-    description: 'Applications you authorized to act for you, with what each was allowed and when.',
+    description: 'Applications you allowed to act on your behalf, what each may do, and when you granted it.',
     visible: () => true,
   },
   {
@@ -68,13 +77,23 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     visible: () => true,
   },
   {
-    key: 'operations',
-    label: 'Operations',
-    path: '/admin',
-    icon: SlidersHorizontal,
-    description: 'Service posture, logs and configuration. Signs in with its own operator credential.',
-    external: true,
-    visible: administersIdentity,
+    key: 'clients',
+    label: 'Applications',
+    path: '/system/clients',
+    icon: AppWindow,
+    description: 'Applications you registered for sign-in, their redirect addresses and their secrets.',
+    // Registering an application is self-service, so this is never hidden. What the permission changes
+    // is how much of the realm it lists, and the authority narrows the query either way.
+    visible: () => true,
+  },
+  {
+    key: 'identities',
+    label: 'Principals',
+    path: '/system/identities',
+    icon: UsersRound,
+    description: 'People, services and workloads this authority knows about, and their lifecycle.',
+    // Listing the directory is never a self-scoped act, so this one is absent without the permission.
+    visible: (claims) => can(claims, 'identities', 'view'),
   },
 ];
 

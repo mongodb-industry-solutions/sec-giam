@@ -1,9 +1,10 @@
 import { Db } from 'mongodb';
 import {
-  ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, RESOURCE_SERVER_COLLECTION,
+  ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION,
 } from '../../../shared/models/collections';
 import {
   RoleRecord, RoleAssignmentRecord, ResourceServerRecord, EffectivePermission, permissionKey,
+  AdministrableRealm, assignmentAppliesIn, REALM_SCOPE_KIND,
 } from '../models/authorization.model';
 
 /**
@@ -16,6 +17,10 @@ import {
  * The cost is that a permission change reaches a live token only when the next one is issued, which
  * is why access-token lifetimes are short and why the irreversible operations introspect instead.
  * Both halves of that trade are deliberate and neither is hidden.
+ *
+ * A principal has ONE home realm, which is where their identity and credentials live and which
+ * issues their tokens. Administering a second realm is a grant held at home and pointed elsewhere,
+ * never a second identity and never a token that two realms would both accept.
  */
 export class DecisionService {
   constructor(private readonly db: Db) {}
@@ -78,12 +83,30 @@ export class DecisionService {
     subjectId: string,
     audience: string,
   ): Promise<{ permissions: EffectivePermission[]; roles: string[]; scopeKind: 'self' | 'all' }> {
+    return this.effectivePermissionsIn(realmId, subjectId, audience, realmId);
+  }
+
+  /**
+   * The same question, asked about a realm the principal is not IN.
+   *
+   * Everything is still read from the home realm: the assignments are the principal's own, and the
+   * roles they name are the home realm's roles. What the target realm decides is only WHICH of those
+   * assignments count, so no record crosses the boundary and no realm's role catalog is read on
+   * another realm's behalf.
+   */
+  async effectivePermissionsIn(
+    homeRealmId: string,
+    subjectId: string,
+    audience: string,
+    targetRealmId: string,
+  ): Promise<{ permissions: EffectivePermission[]; roles: string[]; scopeKind: 'self' | 'all' }> {
     const server = await this.db
       .collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION)
-      .findOne({ realmId, audience }, { projection: { _id: 0, resourceServerId: 1 } });
+      .findOne({ realmId: homeRealmId, audience }, { projection: { _id: 0, resourceServerId: 1 } });
 
-    const assignments = await this.liveAssignments(realmId, subjectId);
-    const roles = await this.resolveRoles(realmId, assignments.map((assignment) => assignment.roleId));
+    const held = await this.liveAssignments(homeRealmId, subjectId);
+    const assignments = held.filter((assignment) => assignmentAppliesIn(assignment, homeRealmId, targetRealmId));
+    const roles = await this.resolveRoles(homeRealmId, assignments.map((assignment) => assignment.roleId));
 
     const composed: RoleRecord[] = [];
     for (const role of roles) {
@@ -121,7 +144,21 @@ export class DecisionService {
     resource: string,
     action: string,
   ): Promise<{ effect: 'allow' | 'deny'; reason: string }> {
-    const { permissions, roles } = await this.effectivePermissions(realmId, subjectId, audience);
+    return this.checkIn(realmId, subjectId, audience, resource, action, realmId);
+  }
+
+  /** The same decision, about a named target realm. */
+  async checkIn(
+    homeRealmId: string,
+    subjectId: string,
+    audience: string,
+    resource: string,
+    action: string,
+    targetRealmId: string,
+  ): Promise<{ effect: 'allow' | 'deny'; reason: string }> {
+    const { permissions, roles } = await this.effectivePermissionsIn(
+      homeRealmId, subjectId, audience, targetRealmId,
+    );
     const held = permissions.some(
       (permission) => permission.resource === resource && permission.action === action,
     );
@@ -130,5 +167,59 @@ export class DecisionService {
     return held
       ? { effect: 'allow', reason: `granted by ${roles.join(', ') || 'an assignment'}` }
       : { effect: 'deny', reason: `no role held by this principal grants ${resource}:${action}` };
+  }
+
+  /**
+   * The realms a principal holds a grant OVER, other than their own.
+   *
+   * Read from the assignments themselves rather than derived from a role name or a flag, so the
+   * answer is always the set of grants somebody deliberately made. An empty result is the ordinary
+   * case and costs one indexed read.
+   */
+  async grantedRealmIds(homeRealmId: string, subjectId: string): Promise<string[]> {
+    const held = await this.liveAssignments(homeRealmId, subjectId);
+    const named = held
+      .filter((assignment) => assignment.scope?.kind === REALM_SCOPE_KIND && assignment.scope.ref)
+      .map((assignment) => assignment.scope!.ref)
+      .filter((realmId) => realmId !== homeRealmId);
+    return [...new Set(named)].sort();
+  }
+
+  /**
+   * Every realm this principal may administer, home realm first, with what they hold in each.
+   *
+   * The permissions are resolved per realm rather than once, because they are not the same set: a
+   * grant over another realm is usually narrower than what its holder has at home, and returning one
+   * list for both would invite a caller to assume otherwise.
+   */
+  async administrableRealms(
+    homeRealmId: string,
+    subjectId: string,
+    audience: string,
+  ): Promise<AdministrableRealm[]> {
+    const targets = [homeRealmId, ...await this.grantedRealmIds(homeRealmId, subjectId)];
+    const realms = await this.db
+      .collection<{ realmId: string; name: string; displayName?: string; enabled?: boolean }>(REALM_COLLECTION)
+      .find({ realmId: { $in: targets } }, { projection: { _id: 0, realmId: 1, name: 1, displayName: 1, enabled: 1 } })
+      .toArray();
+
+    const resolved: AdministrableRealm[] = [];
+    for (const realmId of targets) {
+      const realm = realms.find((candidate) => candidate.realmId === realmId);
+      // A grant naming a realm that no longer exists, or one that is switched off, is listed as
+      // nothing rather than as a realm the console would then fail to open.
+      if (!realm || realm.enabled === false) continue;
+      const decision = await this.effectivePermissionsIn(homeRealmId, subjectId, audience, realmId);
+      if (decision.permissions.length === 0 && realmId !== homeRealmId) continue;
+      resolved.push({
+        realmId,
+        name: realm.name,
+        displayName: realm.displayName ?? realm.name,
+        home: realmId === homeRealmId,
+        roles: decision.roles,
+        permissions: decision.permissions,
+      });
+    }
+    return resolved;
   }
 }

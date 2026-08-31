@@ -1,6 +1,7 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
-import { TOKEN_COLLECTION, RESOURCE_SERVER_COLLECTION } from '../../../shared/models/collections';
+import { TOKEN_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION } from '../../../shared/models/collections';
+import { DecisionService } from '../../authorization/services/decision.service';
 import { TokenRecord, ActorClaim } from '../models/token.model';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { ClientRecord } from '../models/client.model';
@@ -95,6 +96,31 @@ export class TokenIssuer {
     return addressed.length > 0 ? addressed : [client.clientId];
   }
 
+  /**
+   * The realms this subject may administer BESIDES the one issuing the token.
+   *
+   * Written as explicit data, `[{ id, name }]`, and never as a flag a client would have to interpret.
+   * Both halves are there on purpose: the id is what an authorization decision is made against, and
+   * the name is what appears in a request path, so a console reading this claim never has to look one
+   * up from the other and never has to guess which it was given.
+   *
+   * The claim widens nothing by itself. The token is still issued by, signed by and addressed from
+   * ONE realm; every request against a named realm is re-decided against the stored grant. What the
+   * claim buys is that a client can offer the switch without discovering it by trial and error.
+   */
+  private async administrableRealmClaim(
+    realm: RealmRecord,
+    subjectId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const granted = await new DecisionService(this.db).grantedRealmIds(realm.realmId, subjectId);
+    if (granted.length === 0) return [];
+    const realms = await this.db
+      .collection<{ realmId: string; name: string; enabled?: boolean }>(REALM_COLLECTION)
+      .find({ realmId: { $in: granted }, enabled: true }, { projection: { _id: 0, realmId: 1, name: 1 } })
+      .toArray();
+    return realms.map((entry) => ({ id: entry.realmId, name: entry.name }));
+  }
+
   private ttl(realm: RealmRecord, client: ClientRecord): { access: number; refresh: number } {
     return {
       access: client.tokenPolicy?.accessTokenTtlSeconds ?? realm.tokenPolicy.accessTokenTtlSeconds,
@@ -146,6 +172,12 @@ export class TokenIssuer {
     const format = new JwtTokenFormat(this.ring, realm.realmId);
     const kid = await this.ring.signingKid(realm.realmId);
 
+    // Suppressed for a soft admission along with everything else it is stripped of: a reduced token
+    // must not advertise authority it is not carrying.
+    const administrable = this.options.reducedAuthority || !input.subjectId
+      ? []
+      : await this.administrableRealmClaim(realm, input.subjectId);
+
     const accessJti = uuidv4();
     const accessClaims: Record<string, unknown> = {
       iss: realm.issuer,
@@ -173,6 +205,9 @@ export class TokenIssuer {
       ...(input.sessionEpoch !== undefined ? { session_epoch: input.sessionEpoch } : {}),
       ...(input.permissions?.length ? { permissions: input.permissions } : {}),
       ...(input.roles?.length ? { roles: input.roles } : {}),
+      // Absent, not empty, when there is no cross-realm grant: the token of everybody who administers
+      // one realm is byte-for-byte what it was before this existed.
+      ...(administrable.length ? { admin_realms: administrable } : {}),
       // Carried so a resource server can bind a person to their own records without asking the
       // authority what the reference names. The authority never resolves it either.
       ...(input.accountHolderRef ? { account_holder: input.accountHolderRef } : {}),

@@ -87,7 +87,14 @@
     "lifecycleState": "active",
     "demoFeatured": true,
     "roleName": "security_auditor",
-    "accountHolderRef": "b0000053-0000-4000-8000-000000000053"
+    "accountHolderRef": "b0000053-0000-4000-8000-000000000053",
+    "realmGrants": [
+      {
+        "realm": "bankcore",
+        "roleName": "security_auditor",
+        "justification": "Oversight of both realms, read only in the realm that is not their own."
+      }
+    ]
   },
   {
     "realm": "leafypay",
@@ -1240,5 +1247,22 @@
     "roleName": "manager",
     "accountHolderRef": "b0000101-0000-4000-8000-000000000101",
     "phone": "+1 323 555 0101"
+  },
+  {
+    "realm": "leafypay",
+    "subjectId": "a1000102-0000-4000-8000-000000000102",
+    "userName": "Nina Berg",
+    "kind": "human",
+    "email": "nina.berg@back.es",
+    "name": {
+      "formatted": "Nina Berg",
+      "givenName": "Nina",
+      "familyName": "Berg"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "client_administrator",
+    "phone": "+1 323 555 0102"
   }
 ]

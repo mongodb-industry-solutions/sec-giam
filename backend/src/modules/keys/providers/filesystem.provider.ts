@@ -1,5 +1,5 @@
 import { generateKeyPairSync, createPrivateKey, createPublicKey, KeyObject, sign as cryptoSign } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import type { KeyProvider } from '../../../shared/ports';
 import { thumbprintKid } from '../services/jwk';
@@ -56,6 +56,29 @@ export class FilesystemKeyProvider implements KeyProvider {
       publicPem: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     });
     return kid;
+  }
+
+  /**
+   * A fresh pair at the configured path, replacing the one there.
+   *
+   * The outgoing key is moved aside rather than deleted. When the path is genuinely shared, every
+   * replica picks the new one up as its cache expires, and the old public half stays published for
+   * the grace period so nothing signed with it stops verifying mid-flight.
+   */
+  async rotate(realmId: string): Promise<string> {
+    const dir = resolve(this.storeDir, 'realms', realmId);
+    const privatePath = resolve(dir, 'private.pem');
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+
+    mkdirSync(dir, { recursive: true });
+    if (existsSync(privatePath)) {
+      renameSync(privatePath, resolve(dir, `private.${Date.now()}.retired.pem`));
+    }
+    writeFileSync(privatePath, privatePem, { encoding: 'utf8', mode: 0o600 });
+
+    this.keys.delete(realmId);
+    return this.ensureKey(realmId);
   }
 
   private entryFor(kid: string) {

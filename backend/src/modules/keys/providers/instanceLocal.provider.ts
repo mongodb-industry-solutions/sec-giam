@@ -1,5 +1,5 @@
 import { generateKeyPairSync, createPrivateKey, createPublicKey, KeyObject, sign as cryptoSign } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import type { KeyProvider } from '../../../shared/ports';
 import { thumbprintKid } from '../services/jwk';
@@ -65,6 +65,30 @@ export class InstanceLocalKeyProvider implements KeyProvider {
 
     this.keys.set(realmId, { kid, privateKey, publicPem });
     return kid;
+  }
+
+  /**
+   * A fresh pair for this replica, replacing the one on disk.
+   *
+   * The outgoing private key is moved aside rather than deleted, so a rotation performed in error
+   * can be undone by an operator with access to the node. Unpublishing the outgoing PUBLIC key is
+   * deliberately not done here: tokens it signed must still verify, and that window belongs to the
+   * key ring, which knows the grace period.
+   */
+  async rotate(realmId: string): Promise<string> {
+    const dir = this.directory(realmId);
+    const privatePath = resolve(dir, 'private.pem');
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+
+    mkdirSync(dir, { recursive: true });
+    if (existsSync(privatePath)) {
+      renameSync(privatePath, resolve(dir, `private.${Date.now()}.retired.pem`));
+    }
+    writeFileSync(privatePath, privatePem, { encoding: 'utf8', mode: 0o600 });
+
+    this.keys.delete(realmId);
+    return this.ensureKey(realmId);
   }
 
   private entryFor(kid: string): { kid: string; privateKey: KeyObject; publicPem: string } {

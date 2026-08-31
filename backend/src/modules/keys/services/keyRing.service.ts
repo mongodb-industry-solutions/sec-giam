@@ -105,6 +105,31 @@ export class KeyRing {
   }
 
   /**
+   * Replaces this replica's key, and eases the outgoing one out rather than dropping it.
+   *
+   * The order is what makes rotation safe: the new key is published BEFORE the old one stops
+   * signing, so there is no instant in which the realm has nothing to sign with. The old key then
+   * keeps its place in the published set for the grace period, because the tokens it already signed
+   * have not expired yet and unpublishing it would reject every one of them.
+   */
+  async rotate(realmId: string, tenantId: string = DEFAULT_TENANT_ID): Promise<string> {
+    if (!this.provider.rotate) {
+      throw new Error(`The ${this.provider.name} key provider does not hold custody, so it cannot rotate here`);
+    }
+    const previousKid = await this.provider.ensureKey(realmId);
+    await this.provider.rotate(realmId);
+    const kid = await this.publishOwnKey(realmId, tenantId);
+
+    if (previousKid !== kid) {
+      const grace = config.keys.publicationGraceSeconds * 1000;
+      await this.store.markIneligible(previousKid, new Date(this.clock().getTime() + grace).toISOString());
+      const previous = await this.store.findByKid(previousKid);
+      if (previous) await this.store.upsert({ ...previous, rotatedAt: this.clock().toISOString() });
+    }
+    return kid;
+  }
+
+  /**
    * Retires the keys whose owning replica has gone away, without removing them from the set.
    *
    * A lapsed lease means the replica is gone, not that its tokens are. The key stops signing now and

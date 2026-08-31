@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ShieldCheck, ShieldOff } from 'lucide-react';
+import { CheckCircle2, Plus, ShieldCheck, ShieldOff } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Tooltip } from '../../../components/Tooltip';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
+import { useRealmChange } from '../../../lib/realms';
 
 /**
  * Who holds temporary authority right now, and which requests are waiting.
@@ -58,6 +59,7 @@ export default function ElevationsPage() {
   }, [state]);
 
   useEffect(() => { void load(); }, [load]);
+  useRealmChange(() => { void load(); });
 
   async function approve(elevation: Elevation) {
     setBusy(elevation.assignmentId);
@@ -92,7 +94,7 @@ export default function ElevationsPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-5 p-4 sm:p-6 lg:p-8">
+    <main className="space-y-5">
       <SectionHeader
         icon={ShieldCheck}
         title="Privileged access"
@@ -117,6 +119,8 @@ export default function ElevationsPage() {
           </button>
         ))}
       </div>
+
+      <RequestForm onRequested={() => void load()} onFailure={setError} />
 
       {error && <ErrorState message={error} onRetry={() => void load()} />}
 
@@ -189,6 +193,133 @@ export default function ElevationsPage() {
             </ul>
           )}
     </main>
+  );
+}
+
+/**
+ * Asking for temporary authority.
+ *
+ * The reason is required by the API and required here, and the field says why rather than only
+ * marking itself mandatory: the moment of asking is the only time anybody actually knows the reason,
+ * and an elevation with none cannot be reviewed afterwards. The scope is optional because an
+ * elevation bound to one thing is narrower than one bound to the realm, and narrower is better when
+ * the person can say what they are working on.
+ */
+function RequestForm({ onRequested, onFailure }: { onRequested: () => void; onFailure: (message: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [roleName, setRoleName] = useState('');
+  const [justification, setJustification] = useState('');
+  const [scopeKind, setScopeKind] = useState('');
+  const [scopeRef, setScopeRef] = useState('');
+  const [hours, setHours] = useState('4');
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await callApi('/elevations', {
+        method: 'POST',
+        subject: 'that request',
+        body: {
+          roleName: roleName.trim(),
+          justification: justification.trim(),
+          ...(scopeKind.trim() && scopeRef.trim() ? { scopeKind: scopeKind.trim(), scopeRef: scopeRef.trim() } : {}),
+          ...(Number(hours) > 0 ? { durationSeconds: Math.round(Number(hours) * 3600) } : {}),
+        },
+      });
+      setRoleName(''); setJustification(''); setScopeKind(''); setScopeRef(''); setHours('4');
+      setOpen(false);
+      onRequested();
+    } catch (failure) {
+      onFailure(failure instanceof ApiError ? failure.message : 'That elevation could not be requested.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-semibold text-[#00ED64] transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+      >
+        <Plus size={13} aria-hidden />
+        Ask for temporary authority
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p className="text-xs text-gray-500">
+        The request is always for yourself, and where this realm reviews elevations it grants nothing
+        until somebody else approves it. An approver can never be the requester.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ElevationField label="Role" hint="A role of this realm, by name" value={roleName} onChange={setRoleName} required />
+        <ElevationField label="Hours" hint="Up to 12" value={hours} onChange={setHours} type="number" />
+      </div>
+      <label className="block">
+        <span className="text-xs font-medium text-gray-700">Reason</span>
+        <textarea
+          value={justification}
+          onChange={(event) => setJustification(event.target.value)}
+          required
+          rows={2}
+          placeholder="What you are about to do, and why this authority is needed for it."
+          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#001E2B] focus:outline-none focus:ring-1 focus:ring-[#001E2B]"
+        />
+        <span className="mt-1 block text-[11px] text-gray-500">
+          Required. An elevation with no stated reason cannot be reviewed afterwards, and now is the
+          only time anybody knows it.
+        </span>
+      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ElevationField label="Bound to (optional)" hint="What kind of thing, in your own words" value={scopeKind} onChange={setScopeKind} />
+        <ElevationField label="Which one (optional)" hint="This authority never learns what it names" value={scopeRef} onChange={setScopeRef} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-lg border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-semibold text-[#00ED64] transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+        >
+          {saving ? 'Requesting…' : 'Request'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ElevationField({ label, hint, value, onChange, required, type }: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  type?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-gray-700">{label}</span>
+      <input
+        type={type ?? 'text'}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        required={required}
+        placeholder={hint}
+        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#001E2B] focus:outline-none focus:ring-1 focus:ring-[#001E2B]"
+      />
+    </label>
   );
 }
 

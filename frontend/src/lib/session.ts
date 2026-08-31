@@ -17,7 +17,16 @@ import { apiUrl } from './env';
 export const CONSOLE_CLIENT_ID = 'giam-console';
 const TOKEN_KEY = 'giam.access.token';
 const SESSION_KEY = 'giam.session.id';
+// The realm that signed the token, and the realm the console is currently acting on. They are the
+// same for everybody who administers one realm, and the pair is the only thing that changes when
+// somebody switches: no second token, no second sign-in, no second identity.
 const REALM_KEY = 'giam.realm';
+const ACTIVE_REALM_KEY = 'giam.realm.active';
+
+/** Fired when the acting realm changes, so every mounted screen reloads against the new one. */
+export const REALM_CHANGED_EVENT = 'giam:realm-changed';
+// Profile claims read from the UserInfo endpoint, kept beside the token they were read with.
+export const PROFILE_KEY = 'giam.userinfo';
 
 // The realm every console call is addressed to. Remembered at sign-in rather than guessed per page,
 // because a page that guesses wrong reads somebody else's realm or nothing at all.
@@ -41,15 +50,41 @@ export function storedSessionId(): string {
   return typeof window === 'undefined' ? '' : window.sessionStorage.getItem(SESSION_KEY) ?? '';
 }
 
-export function storedRealm(): string {
+/** The realm that authenticated this person and issued their token. Never changes while signed in. */
+export function storedHomeRealm(): string {
   if (typeof window === 'undefined') return DEFAULT_REALM;
   return window.sessionStorage.getItem(REALM_KEY) || DEFAULT_REALM;
+}
+
+/**
+ * The realm every console call is addressed to.
+ *
+ * The home realm unless the person has switched to one they hold a grant over. The switch changes
+ * the realm in the path and nothing else: the same token is presented, the authority verifies it
+ * against the realm that signed it, and the grant is what decides whether the request is allowed.
+ */
+export function storedRealm(): string {
+  if (typeof window === 'undefined') return DEFAULT_REALM;
+  return window.sessionStorage.getItem(ACTIVE_REALM_KEY) || storedHomeRealm();
+}
+
+export function isCrossRealm(): boolean {
+  return storedRealm() !== storedHomeRealm();
+}
+
+/** Persists the choice and tells every mounted screen to read its realm again. */
+export function setActiveRealm(name: string): void {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(ACTIVE_REALM_KEY, name);
+  window.dispatchEvent(new CustomEvent(REALM_CHANGED_EVENT, { detail: name }));
 }
 
 export function clearSession(): void {
   window.sessionStorage.removeItem(TOKEN_KEY);
   window.sessionStorage.removeItem(SESSION_KEY);
   window.sessionStorage.removeItem(REALM_KEY);
+  window.sessionStorage.removeItem(ACTIVE_REALM_KEY);
+  window.sessionStorage.removeItem(PROFILE_KEY);
 }
 
 /**
@@ -62,6 +97,9 @@ export function clearSession(): void {
 export async function tokenFromSession(realm: string, sessionId: string): Promise<string | null> {
   window.sessionStorage.setItem(SESSION_KEY, sessionId);
   window.sessionStorage.setItem(REALM_KEY, realm);
+  // A fresh sign-in acts on the realm that authenticated it. Inheriting a realm chosen in an earlier
+  // session would put somebody somewhere they did not ask to be.
+  window.sessionStorage.setItem(ACTIVE_REALM_KEY, realm);
   const redirectUri = `${window.location.origin}/auth/callback`;
 
   try {

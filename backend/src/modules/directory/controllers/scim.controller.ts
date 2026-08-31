@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { requireAdmin } from '../../../vendors/middleware/adminAuth';
+import { requireAuthority } from '../../../vendors/middleware/authorityAuth';
 import { IDENTITY_COLLECTION } from '../../../shared/models/collections';
 import { IdentityRecord } from '../models/identity.model';
 import { newMeta } from '../../../shared/models/base.model';
@@ -23,6 +23,11 @@ import {
  * A provisioning client also cannot grant authority. It may correct a name or deactivate somebody; it
  * may not assign a role. Otherwise whoever administers the upstream directory can grant themselves
  * anything here, which is the same defect as trusting upstream claims for authorisation.
+ *
+ * Who may reach these routes is decided by the caller's own roles, over the authority's `identities`
+ * resource. The operator credential still passes, as break-glass, because an identity outage is
+ * exactly when nobody can sign in to fix it. Listing the directory is never a self-scoped act, so
+ * there is no owner path here the way there is for a client registration.
  */
 export async function scimController(fastify: FastifyInstance) {
   const base = '/realms/:realm/scim/v2';
@@ -79,7 +84,7 @@ export async function scimController(fastify: FastifyInstance) {
   }
 
   fastify.get(`${base}/Users`, {
-    preHandler: requireAdmin,
+    preHandler: requireAuthority('identities', 'view'),
     schema: {
       operationId: 'scimListUsers',
       tags: ['scim'],
@@ -121,9 +126,9 @@ export async function scimController(fastify: FastifyInstance) {
           }],
         },
         400: { type: 'object', additionalProperties: true, description: 'The filter is not supported.' },
-        401: { type: 'object', additionalProperties: true, description: 'No provisioning credential.' },
+        401: { type: 'object', additionalProperties: true, description: 'No access token and no operator credential.' },
+        403: { type: 'object', additionalProperties: true, description: 'No role held permits administering the directory.' },
         404: { type: 'object', additionalProperties: true, description: 'No such realm.' },
-        503: { type: 'object', additionalProperties: true, description: 'The provisioning surface is not configured.' },
       },
     },
   }, async (request, reply) => {
@@ -153,7 +158,7 @@ export async function scimController(fastify: FastifyInstance) {
   });
 
   fastify.get(`${base}/Users/:id`, {
-    preHandler: requireAdmin,
+    preHandler: requireAuthority('identities', 'view'),
     schema: {
       operationId: 'scimGetUser',
       tags: ['scim'],
@@ -167,9 +172,9 @@ export async function scimController(fastify: FastifyInstance) {
       },
       response: {
         200: { ...scimUserSchema, description: 'The principal.' },
-        401: { type: 'object', additionalProperties: true, description: 'No provisioning credential.' },
+        401: { type: 'object', additionalProperties: true, description: 'No access token and no operator credential.' },
+        403: { type: 'object', additionalProperties: true, description: 'No role held permits administering the directory.' },
         404: { type: 'object', additionalProperties: true, description: 'No such principal.' },
-        503: { type: 'object', additionalProperties: true, description: 'The provisioning surface is not configured.' },
       },
     },
   }, async (request, reply) => {
@@ -184,7 +189,7 @@ export async function scimController(fastify: FastifyInstance) {
   });
 
   fastify.post(`${base}/Users`, {
-    preHandler: requireAdmin,
+    preHandler: requireAuthority('identities', 'manage'),
     schema: {
       operationId: 'scimCreateUser',
       tags: ['scim'],
@@ -211,10 +216,10 @@ export async function scimController(fastify: FastifyInstance) {
       },
       response: {
         201: { ...scimUserSchema, description: 'The provisioned principal.' },
-        401: { type: 'object', additionalProperties: true, description: 'No provisioning credential.' },
+        401: { type: 'object', additionalProperties: true, description: 'No access token and no operator credential.' },
+        403: { type: 'object', additionalProperties: true, description: 'No role held permits administering the directory.' },
         404: { type: 'object', additionalProperties: true, description: 'No such realm.' },
         409: { type: 'object', additionalProperties: true, description: 'That user name already exists.' },
-        503: { type: 'object', additionalProperties: true, description: 'The provisioning surface is not configured.' },
       },
     },
   }, async (request, reply) => {
@@ -282,7 +287,7 @@ export async function scimController(fastify: FastifyInstance) {
   });
 
   fastify.patch(`${base}/Users/:id`, {
-    preHandler: requireAdmin,
+    preHandler: requireAuthority('identities', 'manage'),
     schema: {
       operationId: 'scimPatchUser',
       tags: ['scim'],
@@ -318,9 +323,9 @@ export async function scimController(fastify: FastifyInstance) {
       response: {
         200: { ...scimUserSchema, description: 'The principal, as changed.' },
         400: { type: 'object', additionalProperties: true, description: 'An operation or attribute is not permitted here.' },
-        401: { type: 'object', additionalProperties: true, description: 'No provisioning credential.' },
+        401: { type: 'object', additionalProperties: true, description: 'No access token and no operator credential.' },
+        403: { type: 'object', additionalProperties: true, description: 'No role held permits administering the directory.' },
         404: { type: 'object', additionalProperties: true, description: 'No such principal.' },
-        503: { type: 'object', additionalProperties: true, description: 'The provisioning surface is not configured.' },
       },
     },
   }, async (request, reply) => {
@@ -375,7 +380,7 @@ export async function scimController(fastify: FastifyInstance) {
   });
 
   fastify.delete(`${base}/Users/:id`, {
-    preHandler: requireAdmin,
+    preHandler: requireAuthority('identities', 'manage'),
     schema: {
       operationId: 'scimDeleteUser',
       tags: ['scim'],
@@ -395,11 +400,11 @@ export async function scimController(fastify: FastifyInstance) {
         401: {
           type: 'object',
           additionalProperties: true,
-          description: 'No provisioning credential.',
-          examples: [{ schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'], status: '401', detail: 'A valid provisioning credential is required.' }],
+          description: 'No access token and no operator credential.',
+          examples: [{ schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'], status: '401', detail: 'A valid access token or the operator credential is required.' }],
         },
+        403: { type: 'object', additionalProperties: true, description: 'No role held permits administering the directory.' },
         404: { type: 'object', additionalProperties: true, description: 'No such principal.' },
-        503: { type: 'object', additionalProperties: true, description: 'The provisioning surface is not configured.' },
       },
     },
   }, async (request, reply) => {

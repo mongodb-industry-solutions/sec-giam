@@ -76,6 +76,32 @@ export class SessionService {
     return held.filter((session) => isLive(session));
   }
 
+  /**
+   * Every live session in a realm, for an administrator rather than for one person.
+   *
+   * Terminated ones are excluded rather than shown greyed out: the question this answers is "who is
+   * signed in right now", and a list mixing the two invites ending something that already ended.
+   */
+  async listForRealm(
+    realmId: string,
+    options: { skip?: number; limit?: number } = {},
+  ): Promise<{ sessions: SessionRecord[]; total: number }> {
+    const filter = { realmId, terminatedAt: { $exists: false } };
+    const held = await this.sessions
+      .find(filter, { projection: { _id: 0 } })
+      .sort({ lastSeenAt: -1 })
+      .toArray();
+    // Expiry is judged here rather than left to the sweep, so the total and the page agree with each
+    // other: counting in the database and filtering in memory would disagree by whatever the sweep
+    // has not reached yet.
+    const live = held.filter((session) => isLive(session));
+    const skip = Math.max(0, options.skip ?? 0);
+    return {
+      sessions: live.slice(skip, skip + Math.min(options.limit ?? 20, 200)),
+      total: live.length,
+    };
+  }
+
   /** Moves the idle window forward. An absolute expiry is never extended. */
   async touch(realmId: string, sessionId: string, idleTtlSeconds: number): Promise<void> {
     const now = new Date();

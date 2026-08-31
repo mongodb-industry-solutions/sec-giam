@@ -1,7 +1,7 @@
 'use client';
 
 import { apiUrl } from './env';
-import { storedRealm, storedToken } from './session';
+import { PROFILE_KEY, storedRealm, storedToken } from './session';
 
 /**
  * What the console knows about the signed-in principal, and how it talks to the authority.
@@ -22,11 +22,34 @@ export interface Claims {
   name?: string;
   email?: string;
   roles?: string[];
+  /** Realms this principal may administer besides the issuing one. Explicit data, never inferred. */
+  admin_realms?: Array<{ id: string; name: string }>;
   scope?: string;
   permissions?: Permission[];
   exp?: number;
+  iat?: number;
   iss?: string;
   aud?: string | string[];
+  /** The client that obtained this token, and the session it was obtained under. */
+  client_id?: string;
+  sid?: string;
+  jti?: string;
+}
+
+/**
+ * What the authority is willing to say about the subject, from the UserInfo endpoint.
+ *
+ * The access token deliberately carries none of this: it says what the holder may do, not who they
+ * are. Profile claims are asked for separately, and only the granted scopes decide what comes back,
+ * so an absent field here means "not granted" rather than "not known".
+ */
+export interface UserInfo {
+  sub: string;
+  name?: string;
+  preferred_username?: string;
+  email?: string;
+  email_verified?: boolean;
+  [claim: string]: unknown;
 }
 
 export function decodeClaims(token: string): Claims | null {
@@ -49,8 +72,57 @@ export function isExpired(claims: Claims): boolean {
   return typeof claims.exp === 'number' && claims.exp * 1000 <= Date.now();
 }
 
+// Kept in memory so a navigation costs nothing, and in session storage so a reload does not either.
+let profileCache: UserInfo | null = null;
+let profileInFlight: Promise<UserInfo | null> | null = null;
+
+export function cachedUserInfo(): UserInfo | null {
+  if (profileCache) return profileCache;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(PROFILE_KEY);
+    profileCache = raw ? JSON.parse(raw) as UserInfo : null;
+  } catch {
+    profileCache = null;
+  }
+  return profileCache;
+}
+
+/**
+ * Reads the subject's profile once per session.
+ *
+ * Returns null rather than throwing when it cannot be read: a console that cannot learn somebody's
+ * name still works, and every screen here falls back to the subject the token names.
+ */
+export async function loadUserInfo(): Promise<UserInfo | null> {
+  const claims = currentClaims();
+  if (!claims) return null;
+
+  const cached = cachedUserInfo();
+  if (cached && cached.sub === claims.sub) return cached;
+
+  profileInFlight ??= callApi<UserInfo>('/protocol/openid-connect/userinfo', { subject: 'your profile' })
+    .then((info) => {
+      profileCache = info;
+      try { window.sessionStorage.setItem(PROFILE_KEY, JSON.stringify(info)); } catch {}
+      return info;
+    })
+    .catch(() => null)
+    .finally(() => { profileInFlight = null; });
+
+  return profileInFlight;
+}
+
+/**
+ * The friendliest name the console can put on screen for this principal.
+ *
+ * The profile is preferred when it has been read and belongs to the same subject; the token alone
+ * only ever yields the subject id, which is an identifier, not a name.
+ */
 export function displayName(claims: Claims): string {
-  return claims.name || claims.preferred_username || claims.sub;
+  const info = cachedUserInfo();
+  const fromProfile = info && info.sub === claims.sub ? info.name || info.preferred_username : '';
+  return fromProfile || claims.name || claims.preferred_username || claims.sub;
 }
 
 export function initials(claims: Claims): string {
@@ -97,6 +169,14 @@ interface CallOptions {
   /** Plain-language name of what is being read, used to build the error message. */
   subject?: string;
   query?: Record<string, string | number | undefined>;
+  /**
+   * Address the call at a named realm instead of the one currently selected.
+   *
+   * Used only by the few reads that must not follow the switcher, such as asking which realms the
+   * person may switch TO: a grant withdrawn while it was selected would otherwise make the question
+   * unanswerable exactly when it needs answering.
+   */
+  realm?: string;
 }
 
 /**
@@ -118,7 +198,7 @@ export async function callApi<T>(path: string, options: CallOptions = {}): Promi
 
   let response: Response;
   try {
-    response = await fetch(apiUrl(`/realms/${encodeURIComponent(storedRealm())}${path}${suffix}`), {
+    response = await fetch(apiUrl(`/realms/${encodeURIComponent(options.realm ?? storedRealm())}${path}${suffix}`), {
       method: options.method ?? 'GET',
       headers: {
         authorization: `Bearer ${token}`,

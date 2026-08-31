@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ConsoleMobileNav, ConsoleSidebar } from '../../components/ConsoleNav';
 import { UserMenu } from '../../components/UserMenu';
+import { RealmSwitcher } from '../../components/RealmSwitcher';
+import { CrossRealmBanner } from '../../components/CrossRealmBanner';
 import { currentClaims, isExpired, type Claims } from '../../lib/console';
 import { BRAND } from '../../config/brand';
 
@@ -59,13 +61,20 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           <span className="hidden text-[11px] font-normal text-gray-400 lg:inline">{BRAND.expansion}</span>
         </Link>
 
-        <UserMenu claims={claims} onSignOut={() => router.push('/auth/logout?redirect=/system')} />
+        <div className="flex items-center gap-2">
+          <RealmSwitcher />
+          <UserMenu claims={claims} onSignOut={() => router.push('/auth/logout?redirect=/system')} />
+        </div>
       </header>
 
       <div className="flex flex-1">
         <ConsoleSidebar claims={claims} />
         <div className="min-w-0 flex-1 bg-gray-50 pb-16 md:pb-0">
-          {children}
+          <CrossRealmBanner />
+          {/* The page gutter is defined here so sections do not drift apart as you navigate. */}
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+            {children}
+          </div>
         </div>
       </div>
 

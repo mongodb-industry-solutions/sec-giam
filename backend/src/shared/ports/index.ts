@@ -70,6 +70,14 @@ export interface KeyProvider extends PortImplementation {
   sign(kid: string, payload: Buffer): Promise<Buffer>;
   /** The public material to publish for a kid. Public only: this is what a verifier receives. */
   publicKeyPem(kid: string): Promise<string>;
+  /**
+   * Replaces this instance's private key with a fresh pair and returns the new kid.
+   *
+   * Optional, because rotation belongs wherever custody does. A mode that keeps the private key
+   * outside this process cannot rotate it from here, and a provider that pretended to would report
+   * success while the key it named stayed exactly where it was.
+   */
+  rotate?(realmId: string): Promise<string>;
 }
 
 export interface AuthorizationRequest extends Scoped {

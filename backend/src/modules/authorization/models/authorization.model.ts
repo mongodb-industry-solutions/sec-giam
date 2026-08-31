@@ -101,7 +101,14 @@ export interface RoleAssignmentRecord extends Scoped {
   assignmentId: string;
   subjectId: string;
   roleId: string;
-  /** Narrows the assignment to one object, when it is not realm-wide. */
+  /**
+   * Narrows the assignment to one object, when it is not realm-wide.
+   *
+   * `kind: 'realm'` is the one value this authority interprets itself: it points the assignment at
+   * ANOTHER realm, granting administration of that realm to a principal whose identity, credentials
+   * and token stay in this one. Every other kind is the consuming application's vocabulary and means
+   * nothing here.
+   */
   scope?: { kind: string; ref: string };
   grantedBy?: string;
   grantedAt: string;
@@ -122,4 +129,35 @@ export interface EffectivePermission {
 
 export function permissionKey(permission: { resource: string; action: string }): string {
   return `${permission.resource}:${permission.action}`;
+}
+
+/** The scope kind that points an assignment at another realm rather than at an application object. */
+export const REALM_SCOPE_KIND = 'realm';
+
+/**
+ * Whether an assignment held in `homeRealmId` grants anything in `targetRealmId`.
+ *
+ * Two rules and no third. A realm-scoped assignment grants ONLY in the realm it names, so it never
+ * widens the home realm; anything else grants only at home, so an unscoped assignment never leaks
+ * outward. Neither direction is inferred, which is what keeps one realm's authority out of another.
+ */
+export function assignmentAppliesIn(
+  assignment: Pick<RoleAssignmentRecord, 'scope'>,
+  homeRealmId: string,
+  targetRealmId: string,
+): boolean {
+  return assignment.scope?.kind === REALM_SCOPE_KIND
+    ? assignment.scope.ref === targetRealmId
+    : homeRealmId === targetRealmId;
+}
+
+/** One realm a principal may administer, with what they hold there. */
+export interface AdministrableRealm {
+  realmId: string;
+  name: string;
+  displayName: string;
+  /** True for the realm that issues this principal's tokens, false for a realm reached by a grant. */
+  home: boolean;
+  roles: string[];
+  permissions: EffectivePermission[];
 }

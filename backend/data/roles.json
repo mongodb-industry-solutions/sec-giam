@@ -229,6 +229,9 @@
       ],
       "keys": [
         "view"
+      ],
+      "elevations": [
+        "view"
       ]
     }
   },
@@ -351,7 +354,8 @@
       ],
       "clients": [
         "view",
-        "manage"
+        "manage",
+        "rotateSecret"
       ],
       "roles": [
         "view",
@@ -383,6 +387,11 @@
       ],
       "keys": [
         "view"
+      ],
+      "elevations": [
+        "view",
+        "approve",
+        "manage"
       ]
     },
     "denialRationale": [
@@ -394,6 +403,34 @@
       {
         "resource": "transactions",
         "reason": "A platform administrator has no need for business or cardholder data, and granting it would collapse the separation this role exists to maintain."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "client_administrator",
+    "displayName": "Application Registry Administrator",
+    "description": "Administers registered applications and the principal directory across the realm: every registration rather than only the ones this person owns.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "Registering an application needs no permission at all, because a person owns what they register and the registry narrows every read and every change to what they own. This role exists only to widen that narrowing to the whole realm. Rotating another party's credential is a separate action from reading their registration, so it is a separate permission, and a role may hold sight of the registry without holding the ability to reissue anybody's secret.",
+    "permissions": {},
+    "authorityPermissions": {
+      "clients": [
+        "view",
+        "manage",
+        "rotateSecret"
+      ],
+      "identities": [
+        "view",
+        "manage"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "keys",
+        "reason": "Signing key custody is a different job from administering the registry, and a role that could both register an application and reissue the keys that sign for it would have no independent check on either."
       }
     ]
   }

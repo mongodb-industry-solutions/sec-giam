@@ -44,6 +44,14 @@ interface IdentityFixture {
   realm: string;
   subjectId: string;
   roleName?: string;
+  /**
+   * Roles held in the principal's OWN realm that grant administration of another one.
+   *
+   * The record stays where the principal is, and its scope names the realm it reaches. That is what
+   * lets somebody administer two realms without existing in two, which would mean two identities, two
+   * credentials and a token each realm would have to decide whether to trust.
+   */
+  realmGrants?: Array<{ realm: string; roleName: string; justification?: string }>;
 }
 
 /** The authority's own resource server, so administering it is a permission like any other. */
@@ -63,6 +71,11 @@ function roleId(realmId: string, name: string): string {
 
 function assignmentId(subjectId: string, role: string): string {
   return uuidv5(`assignment:${subjectId}:${role}`, AUTHORIZATION_NAMESPACE);
+}
+
+/** Distinct from the unscoped one, so a principal can hold the same role at home and abroad. */
+function realmGrantId(subjectId: string, role: string, targetRealmId: string): string {
+  return uuidv5(`assignment:${subjectId}:${role}:realm:${targetRealmId}`, AUTHORIZATION_NAMESPACE);
 }
 
 export async function seedAuthorization(
@@ -177,7 +190,43 @@ export async function seedAuthorization(
   }
 
   let assigned = 0;
+  let crossRealm = 0;
   for (const identity of identityFixtures) {
+    for (const grant of identity.realmGrants ?? []) {
+      const homeRealmId = realmIdByName.get(identity.realm);
+      const targetRealmId = realmIdByName.get(grant.realm);
+      if (!homeRealmId) throw new Error(`${identityFixtureName} grants from realm "${identity.realm}", which is not seeded`);
+      if (!targetRealmId) throw new Error(`${identityFixtureName} grants administration of realm "${grant.realm}", which is not seeded`);
+      // Pointing a grant at its own realm would be a second way to say what an ordinary assignment
+      // already says, and the two would then be able to disagree.
+      if (homeRealmId === targetRealmId) throw new Error(`${identityFixtureName} grants ${identity.subjectId} their own realm`);
+      // The ROLE is the home realm's, because a realm does not get to name another realm's roles.
+      const known = roleFixtures.some((role) => role.name === grant.roleName && role.realm === identity.realm);
+      if (!known) throw new Error(`${identityFixtureName} grants unknown role "${grant.roleName}" in realm "${identity.realm}"`);
+
+      const id = realmGrantId(identity.subjectId, grant.roleName, targetRealmId);
+      await upsertSeed<RoleAssignmentRecord>(
+        assignments,
+        { assignmentId: id },
+        {
+          subjectId: identity.subjectId,
+          roleId: roleId(homeRealmId, grant.roleName),
+          scope: { kind: 'realm', ref: targetRealmId },
+          grantedAt: now,
+          ...(grant.justification ? { justification: grant.justification } : {}),
+        },
+        {
+          assignmentId: id,
+          subjectId: identity.subjectId,
+          roleId: roleId(homeRealmId, grant.roleName),
+          realmId: homeRealmId,
+          tenantId: DEFAULT_TENANT_ID,
+        },
+        'RoleAssignment',
+      );
+      crossRealm += 1;
+    }
+
     if (!identity.roleName) continue;
     const realmId = realmIdByName.get(identity.realm);
     if (!realmId) continue;
@@ -213,8 +262,98 @@ export async function seedAuthorization(
     assigned += 1;
   }
 
+  /**
+   * The realm administrator, and the permissions the console's own screens enforce.
+   *
+   * Appended rather than folded into the fixtures because these are permissions over the AUTHORITY'S
+   * own objects, which no application's catalog declares and therefore no fixture naming a resource
+   * server can carry. Registering them here means the console's roles, keys and sessions screens are
+   * reachable in a fresh install rather than after somebody edits data.
+   *
+   * Two tiers have to be demonstrable without editing anything, so this role is deliberately NOT
+   * given to everyone: the account-holder roles in both fixture sets carry no authority permission at
+   * all, and stay that way.
+   */
+  const ADMINISTRATOR_ROLE = 'realm_administrator';
+
+  // Reading a key set, adding a key and withdrawing one are three different authorities. Rotation
+  // takes nothing away; retirement stops publication and every token already signed stops verifying.
+  const ADMINISTRATOR_PERMISSIONS: Record<string, string[]> = {
+    roles: ['view', 'manage'],
+    assignments: ['view', 'manage'],
+    permissions: ['view'],
+    sessions: ['view', 'manage'],
+    keys: ['view', 'rotate', 'retire'],
+  };
+
+  let administrators = 0;
+  for (const [realmName, realmId] of realmIdByName) {
+    // Only realms this fixture set actually describes: the seeder runs once per population, and a
+    // realm it says nothing about is not this run's to administer.
+    if (!roleFixtures.some((fixture) => fixture.realm === realmName)) continue;
+
+    const authorityServer = await ensureServer(realmId, AUTHORITY_RESOURCE_SERVER, AUTHORITY_RESOURCE_SERVER);
+    const held: RolePermission[] = [];
+    for (const [resource, actions] of Object.entries(ADMINISTRATOR_PERMISSIONS)) {
+      for (const action of actions) {
+        await ensurePermission(realmId, authorityServer, resource, action);
+        held.push({ resourceServerId: authorityServer, resource, action });
+      }
+    }
+
+    await upsertSeed<RoleRecord>(
+      roles,
+      { roleId: roleId(realmId, ADMINISTRATOR_ROLE) },
+      {
+        name: ADMINISTRATOR_ROLE,
+        displayName: 'Realm administrator',
+        description:
+          'Administers one authentication domain: the principals registered in it, the roles and '
+          + 'permissions they hold, its signing keys and its sessions.',
+        permissions: held,
+        // Realm wide by definition. The whole point of the tier is reaching records that are not
+        // the holder's own, and a self-scoped administrator would be a contradiction.
+        scopeKind: 'all',
+        builtin: true,
+        sodRationale:
+          'Kept separate from the roles that administer an application\'s own data, so administering '
+          + 'identity is a distinct grant that can be reviewed and withdrawn on its own.',
+      },
+      { roleId: roleId(realmId, ADMINISTRATOR_ROLE), realmId, tenantId: DEFAULT_TENANT_ID },
+      'Role',
+    );
+
+    // Given to whoever this population already treats as the realm's administrator, so the demo has
+    // a principal who can open every screen without a subject identifier being written down here.
+    const administrativeRoles = new Set(
+      roleFixtures
+        .filter((fixture) => fixture.realm === realmName && (fixture.authorityPermissions?.roles ?? []).includes('manage'))
+        .map((fixture) => fixture.name),
+    );
+    for (const identity of identityFixtures) {
+      if (identity.realm !== realmName || !identity.roleName) continue;
+      if (!administrativeRoles.has(identity.roleName)) continue;
+
+      await upsertSeed<RoleAssignmentRecord>(
+        assignments,
+        { assignmentId: assignmentId(identity.subjectId, ADMINISTRATOR_ROLE) },
+        { subjectId: identity.subjectId, roleId: roleId(realmId, ADMINISTRATOR_ROLE), grantedAt: now },
+        {
+          assignmentId: assignmentId(identity.subjectId, ADMINISTRATOR_ROLE),
+          subjectId: identity.subjectId,
+          roleId: roleId(realmId, ADMINISTRATOR_ROLE),
+          realmId,
+          tenantId: DEFAULT_TENANT_ID,
+        },
+        'RoleAssignment',
+      );
+      administrators += 1;
+    }
+  }
+
   console.log(`  resourceServer: ${seenServers.size}`);
   console.log(`  permission: ${seenPermissions.size}`);
   console.log(`  role: ${roleCount}`);
-  console.log(`  roleAssignment: ${assigned}`);
+  console.log(`  roleAssignment: ${assigned} (+${crossRealm} naming another realm)`);
+  console.log(`  realmAdministrator: ${administrators}`);
 }

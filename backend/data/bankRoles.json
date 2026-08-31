@@ -158,6 +158,9 @@
       ],
       "keys": [
         "view"
+      ],
+      "elevations": [
+        "view"
       ]
     }
   },
@@ -257,6 +260,11 @@
       ],
       "keys": [
         "view"
+      ],
+      "elevations": [
+        "view",
+        "approve",
+        "manage"
       ]
     }
   },

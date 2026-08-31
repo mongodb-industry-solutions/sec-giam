@@ -1,0 +1,319 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Plus, UsersRound } from 'lucide-react';
+import { SectionHeader } from '../../../components/SectionHeader';
+import { Pagination } from '../../../components/Pagination';
+import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
+import { ApiError, callApi, when } from '../../../lib/console';
+import {
+  FilterAttribute, ScimList, ScimUser, extensionOf, primaryEmail, scimFilter,
+} from '../../../lib/identities';
+
+/**
+ * The principal directory, over SCIM.
+ *
+ * Provisioning says a principal EXISTS; something else says it may operate. A create here does not
+ * activate anybody unless the realm auto-approves, which is why a newly provisioned principal shows
+ * as pending rather than active, and why no role can be granted from this screen.
+ */
+export default function IdentitiesPage() {
+  const [list, setList] = useState<ScimList | null>(null);
+  const [attribute, setAttribute] = useState<FilterAttribute>('none');
+  const [value, setValue] = useState('');
+  const [applied, setApplied] = useState<string | undefined>(undefined);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setList(await callApi<ScimList>('/scim/v2/Users', {
+        subject: 'the principal directory',
+        query: {
+          filter: applied,
+          // One-based, per the specification. An off-by-one here silently skips a record per page.
+          startIndex: (pageNumber - 1) * limit + 1,
+          count: limit,
+        },
+      }));
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'The principal directory could not be read.');
+    } finally {
+      setLoading(false);
+    }
+  }, [applied, pageNumber, limit]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const total = list?.totalResults ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  return (
+    <main className="space-y-5">
+      <SectionHeader
+        icon={UsersRound}
+        title="Principals"
+        description="People, services and workloads this authority knows about."
+        info="Provisioning says a principal exists; whether it may operate is a separate decision. A principal created here is not activated unless the realm approves new principals automatically, and no authority can be granted from this screen: roles are assigned elsewhere, so a directory sync can never become a way to grant yourself something."
+        actions={(
+          <button
+            type="button"
+            onClick={() => setCreating((open) => !open)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+          >
+            <Plus size={13} aria-hidden />
+            Provision a principal
+          </button>
+        )}
+      />
+
+      {creating && (
+        <CreateForm
+          onCancel={() => setCreating(false)}
+          onCreated={() => { setCreating(false); setPageNumber(1); void load(); }}
+        />
+      )}
+
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setApplied(scimFilter(attribute, value.trim()));
+          setPageNumber(1);
+        }}
+      >
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">Filter on</span>
+          <select
+            value={attribute}
+            onChange={(event) => { setAttribute(event.target.value as FilterAttribute); setValue(''); }}
+            className="mt-1 block h-[34px] rounded-lg border border-gray-200 px-2 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          >
+            <option value="none">No filter</option>
+            <option value="userName">User name</option>
+            <option value="externalId">External id</option>
+            <option value="active">Active</option>
+          </select>
+        </label>
+
+        {attribute === 'active' && (
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">Is</span>
+            <select
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              className="mt-1 block h-[34px] rounded-lg border border-gray-200 px-2 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+            >
+              <option value="">Choose</option>
+              <option value="true">Active</option>
+              <option value="false">Not active</option>
+            </select>
+          </label>
+        )}
+
+        {(attribute === 'userName' || attribute === 'externalId') && (
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">Equals</span>
+            <input
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="Exact value"
+              className="mt-1 block h-[34px] w-56 rounded-lg border border-gray-200 px-2.5 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+            />
+          </label>
+        )}
+
+        <button
+          type="submit"
+          className="h-[34px] rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+        >
+          Apply
+        </button>
+        {applied && (
+          <button
+            type="button"
+            onClick={() => { setAttribute('none'); setValue(''); setApplied(undefined); setPageNumber(1); }}
+            className="h-[34px] rounded-lg px-2 text-xs text-gray-500 underline-offset-2 hover:underline"
+          >
+            Clear
+          </button>
+        )}
+        <p className="ml-1 self-center text-xs text-gray-400">
+          Only exact matches are supported, and anything else is refused rather than half-interpreted.
+        </p>
+      </form>
+
+      {error && <ErrorState message={error} onRetry={() => void load()} />}
+
+      {loading
+        ? <LoadingState label="Reading the principal directory…" />
+        : (list?.Resources.length ?? 0) === 0
+          ? <EmptyState
+              icon={UsersRound}
+              title="No principals to show"
+              description={applied
+                ? 'Nothing matches this filter. The authority matches exactly, so a partial value finds nothing.'
+                : 'No principal is recorded in this realm yet.'}
+            />
+          : (
+            <>
+              <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                {list!.Resources.map((user) => {
+                  const extension = extensionOf(user);
+                  return (
+                    <li key={user.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/system/identities/${encodeURIComponent(user.id)}`}
+                            className="font-medium text-[#001E2B] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+                          >
+                            {user.name?.formatted || user.userName}
+                          </Link>
+                          <StatusBadge status={extension.lifecycleState || (user.active ? 'active' : 'inactive')} />
+                          {extension.kind && (
+                            <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+                              {extension.kind}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 truncate font-mono text-xs text-gray-400">{user.id}</p>
+                      </div>
+                      <span className="w-56 shrink-0 truncate text-xs text-gray-500">{primaryEmail(user) || 'no email'}</span>
+                      <span className="w-40 shrink-0 text-xs text-gray-400">{when(user.meta?.created)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <Pagination
+                page={pageNumber}
+                totalPages={totalPages}
+                total={total}
+                limit={limit}
+                noun="principals"
+                onPageChange={setPageNumber}
+                onLimitChange={(next) => { setLimit(next); setPageNumber(1); }}
+              />
+            </>
+          )}
+    </main>
+  );
+}
+
+/** Provisioning a principal. Never a role, and never an activation the realm did not decide on. */
+function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
+  const [userName, setUserName] = useState('');
+  const [externalId, setExternalId] = useState('');
+  const [given, setGiven] = useState('');
+  const [family, setFamily] = useState('');
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const formatted = [given.trim(), family.trim()].filter(Boolean).join(' ');
+      await callApi('/scim/v2/Users', {
+        method: 'POST',
+        subject: 'that principal',
+        body: {
+          schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+          userName: userName.trim(),
+          ...(externalId.trim() ? { externalId: externalId.trim() } : {}),
+          ...(formatted
+            ? { name: { formatted, ...(given.trim() ? { givenName: given.trim() } : {}), ...(family.trim() ? { familyName: family.trim() } : {}) } }
+            : {}),
+          ...(email.trim() ? { emails: [{ value: email.trim(), primary: true }] } : {}),
+        },
+      });
+      onCreated();
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.message : 'That principal could not be provisioned.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <h2 className="text-sm font-semibold text-[#001E2B]">Provision a principal</h2>
+      <p className="text-xs text-gray-500">
+        Whether the new principal may operate is the realm&apos;s decision, not this form&apos;s. Any
+        active flag sent from here is deliberately ignored.
+      </p>
+
+      {failure && <ErrorState message={failure} />}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">User name</span>
+          <input
+            required
+            value={userName}
+            onChange={(event) => setUserName(event.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">External id</span>
+          <input
+            value={externalId}
+            onChange={(event) => setExternalId(event.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">Given name</span>
+          <input
+            value={given}
+            onChange={(event) => setGiven(event.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">Family name</span>
+          <input
+            value={family}
+            onChange={(event) => setFamily(event.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">Primary email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          />
+        </label>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={busy || !userName.trim()}
+          className="rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+        >
+          {busy ? 'Provisioning…' : 'Provision'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}

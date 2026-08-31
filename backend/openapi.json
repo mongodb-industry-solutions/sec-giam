@@ -1138,13 +1138,281 @@
       }
     },
     "/realms/{realm}/clients": {
+      "get": {
+        "operationId": "listClients",
+        "summary": "The applications registered here",
+        "tags": [
+          "oauth"
+        ],
+        "description": "Standard-adjacent: the registry behind RFC 7591 dynamic client registration, which defines no listing of its own. A caller sees the applications they own; a caller holding the realm-wide permission sees every one. The narrowing happens in the query, because a filter applied after the fact is a presentation choice rather than an access control. No secret and no secret hash is returned at any level of authority.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "confidential",
+                "public"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "suspended",
+                "revoked"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Matches part of the application name or its identifier."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registrations within the caller's reach.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The registrations within the caller's reach.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "clients",
+                    "total",
+                    "limit",
+                    "offset",
+                    "scope"
+                  ],
+                  "properties": {
+                    "clients": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "client_id",
+                          "client_name"
+                        ],
+                        "properties": {
+                          "client_id": {
+                            "type": "string"
+                          },
+                          "client_name": {
+                            "type": "string"
+                          },
+                          "client_secret": {
+                            "type": "string",
+                            "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
+                          },
+                          "client_type": {
+                            "type": "string",
+                            "enum": [
+                              "confidential",
+                              "public"
+                            ]
+                          },
+                          "redirect_uris": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "post_logout_redirect_uris": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "grant_types": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "scope": {
+                            "type": "string"
+                          },
+                          "logo_uri": {
+                            "type": "string"
+                          },
+                          "application_type": {
+                            "type": "string"
+                          },
+                          "token_endpoint_auth_method": {
+                            "type": "string"
+                          },
+                          "require_pkce": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "owner": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "ref": {
+                                "type": "string"
+                              },
+                              "display_name": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "owned_by_caller": {
+                            "type": "boolean",
+                            "description": "Whether the caller is the owner of this registration."
+                          },
+                          "created_at": {
+                            "type": "string"
+                          },
+                          "last_modified_at": {
+                            "type": "string"
+                          }
+                        },
+                        "example": {
+                          "client_id": "acme-portal",
+                          "client_name": "Acme Portal",
+                          "client_type": "confidential",
+                          "redirect_uris": [
+                            "https://acme.example/callback"
+                          ],
+                          "grant_types": [
+                            "authorization_code",
+                            "refresh_token"
+                          ],
+                          "scope": "openid profile",
+                          "status": "active",
+                          "owned_by_caller": true
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "self",
+                        "all"
+                      ],
+                      "description": "What this listing covered: only the caller's own, or the whole realm."
+                    }
+                  }
+                },
+                "example": {
+                  "clients": [
+                    {
+                      "client_id": "acme-portal",
+                      "client_name": "Acme Portal",
+                      "client_type": "confidential",
+                      "redirect_uris": [
+                        "https://acme.example/callback"
+                      ],
+                      "grant_types": [
+                        "authorization_code",
+                        "refresh_token"
+                      ],
+                      "scope": "openid profile",
+                      "status": "active",
+                      "owned_by_caller": true
+                    }
+                  ],
+                  "total": 1,
+                  "limit": 20,
+                  "offset": 0,
+                  "scope": "self"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token and no operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "registerClient",
         "summary": "Register an application",
         "tags": [
           "oauth"
         ],
-        "description": "Standard-defined: RFC 7591 dynamic client registration. The secret is generated here and returned once. A consuming application that generated its own would need a credential store, a hashing decision and a rotation policy of its own, and would get one of them subtly wrong.",
+        "description": "Standard-defined: RFC 7591 dynamic client registration. The secret is generated here and returned once. Registration is self-service, and the registration belongs to the principal who created it. An ordinary owner is narrowed deliberately: sign-in scopes only, no client_credentials, redirect URIs that are absolute, HTTPS outside a loopback address, free of wildcards, and never on a host this platform already serves from.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1157,9 +1425,16 @@
                 "additionalProperties": true,
                 "properties": {
                   "client_name": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1
                   },
                   "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "post_logout_redirect_uris": {
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -1224,7 +1499,20 @@
                       "type": "string",
                       "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
                     },
+                    "client_type": {
+                      "type": "string",
+                      "enum": [
+                        "confidential",
+                        "public"
+                      ]
+                    },
                     "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "post_logout_redirect_uris": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -1242,7 +1530,41 @@
                     "logo_uri": {
                       "type": "string"
                     },
+                    "application_type": {
+                      "type": "string"
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string"
+                    },
+                    "require_pkce": {
+                      "type": "boolean"
+                    },
                     "status": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "owned_by_caller": {
+                      "type": "boolean",
+                      "description": "Whether the caller is the owner of this registration."
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "last_modified_at": {
                       "type": "string"
                     }
                   },
@@ -1251,6 +1573,7 @@
                 "example": {
                   "client_id": "acme-portal",
                   "client_name": "Acme Portal",
+                  "client_type": "confidential",
                   "redirect_uris": [
                     "https://acme.example/callback"
                   ],
@@ -1259,13 +1582,34 @@
                     "refresh_token"
                   ],
                   "scope": "openid profile",
-                  "status": "active"
+                  "status": "active",
+                  "owned_by_caller": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The registration asks for something self-service does not grant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
           },
           "401": {
-            "description": "No registration credential.",
+            "description": "No valid access token and no operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The per-owner registration limit has been reached.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1293,9 +1637,165 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/clients/{clientId}": {
+      "get": {
+        "operationId": "getClient",
+        "summary": "One registered application",
+        "tags": [
+          "oauth"
+        ],
+        "description": "Standard-defined: RFC 7592 client configuration read. The secret is not here and never will be: it is shown once at registration and once at rotation, and the authority stores only a hash of it. A registration outside the caller's reach answers 404 rather than 403, so this route cannot be used to discover which identifiers exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
           },
-          "503": {
-            "description": "The administrative surface is not configured.",
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "clientId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registration. No secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "client_id",
+                    "client_name"
+                  ],
+                  "properties": {
+                    "client_id": {
+                      "type": "string"
+                    },
+                    "client_name": {
+                      "type": "string"
+                    },
+                    "client_secret": {
+                      "type": "string",
+                      "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
+                    },
+                    "client_type": {
+                      "type": "string",
+                      "enum": [
+                        "confidential",
+                        "public"
+                      ]
+                    },
+                    "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "post_logout_redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "grant_types": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "logo_uri": {
+                      "type": "string"
+                    },
+                    "application_type": {
+                      "type": "string"
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string"
+                    },
+                    "require_pkce": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "owned_by_caller": {
+                      "type": "boolean",
+                      "description": "Whether the caller is the owner of this registration."
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "last_modified_at": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "The registration. No secret."
+                },
+                "example": {
+                  "client_id": "acme-portal",
+                  "client_name": "Acme Portal",
+                  "client_type": "confidential",
+                  "redirect_uris": [
+                    "https://acme.example/callback"
+                  ],
+                  "grant_types": [
+                    "authorization_code",
+                    "refresh_token"
+                  ],
+                  "scope": "openid profile",
+                  "status": "active",
+                  "owned_by_caller": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token and no operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such client within this caller's reach.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1305,16 +1805,14 @@
             }
           }
         }
-      }
-    },
-    "/realms/{realm}/clients/{clientId}": {
+      },
       "patch": {
         "operationId": "updateClient",
         "summary": "Change a registered application",
         "tags": [
           "oauth"
         ],
-        "description": "Standard-defined: RFC 7592 client configuration. Changes the registration; never returns or changes the secret, which has its own route so that rotating a credential is always a deliberate act rather than a side effect of editing a redirect URI.",
+        "description": "Standard-defined: RFC 7592 client configuration. Changes the registration; never returns or changes the secret, which has its own route so that rotating a credential is always a deliberate act rather than a side effect of editing a redirect URI. An owner may change their own; the whole realm needs the realm-wide permission.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1324,9 +1822,16 @@
                 "additionalProperties": true,
                 "properties": {
                   "client_name": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1
                   },
                   "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "post_logout_redirect_uris": {
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -1389,7 +1894,20 @@
                       "type": "string",
                       "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
                     },
+                    "client_type": {
+                      "type": "string",
+                      "enum": [
+                        "confidential",
+                        "public"
+                      ]
+                    },
                     "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "post_logout_redirect_uris": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -1407,7 +1925,41 @@
                     "logo_uri": {
                       "type": "string"
                     },
+                    "application_type": {
+                      "type": "string"
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string"
+                    },
+                    "require_pkce": {
+                      "type": "boolean"
+                    },
                     "status": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "owned_by_caller": {
+                      "type": "boolean",
+                      "description": "Whether the caller is the owner of this registration."
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "last_modified_at": {
                       "type": "string"
                     }
                   },
@@ -1416,6 +1968,7 @@
                 "example": {
                   "client_id": "acme-portal",
                   "client_name": "Acme Portal",
+                  "client_type": "confidential",
                   "redirect_uris": [
                     "https://acme.example/callback"
                   ],
@@ -1424,13 +1977,24 @@
                     "refresh_token"
                   ],
                   "scope": "openid profile",
-                  "status": "active"
+                  "status": "active",
+                  "owned_by_caller": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The change asks for something self-service does not grant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
           },
           "401": {
-            "description": "No registration credential.",
+            "description": "No valid access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1440,17 +2004,7 @@
             }
           },
           "404": {
-            "description": "No such client.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/def-0"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The administrative surface is not configured.",
+            "description": "No such client within this caller's reach.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1514,7 +2068,20 @@
                       "type": "string",
                       "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
                     },
+                    "client_type": {
+                      "type": "string",
+                      "enum": [
+                        "confidential",
+                        "public"
+                      ]
+                    },
                     "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "post_logout_redirect_uris": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -1532,7 +2099,41 @@
                     "logo_uri": {
                       "type": "string"
                     },
+                    "application_type": {
+                      "type": "string"
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string"
+                    },
+                    "require_pkce": {
+                      "type": "boolean"
+                    },
                     "status": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "owned_by_caller": {
+                      "type": "boolean",
+                      "description": "Whether the caller is the owner of this registration."
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "last_modified_at": {
                       "type": "string"
                     }
                   },
@@ -1541,6 +2142,7 @@
                 "example": {
                   "client_id": "acme-portal",
                   "client_name": "Acme Portal",
+                  "client_type": "confidential",
                   "redirect_uris": [
                     "https://acme.example/callback"
                   ],
@@ -1549,13 +2151,14 @@
                     "refresh_token"
                   ],
                   "scope": "openid profile",
-                  "status": "active"
+                  "status": "active",
+                  "owned_by_caller": true
                 }
               }
             }
           },
           "401": {
-            "description": "No registration credential.",
+            "description": "No valid access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1565,17 +2168,7 @@
             }
           },
           "404": {
-            "description": "No such client.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/def-0"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The administrative surface is not configured.",
+            "description": "No such client within this caller's reach.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1594,7 +2187,7 @@
         "tags": [
           "oauth"
         ],
-        "description": "Standard-adjacent: the credential half of RFC 7592. The previous secret stops working immediately. There is no overlap window, because two live secrets means a compromised one keeps working for the length of that window, which is exactly when it must not.",
+        "description": "Standard-adjacent: the credential half of RFC 7592. The previous secret stops working immediately. There is no overlap window, because two live secrets means a compromised one keeps working for the length of that window, which is exactly when it must not. Rotating somebody else's credential is a separate authority from reading their registration, and it takes its own permission.",
         "parameters": [
           {
             "schema": {
@@ -1641,7 +2234,20 @@
                       "type": "string",
                       "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
                     },
+                    "client_type": {
+                      "type": "string",
+                      "enum": [
+                        "confidential",
+                        "public"
+                      ]
+                    },
                     "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "post_logout_redirect_uris": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -1659,7 +2265,41 @@
                     "logo_uri": {
                       "type": "string"
                     },
+                    "application_type": {
+                      "type": "string"
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string"
+                    },
+                    "require_pkce": {
+                      "type": "boolean"
+                    },
                     "status": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "owned_by_caller": {
+                      "type": "boolean",
+                      "description": "Whether the caller is the owner of this registration."
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "last_modified_at": {
                       "type": "string"
                     }
                   },
@@ -1668,6 +2308,7 @@
                 "example": {
                   "client_id": "acme-portal",
                   "client_name": "Acme Portal",
+                  "client_type": "confidential",
                   "redirect_uris": [
                     "https://acme.example/callback"
                   ],
@@ -1676,13 +2317,14 @@
                     "refresh_token"
                   ],
                   "scope": "openid profile",
-                  "status": "active"
+                  "status": "active",
+                  "owned_by_caller": true
                 }
               }
             }
           },
           "401": {
-            "description": "No registration credential.",
+            "description": "No valid access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1692,7 +2334,7 @@
             }
           },
           "404": {
-            "description": "No such client.",
+            "description": "No such client within this caller's reach.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1701,8 +2343,8 @@
               }
             }
           },
-          "503": {
-            "description": "The administrative surface is not configured.",
+          "409": {
+            "description": "That registration is withdrawn, so it has no credential to rotate.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3256,6 +3898,347 @@
         }
       }
     },
+    "/realms/{realm}/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "summary": "Where an account is signed in",
+        "tags": [
+          "sessions"
+        ],
+        "description": "No applicable standard. A caller always sees their own sessions; seeing another principal's requires a role whose scope reaches beyond the holder, and asking without one narrows the answer to the caller rather than refusing it, because a person is always entitled to their own. The origin is a short fingerprint of values stored hashed, never the address or the user agent themselves.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "subjectId",
+            "required": false,
+            "description": "Another principal. Requires a realm-wide role."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "mine",
+                "realm"
+              ],
+              "default": "mine"
+            },
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "description": "`realm` lists every live session in the realm. Requires a realm-wide role."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "in": "query",
+            "name": "skip",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The live sessions in view, and how many there are.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The live sessions in view, and how many there are.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessions",
+                    "total",
+                    "scope"
+                  ],
+                  "properties": {
+                    "sessions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "sessionId",
+                          "subjectId",
+                          "createdAt",
+                          "lastSeenAt",
+                          "expiresAt",
+                          "idleExpiresAt",
+                          "clientIds",
+                          "current"
+                        ],
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "subjectId": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "description": "Absolute end, regardless of activity."
+                          },
+                          "idleExpiresAt": {
+                            "type": "string",
+                            "description": "Rolling end, moved forward on use."
+                          },
+                          "clientIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Every application holding a token from this session, and therefore told when it ends."
+                          },
+                          "current": {
+                            "type": "boolean",
+                            "description": "True for the session the calling token was issued under."
+                          },
+                          "origin": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "description": "Coarse only. The address and the user agent are stored hashed, never raw, so a session record is not a place personal data accumulates.",
+                            "properties": {
+                              "addressFingerprint": {
+                                "type": "string"
+                              },
+                              "deviceFingerprint": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "example": {
+                          "sessionId": "c41a7de0-90b1-4c1e-9f2a-8d5b3e7c0a12",
+                          "subjectId": "a1000070-0000-4000-8000-000000000070",
+                          "createdAt": "2026-08-31T08:41:00.000Z",
+                          "lastSeenAt": "2026-08-31T09:58:00.000Z",
+                          "expiresAt": "2026-08-31T20:41:00.000Z",
+                          "idleExpiresAt": "2026-08-31T10:28:00.000Z",
+                          "clientIds": [
+                            "giam-console"
+                          ],
+                          "current": true,
+                          "origin": {
+                            "addressFingerprint": "3f9c1a7e",
+                            "deviceFingerprint": "b21d80f4"
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "mine",
+                        "realm"
+                      ],
+                      "description": "What was actually answered, which may be narrower than what was asked."
+                    }
+                  }
+                },
+                "example": {
+                  "sessions": [
+                    {
+                      "sessionId": "c41a7de0-90b1-4c1e-9f2a-8d5b3e7c0a12",
+                      "subjectId": "a1000070-0000-4000-8000-000000000070",
+                      "createdAt": "2026-08-31T08:41:00.000Z",
+                      "lastSeenAt": "2026-08-31T09:58:00.000Z",
+                      "expiresAt": "2026-08-31T20:41:00.000Z",
+                      "idleExpiresAt": "2026-08-31T10:28:00.000Z",
+                      "clientIds": [
+                        "giam-console"
+                      ],
+                      "current": true,
+                      "origin": {
+                        "addressFingerprint": "3f9c1a7e",
+                        "deviceFingerprint": "b21d80f4"
+                      }
+                    }
+                  ],
+                  "total": 1,
+                  "scope": "mine"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Another principal was named and no role held reaches them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "terminateSession",
+        "summary": "End a session everywhere",
+        "tags": [
+          "sessions"
+        ],
+        "description": "Standard-adjacent: the termination is delivered as an OpenID Connect Back-Channel Logout 1.0 notification to every application holding a token from it. The record is terminated, the tokens issued under it are revoked, and the principal's epoch is raised so anything the authority never recorded is retired with it. A session belonging to somebody else is not found rather than refused, so this cannot be used to learn which identifiers are real.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ended, and who was told.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Ended, and who was told.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "terminated",
+                    "sessionId",
+                    "revokedTokens",
+                    "wasCurrentSession"
+                  ],
+                  "properties": {
+                    "terminated": {
+                      "type": "boolean"
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "revokedTokens": {
+                      "type": "integer"
+                    },
+                    "wasCurrentSession": {
+                      "type": "boolean",
+                      "description": "True when the caller ended the session their own token came from, so the caller is now signed out."
+                    },
+                    "notified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "notificationFailures": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "terminated": true,
+                  "sessionId": "c41a7de0-90b1-4c1e-9f2a-8d5b3e7c0a12",
+                  "revokedTokens": 3,
+                  "wasCurrentSession": false,
+                  "notified": [
+                    "giam-console"
+                  ],
+                  "notificationFailures": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such live session this caller can reach.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/grants": {
       "get": {
         "operationId": "listGrants",
@@ -4015,6 +4998,479 @@
         }
       }
     },
+    "/realms/{realm}/signing-keys": {
+      "get": {
+        "operationId": "listSigningKeys",
+        "summary": "The realm's published key set",
+        "tags": [
+          "keys"
+        ],
+        "description": "No applicable standard for this administrative view; the keys themselves are RFC 7517 and are served publicly at the realm's JWKS endpoint. This one adds custody: which replica holds each private half, whether its lease is still current, and whether a key that stopped signing is still published so tokens already signed with it keep verifying. No private material appears in this response at any authorization level.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every key in the realm's set, and the custody mode in force.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Every key in the realm's set, and the custody mode in force.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "keys",
+                    "provider",
+                    "externalCustody",
+                    "rotatable",
+                    "instanceId"
+                  ],
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "kid",
+                          "keyId",
+                          "algorithm",
+                          "use",
+                          "provider",
+                          "status",
+                          "phase",
+                          "phaseReason",
+                          "signingEligible",
+                          "leaseLapsed",
+                          "notBefore",
+                          "ownedByThisInstance",
+                          "externalCustody"
+                        ],
+                        "properties": {
+                          "kid": {
+                            "type": "string",
+                            "description": "RFC 7638 thumbprint. What a verifier resolves against the published set."
+                          },
+                          "keyId": {
+                            "type": "string"
+                          },
+                          "algorithm": {
+                            "type": "string",
+                            "enum": [
+                              "RS256",
+                              "ES256"
+                            ]
+                          },
+                          "use": {
+                            "type": "string",
+                            "enum": [
+                              "sig"
+                            ]
+                          },
+                          "keySize": {
+                            "type": "integer"
+                          },
+                          "provider": {
+                            "type": "string",
+                            "description": "The custody mode that holds the private half."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "deprecated",
+                              "revoked"
+                            ]
+                          },
+                          "phase": {
+                            "type": "string",
+                            "enum": [
+                              "signing",
+                              "published",
+                              "retired",
+                              "revoked"
+                            ],
+                            "description": "Signing, or lapsed but still published so what it signed keeps verifying, or past its grace."
+                          },
+                          "phaseReason": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "type": "string",
+                            "description": "Which replica holds the private half. Absent when custody is external."
+                          },
+                          "ownedByThisInstance": {
+                            "type": "boolean"
+                          },
+                          "externalCustody": {
+                            "type": "boolean"
+                          },
+                          "leaseExpiresAt": {
+                            "type": "string"
+                          },
+                          "leaseLapsed": {
+                            "type": "boolean"
+                          },
+                          "signingEligible": {
+                            "type": "boolean"
+                          },
+                          "notBefore": {
+                            "type": "string"
+                          },
+                          "notAfter": {
+                            "type": "string",
+                            "description": "When it stops being published. Until then a verifier still accepts it."
+                          },
+                          "rotatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "example": {
+                          "kid": "Yx3-8fQb1Rk2m0PZq7cJd5AeT9nLpUvB",
+                          "keyId": "key-Yx3-8fQb1Rk2m0",
+                          "algorithm": "RS256",
+                          "use": "sig",
+                          "keySize": 2048,
+                          "provider": "instance-local",
+                          "status": "active",
+                          "phase": "signing",
+                          "phaseReason": "Offered for signing by the replica that holds it, and published for verification.",
+                          "instanceId": "giam-0",
+                          "ownedByThisInstance": true,
+                          "externalCustody": false,
+                          "leaseExpiresAt": "2026-08-31T10:05:00.000Z",
+                          "leaseLapsed": false,
+                          "signingEligible": true,
+                          "notBefore": "2026-08-31T10:00:00.000Z"
+                        }
+                      }
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "externalCustody": {
+                      "type": "boolean",
+                      "description": "True when the private key is held outside this deployment."
+                    },
+                    "rotatable": {
+                      "type": "boolean",
+                      "description": "False when rotation belongs where custody is, not here."
+                    },
+                    "instanceId": {
+                      "type": "string",
+                      "description": "This replica, so \"yours\" is answerable in the list."
+                    },
+                    "leaseSeconds": {
+                      "type": "integer"
+                    },
+                    "publicationGraceSeconds": {
+                      "type": "integer",
+                      "description": "How long a lapsed key stays published, at least the maximum token lifetime."
+                    }
+                  }
+                },
+                "example": {
+                  "keys": [
+                    {
+                      "kid": "Yx3-8fQb1Rk2m0PZq7cJd5AeT9nLpUvB",
+                      "keyId": "key-Yx3-8fQb1Rk2m0",
+                      "algorithm": "RS256",
+                      "use": "sig",
+                      "keySize": 2048,
+                      "provider": "instance-local",
+                      "status": "active",
+                      "phase": "signing",
+                      "phaseReason": "Offered for signing by the replica that holds it, and published for verification.",
+                      "instanceId": "giam-0",
+                      "ownedByThisInstance": true,
+                      "externalCustody": false,
+                      "leaseExpiresAt": "2026-08-31T10:05:00.000Z",
+                      "leaseLapsed": false,
+                      "signingEligible": true,
+                      "notBefore": "2026-08-31T10:00:00.000Z"
+                    }
+                  ],
+                  "provider": "instance-local",
+                  "externalCustody": false,
+                  "rotatable": true,
+                  "instanceId": "giam-0",
+                  "leaseSeconds": 300,
+                  "publicationGraceSeconds": 3600
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/signing-keys/rotate": {
+      "post": {
+        "operationId": "rotateSigningKey",
+        "summary": "Replace this replica's signing key",
+        "tags": [
+          "keys"
+        ],
+        "description": "No applicable standard. The new key is published before the old one stops signing, so the realm is never without a signer, and the old one keeps its place in the published set for the grace period because the tokens it signed have not expired. Refused when custody is external: a provider that reported success while the key stayed where it was would be worse than one that says it cannot.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new key, and what became of the old one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The new key, and what became of the old one.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kid"
+                  ],
+                  "properties": {
+                    "kid": {
+                      "type": "string"
+                    },
+                    "previousKid": {
+                      "type": "string"
+                    },
+                    "previousPublishedUntil": {
+                      "type": "string",
+                      "description": "Until when the outgoing key still verifies."
+                    }
+                  }
+                },
+                "example": {
+                  "kid": "Nq7-2bWc9Xt4h1RGm8vJz3EyD6sKpAoL",
+                  "previousKid": "Yx3-8fQb1Rk2m0PZq7cJd5AeT9nLpUvB",
+                  "previousPublishedUntil": "2026-08-31T11:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits rotating this realm's keys.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Custody is external, so rotation does not belong here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/signing-keys/{kid}/retire": {
+      "post": {
+        "operationId": "retireSigningKey",
+        "summary": "Stop publishing a key",
+        "tags": [
+          "keys"
+        ],
+        "description": "No applicable standard. Withdrawing a key from the published set means every token signed with it stops verifying, including ones somebody is holding right now. That is the right action for a key believed compromised and the wrong one for tidiness, so a key still inside its publication window is refused until the caller acknowledges the breakage.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "acknowledgeTokenBreakage": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Required while the key is still published, because live tokens depend on it."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "kid",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Withdrawn from the published set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Withdrawn from the published set.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "retired",
+                    "kid"
+                  ],
+                  "properties": {
+                    "retired": {
+                      "type": "boolean"
+                    },
+                    "kid": {
+                      "type": "string"
+                    },
+                    "warning": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "retired": true,
+                  "kid": "Yx3-8fQb1Rk2m0PZq7cJd5AeT9nLpUvB",
+                  "warning": "This key is still published. Tokens already signed with it stop verifying the moment it is withdrawn, so anybody holding one is signed out at their next request."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits retiring this realm's keys.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such key in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Live tokens depend on it and the breakage was not acknowledged, or it is already out of the set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/provisioning/reconcile": {
       "post": {
         "operationId": "reconcileProvisioning",
@@ -4658,13 +6114,25 @@
             }
           },
           "401": {
-            "description": "No provisioning credential.",
+            "description": "No access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "description": "No provisioning credential."
+                  "description": "No access token and no operator credential."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "No role held permits administering the directory."
                 }
               }
             }
@@ -4677,18 +6145,6 @@
                   "type": "object",
                   "additionalProperties": true,
                   "description": "No such realm."
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The provisioning surface is not configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "The provisioning surface is not configured."
                 }
               }
             }
@@ -4827,13 +6283,25 @@
             }
           },
           "401": {
-            "description": "No provisioning credential.",
+            "description": "No access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "description": "No provisioning credential."
+                  "description": "No access token and no operator credential."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "No role held permits administering the directory."
                 }
               }
             }
@@ -4858,18 +6326,6 @@
                   "type": "object",
                   "additionalProperties": true,
                   "description": "That user name already exists."
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The provisioning surface is not configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "The provisioning surface is not configured."
                 }
               }
             }
@@ -4975,13 +6431,25 @@
             }
           },
           "401": {
-            "description": "No provisioning credential.",
+            "description": "No access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "description": "No provisioning credential."
+                  "description": "No access token and no operator credential."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "No role held permits administering the directory."
                 }
               }
             }
@@ -4994,18 +6462,6 @@
                   "type": "object",
                   "additionalProperties": true,
                   "description": "No such principal."
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The provisioning surface is not configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "The provisioning surface is not configured."
                 }
               }
             }
@@ -5161,13 +6617,25 @@
             }
           },
           "401": {
-            "description": "No provisioning credential.",
+            "description": "No access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "description": "No provisioning credential."
+                  "description": "No access token and no operator credential."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "No role held permits administering the directory."
                 }
               }
             }
@@ -5180,18 +6648,6 @@
                   "type": "object",
                   "additionalProperties": true,
                   "description": "No such principal."
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The provisioning surface is not configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "The provisioning surface is not configured."
                 }
               }
             }
@@ -5240,20 +6696,32 @@
             }
           },
           "401": {
-            "description": "No provisioning credential.",
+            "description": "No access token and no operator credential.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "description": "No provisioning credential."
+                  "description": "No access token and no operator credential."
                 },
                 "example": {
                   "schemas": [
                     "urn:ietf:params:scim:api:messages:2.0:Error"
                   ],
                   "status": "401",
-                  "detail": "A valid provisioning credential is required."
+                  "detail": "A valid access token or the operator credential is required."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "No role held permits administering the directory."
                 }
               }
             }
@@ -5266,18 +6734,6 @@
                   "type": "object",
                   "additionalProperties": true,
                   "description": "No such principal."
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The provisioning surface is not configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "description": "The provisioning surface is not configured."
                 }
               }
             }
@@ -5433,6 +6889,2368 @@
           },
           "503": {
             "description": "No administrative credential is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/administrable-realms": {
+      "get": {
+        "operationId": "listAdministrableRealms",
+        "summary": "Which realms the caller may administer",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard; this is the multi-realm administration model, where a principal has one home realm and may hold assignments there that name another realm. The home realm is always first in the answer and is always present. A caller with no cross-realm grant gets exactly one entry, which is the ordinary case and the reason a client can render a switcher only when there is something to switch between. The permissions are reported per realm because they differ: a grant over another realm is usually narrower than what its holder has at home.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The realms this principal may administer, home realm first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The realms this principal may administer, home realm first.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "realms"
+                  ],
+                  "properties": {
+                    "realms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "realmId",
+                          "name",
+                          "displayName",
+                          "home",
+                          "roles",
+                          "permissions"
+                        ],
+                        "properties": {
+                          "realmId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "What a request path names this realm."
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "home": {
+                            "type": "boolean",
+                            "description": "True for the realm that issues this principal's tokens."
+                          },
+                          "roles": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "resource",
+                                "action"
+                              ],
+                              "properties": {
+                                "resource": {
+                                  "type": "string"
+                                },
+                                "action": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "description": "What the caller holds IN that realm, which is usually narrower away from home."
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "realms": [
+                    {
+                      "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
+                      "name": "acme",
+                      "displayName": "Acme",
+                      "home": true,
+                      "roles": [
+                        "manager"
+                      ],
+                      "permissions": [
+                        {
+                          "resource": "identities",
+                          "action": "view"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/realm-grants": {
+      "get": {
+        "operationId": "listRealmGrants",
+        "summary": "Assignments in this realm that name another realm",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard; multi-realm administration. Every grant that crosses an isolation boundary is listed here in the realm that HOLDS it, because that is the realm whose principals it empowers and the realm whose administrator can take it back. A crossing nobody can enumerate is the one an auditor cannot ask about.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every cross-realm grant held in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Every cross-realm grant held in this realm.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "grants"
+                  ],
+                  "properties": {
+                    "grants": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "assignmentId",
+                          "subjectId",
+                          "roleId"
+                        ],
+                        "properties": {
+                          "assignmentId": {
+                            "type": "string"
+                          },
+                          "subjectId": {
+                            "type": "string"
+                          },
+                          "roleId": {
+                            "type": "string"
+                          },
+                          "roleName": {
+                            "type": "string"
+                          },
+                          "targetRealmId": {
+                            "type": "string"
+                          },
+                          "targetRealm": {
+                            "type": "string"
+                          },
+                          "grantedBy": {
+                            "type": "string"
+                          },
+                          "grantedAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          },
+                          "justification": {
+                            "type": "string"
+                          }
+                        },
+                        "example": {
+                          "assignmentId": "rgrant-9f21",
+                          "subjectId": "sub-4821",
+                          "roleId": "role-security-auditor",
+                          "roleName": "security_auditor",
+                          "targetRealmId": "d1a2b3c4-0001-0001-0001-000000000009",
+                          "targetRealm": "partner",
+                          "grantedBy": "sub-1180",
+                          "grantedAt": "2026-08-30T09:00:00.000Z",
+                          "justification": "Oversight of both realms during the migration."
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "grants": [
+                    {
+                      "assignmentId": "rgrant-9f21",
+                      "subjectId": "sub-4821",
+                      "roleId": "role-security-auditor",
+                      "roleName": "security_auditor",
+                      "targetRealmId": "d1a2b3c4-0001-0001-0001-000000000009",
+                      "targetRealm": "partner",
+                      "grantedBy": "sub-1180",
+                      "grantedAt": "2026-08-30T09:00:00.000Z",
+                      "justification": "Oversight of both realms during the migration."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits reading assignments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "grantRealmAdministration",
+        "summary": "Let a principal of this realm administer another",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard; multi-realm administration. The assignment is written in the principal's own realm and its scope names the realm it reaches, so the principal gains no second identity, no second set of credentials and no token any other realm would accept. The role is one of THIS realm's roles, because a realm does not get to name another realm's roles. Granting one is recorded naming both realms.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "subjectId",
+                  "targetRealm",
+                  "roleName",
+                  "justification"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subjectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A principal of this realm."
+                  },
+                  "targetRealm": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The realm to be administered, by name."
+                  },
+                  "roleName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A role of THIS realm, whose permissions the grant carries."
+                  },
+                  "justification": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why the boundary is being crossed. Required, because a crossing with no stated reason cannot be reviewed."
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "description": "When the grant lapses. Absent means it stands until revoked."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The grant, in force.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "assignmentId",
+                    "subjectId",
+                    "roleId"
+                  ],
+                  "properties": {
+                    "assignmentId": {
+                      "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string"
+                    },
+                    "roleId": {
+                      "type": "string"
+                    },
+                    "roleName": {
+                      "type": "string"
+                    },
+                    "targetRealmId": {
+                      "type": "string"
+                    },
+                    "targetRealm": {
+                      "type": "string"
+                    },
+                    "grantedBy": {
+                      "type": "string"
+                    },
+                    "grantedAt": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "justification": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "The grant, in force."
+                },
+                "example": {
+                  "assignmentId": "rgrant-9f21",
+                  "subjectId": "sub-4821",
+                  "roleId": "role-security-auditor",
+                  "roleName": "security_auditor",
+                  "targetRealmId": "d1a2b3c4-0001-0001-0001-000000000009",
+                  "targetRealm": "partner",
+                  "grantedBy": "sub-1180",
+                  "grantedAt": "2026-08-30T09:00:00.000Z",
+                  "justification": "Oversight of both realms during the migration."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The target realm is this realm, or the request is incomplete.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits managing assignments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm, principal or role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That principal already administers that realm through that role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/realm-grants/{assignmentId}": {
+      "delete": {
+        "operationId": "revokeRealmGrant",
+        "summary": "Take back administration of another realm",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard; multi-realm administration. The grant is deleted rather than left to expire, and takes effect at once: permissions are resolved from the stored assignment on every request, so nothing survives in a token that was already issued beyond its own short life. Recorded naming both realms, like the grant was.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "assignmentId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Revoked.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "revoked",
+                    "assignmentId"
+                  ],
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    },
+                    "assignmentId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "revoked": true,
+                  "assignmentId": "rgrant-9f21"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits managing assignments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such cross-realm grant in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/roles": {
+      "get": {
+        "operationId": "listRoles",
+        "summary": "The roles this realm defines",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Each row carries what the role grants directly and what it grants once composition through its parents is resolved, because the two differ and only one of them is what a token will actually carry. The assignment count is here rather than a screen away: a role nobody holds and a role everybody holds are different objects.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Case-insensitive match on name, display name or description."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "in": "query",
+            "name": "skip",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The roles defined in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The roles defined in this realm.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "roles",
+                    "total"
+                  ],
+                  "properties": {
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "roleId",
+                          "name",
+                          "displayName",
+                          "scopeKind",
+                          "builtin"
+                        ],
+                        "properties": {
+                          "roleId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "scopeKind": {
+                            "type": "string",
+                            "enum": [
+                              "self",
+                              "all"
+                            ],
+                            "description": "`self` reaches only the holder's own records; `all` is realm wide."
+                          },
+                          "builtin": {
+                            "type": "boolean"
+                          },
+                          "parentRoleIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "ownPermissionCount": {
+                            "type": "integer"
+                          },
+                          "effectivePermissionCount": {
+                            "type": "integer"
+                          },
+                          "assignmentCount": {
+                            "type": "integer"
+                          }
+                        },
+                        "example": {
+                          "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                          "name": "realm_administrator",
+                          "displayName": "Realm administrator",
+                          "description": "Administers the identities, roles, keys and sessions of one realm.",
+                          "scopeKind": "all",
+                          "builtin": true,
+                          "parentRoleIds": [],
+                          "ownPermissionCount": 14,
+                          "effectivePermissionCount": 14,
+                          "assignmentCount": 1
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "roles": [
+                    {
+                      "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                      "name": "realm_administrator",
+                      "displayName": "Realm administrator",
+                      "description": "Administers the identities, roles, keys and sessions of one realm.",
+                      "scopeKind": "all",
+                      "builtin": true,
+                      "parentRoleIds": [],
+                      "ownPermissionCount": 14,
+                      "effectivePermissionCount": 14,
+                      "assignmentCount": 1
+                    }
+                  ],
+                  "total": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRole",
+        "summary": "Define a role",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Every permission named has to be one a resource server already registered, and one that is not is refused rather than stored: the authority grants what applications say they enforce, and a role granting something nothing checks looks identical to one that works.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[a-zA-Z0-9._-]+$"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "scopeKind": {
+                    "type": "string",
+                    "enum": [
+                      "self",
+                      "all"
+                    ],
+                    "default": "self"
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "resource",
+                        "action"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "resource": {
+                          "type": "string"
+                        },
+                        "action": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "parentRoleIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sodRationale": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The role as defined.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "roleId",
+                    "name",
+                    "displayName",
+                    "scopeKind",
+                    "builtin",
+                    "ownPermissions",
+                    "effectivePermissions"
+                  ],
+                  "properties": {
+                    "roleId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "scopeKind": {
+                      "type": "string",
+                      "enum": [
+                        "self",
+                        "all"
+                      ],
+                      "description": "`self` reaches only the holder's own records; `all` is realm wide."
+                    },
+                    "builtin": {
+                      "type": "boolean"
+                    },
+                    "parentRoleIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "ownPermissionCount": {
+                      "type": "integer"
+                    },
+                    "effectivePermissionCount": {
+                      "type": "integer"
+                    },
+                    "assignmentCount": {
+                      "type": "integer"
+                    },
+                    "parents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "roleId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "ownPermissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resource",
+                          "action",
+                          "resourceServer",
+                          "via",
+                          "inherited",
+                          "unenforced"
+                        ],
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resourceServer": {
+                            "type": "string",
+                            "description": "The application that declared this enforcement point."
+                          },
+                          "via": {
+                            "type": "string",
+                            "description": "The role it actually comes from, which differs when it is inherited."
+                          },
+                          "inherited": {
+                            "type": "boolean"
+                          },
+                          "unenforced": {
+                            "type": "boolean",
+                            "description": "No resource server declares it, so nothing checks it."
+                          }
+                        }
+                      }
+                    },
+                    "effectivePermissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resource",
+                          "action",
+                          "resourceServer",
+                          "via",
+                          "inherited",
+                          "unenforced"
+                        ],
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resourceServer": {
+                            "type": "string",
+                            "description": "The application that declared this enforcement point."
+                          },
+                          "via": {
+                            "type": "string",
+                            "description": "The role it actually comes from, which differs when it is inherited."
+                          },
+                          "inherited": {
+                            "type": "boolean"
+                          },
+                          "unenforced": {
+                            "type": "boolean",
+                            "description": "No resource server declares it, so nothing checks it."
+                          }
+                        }
+                      },
+                      "description": "What the role grants once composition through its parents is resolved."
+                    },
+                    "sodRationale": {
+                      "type": "string"
+                    },
+                    "denialRationale": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "created": {
+                      "type": "string"
+                    },
+                    "lastModified": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "The role as defined."
+                },
+                "example": {
+                  "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                  "name": "realm_administrator",
+                  "displayName": "Realm administrator",
+                  "description": "Administers the identities, roles, keys and sessions of one realm.",
+                  "scopeKind": "all",
+                  "builtin": true,
+                  "parentRoleIds": [],
+                  "ownPermissionCount": 14,
+                  "effectivePermissionCount": 14,
+                  "assignmentCount": 1,
+                  "parents": [],
+                  "ownPermissions": [
+                    {
+                      "resource": "roles",
+                      "action": "view",
+                      "resourceServer": "authority",
+                      "via": "realm_administrator",
+                      "inherited": false,
+                      "unenforced": false
+                    }
+                  ],
+                  "effectivePermissions": [
+                    {
+                      "resource": "roles",
+                      "action": "view",
+                      "resourceServer": "authority",
+                      "via": "realm_administrator",
+                      "inherited": false,
+                      "unenforced": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A permission or a parent that does not exist was named.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That name is taken, or the composition would loop.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/permissions": {
+      "get": {
+        "operationId": "listPermissionCatalog",
+        "summary": "Every permission a role could be given",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. The union of the enforcement points the realm's resource servers have registered. It is a separate read from the roles themselves because a role can only ever grant what an application declared it enforces, and building one against a list of free text would produce permissions nothing checks.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The declared enforcement points.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The declared enforcement points.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "permissions"
+                  ],
+                  "properties": {
+                    "permissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resource",
+                          "action",
+                          "resourceServer"
+                        ],
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "resourceServer": {
+                            "type": "string"
+                          },
+                          "deprecated": {
+                            "type": "boolean",
+                            "description": "No longer declared, kept because grants reference it."
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "permissions": [
+                    {
+                      "resource": "roles",
+                      "action": "manage",
+                      "description": "manage on roles",
+                      "resourceServer": "authority",
+                      "deprecated": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/roles/{roleId}": {
+      "get": {
+        "operationId": "getRole",
+        "summary": "One role, with everything it inherits",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Both permission sets are returned: what the role states itself and what it grants once its parents are resolved. A reader shown only the second cannot tell which line to edit, and one shown only the first does not know what the role actually does. Any recorded separation-of-duties reasoning travels with it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "roleId",
+                    "name",
+                    "displayName",
+                    "scopeKind",
+                    "builtin",
+                    "ownPermissions",
+                    "effectivePermissions"
+                  ],
+                  "properties": {
+                    "roleId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "scopeKind": {
+                      "type": "string",
+                      "enum": [
+                        "self",
+                        "all"
+                      ],
+                      "description": "`self` reaches only the holder's own records; `all` is realm wide."
+                    },
+                    "builtin": {
+                      "type": "boolean"
+                    },
+                    "parentRoleIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "ownPermissionCount": {
+                      "type": "integer"
+                    },
+                    "effectivePermissionCount": {
+                      "type": "integer"
+                    },
+                    "assignmentCount": {
+                      "type": "integer"
+                    },
+                    "parents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "roleId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "ownPermissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resource",
+                          "action",
+                          "resourceServer",
+                          "via",
+                          "inherited",
+                          "unenforced"
+                        ],
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resourceServer": {
+                            "type": "string",
+                            "description": "The application that declared this enforcement point."
+                          },
+                          "via": {
+                            "type": "string",
+                            "description": "The role it actually comes from, which differs when it is inherited."
+                          },
+                          "inherited": {
+                            "type": "boolean"
+                          },
+                          "unenforced": {
+                            "type": "boolean",
+                            "description": "No resource server declares it, so nothing checks it."
+                          }
+                        }
+                      }
+                    },
+                    "effectivePermissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resource",
+                          "action",
+                          "resourceServer",
+                          "via",
+                          "inherited",
+                          "unenforced"
+                        ],
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resourceServer": {
+                            "type": "string",
+                            "description": "The application that declared this enforcement point."
+                          },
+                          "via": {
+                            "type": "string",
+                            "description": "The role it actually comes from, which differs when it is inherited."
+                          },
+                          "inherited": {
+                            "type": "boolean"
+                          },
+                          "unenforced": {
+                            "type": "boolean",
+                            "description": "No resource server declares it, so nothing checks it."
+                          }
+                        }
+                      },
+                      "description": "What the role grants once composition through its parents is resolved."
+                    },
+                    "sodRationale": {
+                      "type": "string"
+                    },
+                    "denialRationale": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "created": {
+                      "type": "string"
+                    },
+                    "lastModified": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "The role."
+                },
+                "example": {
+                  "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                  "name": "realm_administrator",
+                  "displayName": "Realm administrator",
+                  "description": "Administers the identities, roles, keys and sessions of one realm.",
+                  "scopeKind": "all",
+                  "builtin": true,
+                  "parentRoleIds": [],
+                  "ownPermissionCount": 14,
+                  "effectivePermissionCount": 14,
+                  "assignmentCount": 1,
+                  "parents": [],
+                  "ownPermissions": [
+                    {
+                      "resource": "roles",
+                      "action": "view",
+                      "resourceServer": "authority",
+                      "via": "realm_administrator",
+                      "inherited": false,
+                      "unenforced": false
+                    }
+                  ],
+                  "effectivePermissions": [
+                    {
+                      "resource": "roles",
+                      "action": "view",
+                      "resourceServer": "authority",
+                      "via": "realm_administrator",
+                      "inherited": false,
+                      "unenforced": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such role in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateRole",
+        "summary": "Change what a role grants",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Partial: only the fields present are changed. The permission list is replaced rather than merged, because a role is a statement of what it grants and merging would make removing a permission impossible through this route. Built-in roles can be edited; setup recreates the fields it owns on the next run, which is stated here rather than discovered.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "scopeKind": {
+                    "type": "string",
+                    "enum": [
+                      "self",
+                      "all"
+                    ]
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "resource",
+                        "action"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "resource": {
+                          "type": "string"
+                        },
+                        "action": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "parentRoleIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sodRationale": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The role, as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "roleId",
+                    "name",
+                    "displayName",
+                    "scopeKind",
+                    "builtin",
+                    "ownPermissions",
+                    "effectivePermissions"
+                  ],
+                  "properties": {
+                    "roleId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "scopeKind": {
+                      "type": "string",
+                      "enum": [
+                        "self",
+                        "all"
+                      ],
+                      "description": "`self` reaches only the holder's own records; `all` is realm wide."
+                    },
+                    "builtin": {
+                      "type": "boolean"
+                    },
+                    "parentRoleIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "ownPermissionCount": {
+                      "type": "integer"
+                    },
+                    "effectivePermissionCount": {
+                      "type": "integer"
+                    },
+                    "assignmentCount": {
+                      "type": "integer"
+                    },
+                    "parents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "roleId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "ownPermissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resource",
+                          "action",
+                          "resourceServer",
+                          "via",
+                          "inherited",
+                          "unenforced"
+                        ],
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resourceServer": {
+                            "type": "string",
+                            "description": "The application that declared this enforcement point."
+                          },
+                          "via": {
+                            "type": "string",
+                            "description": "The role it actually comes from, which differs when it is inherited."
+                          },
+                          "inherited": {
+                            "type": "boolean"
+                          },
+                          "unenforced": {
+                            "type": "boolean",
+                            "description": "No resource server declares it, so nothing checks it."
+                          }
+                        }
+                      }
+                    },
+                    "effectivePermissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resource",
+                          "action",
+                          "resourceServer",
+                          "via",
+                          "inherited",
+                          "unenforced"
+                        ],
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resourceServer": {
+                            "type": "string",
+                            "description": "The application that declared this enforcement point."
+                          },
+                          "via": {
+                            "type": "string",
+                            "description": "The role it actually comes from, which differs when it is inherited."
+                          },
+                          "inherited": {
+                            "type": "boolean"
+                          },
+                          "unenforced": {
+                            "type": "boolean",
+                            "description": "No resource server declares it, so nothing checks it."
+                          }
+                        }
+                      },
+                      "description": "What the role grants once composition through its parents is resolved."
+                    },
+                    "sodRationale": {
+                      "type": "string"
+                    },
+                    "denialRationale": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "resource": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "created": {
+                      "type": "string"
+                    },
+                    "lastModified": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "The role, as it now stands."
+                },
+                "example": {
+                  "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                  "name": "realm_administrator",
+                  "displayName": "Realm administrator",
+                  "description": "Administers the identities, roles, keys and sessions of one realm.",
+                  "scopeKind": "all",
+                  "builtin": true,
+                  "parentRoleIds": [],
+                  "ownPermissionCount": 14,
+                  "effectivePermissionCount": 14,
+                  "assignmentCount": 1,
+                  "parents": [],
+                  "ownPermissions": [
+                    {
+                      "resource": "roles",
+                      "action": "view",
+                      "resourceServer": "authority",
+                      "via": "realm_administrator",
+                      "inherited": false,
+                      "unenforced": false
+                    }
+                  ],
+                  "effectivePermissions": [
+                    {
+                      "resource": "roles",
+                      "action": "view",
+                      "resourceServer": "authority",
+                      "via": "realm_administrator",
+                      "inherited": false,
+                      "unenforced": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A permission or a parent that does not exist was named.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such role in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The composition would loop.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteRole",
+        "summary": "Remove a role",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Refused while anything still depends on it, and the refusal names how many assignments or child roles do. Cascading would take authority away from everyone holding it in one unwatched moment, which is a decision nobody made.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Removed.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "removed",
+                    "roleId"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "roleId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "removed": true,
+                  "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such role in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Still assigned, composed into another role, or built in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/roles/{roleId}/assignments": {
+      "get": {
+        "operationId": "listRoleAssignments",
+        "summary": "Who holds this role",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Lapsed assignments are listed alongside live ones, because \"who used to hold this, and until when\" is the question asked after something goes wrong, and a list that quietly drops them cannot answer it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Everyone who holds or held this role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Everyone who holds or held this role.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "assignments"
+                  ],
+                  "properties": {
+                    "assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "assignmentId",
+                          "subjectId",
+                          "roleId",
+                          "grantedAt",
+                          "live"
+                        ],
+                        "properties": {
+                          "assignmentId": {
+                            "type": "string"
+                          },
+                          "subjectId": {
+                            "type": "string"
+                          },
+                          "roleId": {
+                            "type": "string"
+                          },
+                          "grantedAt": {
+                            "type": "string"
+                          },
+                          "grantedBy": {
+                            "type": "string"
+                          },
+                          "notBefore": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          },
+                          "ephemeral": {
+                            "type": "boolean"
+                          },
+                          "justification": {
+                            "type": "string"
+                          },
+                          "live": {
+                            "type": "boolean",
+                            "description": "False once an expiry has passed or a start has not arrived."
+                          }
+                        },
+                        "example": {
+                          "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
+                          "subjectId": "a1000070-0000-4000-8000-000000000070",
+                          "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                          "grantedAt": "2026-08-30T09:12:00.000Z",
+                          "live": true
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "assignments": [
+                    {
+                      "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
+                      "subjectId": "a1000070-0000-4000-8000-000000000070",
+                      "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                      "grantedAt": "2026-08-30T09:12:00.000Z",
+                      "live": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such role in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "grantRoleAssignment",
+        "summary": "Give a principal this role",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. An assignment with an expiry is a time-bound elevation and is marked as one, so the expiry sweep can never touch a standing grant. The same record type expresses both, which is what makes an elevation listable and revocable in the way a stateless capability token is not.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "subjectId"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subjectId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Makes this an elevation rather than a standing grant."
+                  },
+                  "justification": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The assignment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "assignmentId",
+                    "subjectId",
+                    "roleId",
+                    "grantedAt",
+                    "live"
+                  ],
+                  "properties": {
+                    "assignmentId": {
+                      "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string"
+                    },
+                    "roleId": {
+                      "type": "string"
+                    },
+                    "grantedAt": {
+                      "type": "string"
+                    },
+                    "grantedBy": {
+                      "type": "string"
+                    },
+                    "notBefore": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "ephemeral": {
+                      "type": "boolean"
+                    },
+                    "justification": {
+                      "type": "string"
+                    },
+                    "live": {
+                      "type": "boolean",
+                      "description": "False once an expiry has passed or a start has not arrived."
+                    }
+                  },
+                  "description": "The assignment."
+                },
+                "example": {
+                  "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
+                  "subjectId": "a1000070-0000-4000-8000-000000000070",
+                  "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                  "grantedAt": "2026-08-30T09:12:00.000Z",
+                  "live": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such role in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That principal already holds this role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/role-assignments/{assignmentId}": {
+      "delete": {
+        "operationId": "revokeRoleAssignment",
+        "summary": "Take a role back from a principal",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Removes one assignment and nothing else: the role, and everyone else holding it, are untouched. It takes effect at the next token issued, which is why access-token lifetimes are short and why the irreversible operations introspect.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "assignmentId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Revoked.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "revoked",
+                    "assignmentId"
+                  ],
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    },
+                    "assignmentId": {
+                      "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string"
+                    },
+                    "roleId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "revoked": true,
+                  "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
+                  "subjectId": "a1000070-0000-4000-8000-000000000070",
+                  "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment in this realm.",
             "content": {
               "application/json": {
                 "schema": {

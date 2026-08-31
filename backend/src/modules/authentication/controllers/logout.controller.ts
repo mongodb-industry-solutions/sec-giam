@@ -1,11 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { createHmac } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { SessionService } from '../services/session.service';
+import { LogoutNotifier } from '../services/logoutNotifier.service';
 import { TokenIssuer } from '../../oauth/services/tokenIssuer.service';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
-import { JwtTokenFormat } from '../../oauth/services/jwtTokenFormat';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { ClientRecord } from '../../oauth/models/client.model';
 import { problem } from '../../../shared/models/problem';
@@ -21,59 +20,10 @@ import { problem } from '../../../shared/models/problem';
 export async function logoutController(fastify: FastifyInstance) {
   const ring = () => new KeyRing(new MongoSigningKeyStore(fastify.db));
 
-  /**
-   * A logout token, signed by the realm.
-   *
-   * The receiving application verifies it against the same published key set it already uses for
-   * access tokens, so single logout introduces no new trust relationship and no new secret.
-   */
-  async function logoutToken(realmIssuer: string, realmId: string, audience: string, subjectId: string, sessionId: string): Promise<string> {
-    const format = new JwtTokenFormat(ring(), realmId, 'logout+jwt');
-    const kid = await ring().signingKid(realmId);
-    const now = Math.floor(Date.now() / 1000);
-    return format.issue({
-      iss: realmIssuer,
-      aud: audience,
-      sub: subjectId,
-      iat: now,
-      // Short: a logout notification is acted on immediately or it is stale.
-      exp: now + 120,
-      sid: sessionId,
-      // The member that says this is a logout and not something else the authority signed.
-      events: { 'http://schemas.openid.net/event/backchannel-logout': {} },
-      jti: createHmac('sha256', sessionId).update(String(now)).digest('hex').slice(0, 32),
-    }, kid);
-  }
-
-  /**
-   * Delivers to each client, and never lets a delivery failure undo the logout.
-   *
-   * A receiver that is down must not keep a session alive. The bound on that case is the access
-   * token lifetime, which is short, and the revocation is already recorded here regardless.
-   */
-  async function notify(clients: ClientRecord[], realmIssuer: string, realmId: string, subjectId: string, sessionId: string) {
-    const delivered: string[] = [];
-    const failed: string[] = [];
-
-    await Promise.all(clients.map(async (client) => {
-      const endpoint = client.backchannel?.notificationEndpoint;
-      if (!endpoint) return;
-      try {
-        const token = await logoutToken(realmIssuer, realmId, client.clientId, subjectId, sessionId);
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ logout_token: token }),
-          signal: AbortSignal.timeout(3000),
-        });
-        (response.ok ? delivered : failed).push(client.clientId);
-      } catch {
-        failed.push(client.clientId);
-      }
-    }));
-
-    return { delivered, failed };
-  }
+  // Signing and delivering the notification is the same act wherever a session ends, so it lives in
+  // one service that the administrative session routes use too.
+  const notify = (clients: ClientRecord[], realmIssuer: string, realmId: string, subjectId: string, sessionId: string) =>
+    new LogoutNotifier(fastify.db).notify(clients, { issuer: realmIssuer, realmId }, subjectId, sessionId);
 
   fastify.post('/realms/:realm/protocol/openid-connect/logout', {
     schema: {

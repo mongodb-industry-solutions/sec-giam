@@ -12,6 +12,10 @@ import { problem } from '../../../shared/models/problem';
  * That split is the reason this exists here at all: when the capability lived in an application, the
  * application was also the only place that knew who held it, and nobody could ask across the
  * platform.
+ *
+ * Decisions name the caller's home realm and the realm in the path separately, so somebody who
+ * administers a second realm is judged by the grant that reaches it rather than by an assignment
+ * they do not have there.
  */
 export async function elevationController(fastify: FastifyInstance) {
   const base = '/realms/:realm/elevations';
@@ -155,7 +159,7 @@ export async function elevationController(fastify: FastifyInstance) {
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
     const decision = await new DecisionService(fastify.db)
-      .check(realm.realmId, caller.subjectId, caller.clientId, 'elevations', 'approve');
+      .checkIn(caller.homeRealmId, caller.subjectId, caller.clientId, 'elevations', 'approve', realm.realmId);
     if (decision.effect !== 'allow') return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
 
     const outcome = await new ElevationService(fastify.db).approve(realm, assignmentId, caller.subjectId);
@@ -206,7 +210,7 @@ export async function elevationController(fastify: FastifyInstance) {
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
     const decision = await new DecisionService(fastify.db)
-      .check(realm.realmId, caller.subjectId, caller.clientId, 'elevations', 'view');
+      .checkIn(caller.homeRealmId, caller.subjectId, caller.clientId, 'elevations', 'view', realm.realmId);
     if (decision.effect !== 'allow') return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
 
     const { state } = request.query as { state?: 'in-force' | 'pending' };
@@ -267,7 +271,7 @@ export async function elevationController(fastify: FastifyInstance) {
     // Giving up your own authority never needs a permission. Taking away somebody else's does.
     if (target && target.subjectId !== caller.subjectId) {
       const decision = await new DecisionService(fastify.db)
-        .check(realm.realmId, caller.subjectId, caller.clientId, 'elevations', 'manage');
+        .checkIn(caller.homeRealmId, caller.subjectId, caller.clientId, 'elevations', 'manage', realm.realmId);
       if (decision.effect !== 'allow') return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
     }
 

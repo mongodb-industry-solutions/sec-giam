@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ExternalLink, LayoutGrid } from 'lucide-react';
+import { ArrowRight, LayoutGrid } from 'lucide-react';
 import { SignInPanel, type SignedIn } from '../../components/SignInPanel';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Tooltip } from '../../components/Tooltip';
 import { callApi, currentClaims, displayName, isExpired, startOfToday, when, type Claims } from '../../lib/console';
 import { visibleSections } from '../../lib/consoleNav';
+import { useUserInfo } from '../../lib/profile';
 import { CONSOLE_CLIENT_ID, storedRealm } from '../../lib/session';
 import { BRAND } from '../../config/brand';
 
@@ -46,6 +47,8 @@ export default function ConsoleOverviewPage() {
   const [claims, setClaims] = useState<Claims | null>(null);
   const [checked, setChecked] = useState(false);
   const [realm, setRealm] = useState('');
+  // The heading names the person, which the token cannot do on its own.
+  useUserInfo();
 
   useEffect(() => {
     const found = currentClaims();
@@ -140,9 +143,7 @@ export default function ConsoleOverviewPage() {
               </div>
               <h2 className="mt-4 flex items-center gap-1.5 font-semibold text-[#001E2B]">
                 {section.label}
-                {section.external
-                  ? <ExternalLink size={13} className="text-gray-400" aria-hidden />
-                  : <ArrowRight size={14} className="text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#001E2B]" aria-hidden />}
+                <ArrowRight size={14} className="text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#001E2B]" aria-hidden />
               </h2>
               <p className="mt-1 text-sm leading-relaxed text-gray-500">{section.description}</p>
             </Link>

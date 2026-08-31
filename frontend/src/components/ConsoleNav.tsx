@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { activeSection, visibleSections, type ConsoleSection } from '../lib/consoleNav';
 import type { Claims } from '../lib/console';
 
@@ -72,7 +72,6 @@ export function ConsoleSidebar({ claims }: { claims: Claims | null }) {
             >
               <Icon size={16} className="shrink-0" />
               {!collapsed && <span className="truncate">{section.label}</span>}
-              {!collapsed && section.external && <ExternalLink size={11} className="ml-auto shrink-0 text-gray-500" />}
             </Link>
           );
         })}
