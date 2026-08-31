@@ -53,7 +53,7 @@ async function introspect(token: string) {
 }
 
 beforeAll(async () => {
-  const { buildApp } = await import('../../../../giam/backend/src/app');
+  const { buildApp } = await import('../../../backend/src/app');
   giam = await buildApp();
   await giam.ready();
 

@@ -49,7 +49,7 @@ Every operation declares its category:
 | **No applicable standard** | Plain REST: plural resources, correct verb semantics, \`PATCH\` for partial updates, RFC 9457 \`application/problem+json\` errors, \`ETag\` and \`If-Match\` on mutable resources, cursor pagination, \`Idempotency-Key\` on unsafe operations. |
 
 Public protocol endpoints live under a realm's issuer path; administrative ones live under
-\`/admin/\`, so a reader can tell them apart from the URL alone.
+\`/api/v1/admin/\`, so a reader can tell them apart from the URL alone.
 
 ## Realms
 

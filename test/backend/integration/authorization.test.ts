@@ -14,7 +14,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { clientSecretFor } from '@leafypay/platform-links';
 
-const DATA = resolve(__dirname, '../../../../giam/backend/data');
+const DATA = resolve(__dirname, '../../../backend/data');
 
 interface RoleFixture {
   realm: string;
@@ -103,7 +103,7 @@ let app: FastifyInstance;
 let realmName: string;
 
 beforeAll(async () => {
-  const { buildApp } = await import('../../../../giam/backend/src/app');
+  const { buildApp } = await import('../../../backend/src/app');
   app = await buildApp();
   await app.ready();
   realmName = roles[0].realm;
@@ -221,8 +221,8 @@ describe('v39 P6.7: a permission granted to a service identity is enforced end t
   });
 
   it('resolves a machine principal through the same decision point as a person', async () => {
-    const { DecisionService } = await import('../../../../giam/backend/src/modules/authorization/services/decision.service');
-    const { RealmService } = await import('../../../../giam/backend/src/modules/realm/services/realm.service');
+    const { DecisionService } = await import('../../../backend/src/modules/authorization/services/decision.service');
+    const { RealmService } = await import('../../../backend/src/modules/realm/services/realm.service');
     const realm = await new RealmService(app.db).byName(realmName);
     const decision = new DecisionService(app.db);
 
@@ -253,8 +253,8 @@ describe('v39 P6.7: a permission granted to a service identity is enforced end t
 
 describe('v39 P6: a person receives the permissions their role grants', () => {
   it('resolves an analyst to exactly the analyst matrix', async () => {
-    const { DecisionService } = await import('../../../../giam/backend/src/modules/authorization/services/decision.service');
-    const { RealmService } = await import('../../../../giam/backend/src/modules/realm/services/realm.service');
+    const { DecisionService } = await import('../../../backend/src/modules/authorization/services/decision.service');
+    const { RealmService } = await import('../../../backend/src/modules/realm/services/realm.service');
     const identities = JSON.parse(
       readFileSync(resolve(DATA, 'identities.json'), 'utf8'),
     ) as Array<{ subjectId: string; roleName?: string }>;
@@ -279,8 +279,8 @@ describe('v39 P6: a person receives the permissions their role grants', () => {
   });
 
   it('scopes an account holder to itself', async () => {
-    const { DecisionService } = await import('../../../../giam/backend/src/modules/authorization/services/decision.service');
-    const { RealmService } = await import('../../../../giam/backend/src/modules/realm/services/realm.service');
+    const { DecisionService } = await import('../../../backend/src/modules/authorization/services/decision.service');
+    const { RealmService } = await import('../../../backend/src/modules/realm/services/realm.service');
     const identities = JSON.parse(
       readFileSync(resolve(DATA, 'identities.json'), 'utf8'),
     ) as Array<{ subjectId: string; roleName?: string }>;

@@ -1,7 +1,10 @@
 import * as dotenv from 'dotenv';
 import { resolve } from 'path';
 
-dotenv.config({ path: resolve(__dirname, '../../../.env') });
+// The repo root .env, or backend/.env. Several candidates because this file runs both from source
+// (backend/src, backend/bin) and from the build output (backend/dist/...), which sit at different
+// depths; the first file that exists wins and a missing one is not an error.
+dotenv.config({ path: ['../.env', '../../.env', '../../../.env'].map((p) => resolve(__dirname, p)) });
 
 // Every GIAM variable carries the GIAM_ prefix. GIAM is a product other deployments reuse, so it owns
 // its own namespace and never reads another service's configuration.
@@ -98,6 +101,16 @@ export const config = {
     seedDataDir: giamEnv('SEED_DATA_DIR'),
     // Administrative surface credential, until GIAM issues its own administrative tokens (P6).
     adminToken: giamEnv('ADMIN_TOKEN'),
+    // The operator the console signs in as, and the SHA-256 of the password it must present. The
+    // plaintext is never configured, so a leaked configuration file does not hand over the console.
+    adminUser: giamEnv('ADMIN_USER'),
+    adminPasswordSha256: giamEnv('ADMIN_PASSWORD_SHA256'),
+    // Whether the console may run an arbitrary shell command. Configuration, not an environment check:
+    // the same build behaves the same way everywhere and the posture report says which way it is.
+    adminShell: bool(giamEnv('ADMIN_SHELL'), true),
+    // The checkout root the console runs scripts from. Explicit beats guessing from __dirname, which
+    // gains a level once the code is compiled.
+    projectRoot: giamEnv('PROJECT_ROOT'),
     // Swagger UI and the committed OpenAPI document.
     docsEnabled: bool(giamEnv('DOCS_ENABLED'), true),
   },

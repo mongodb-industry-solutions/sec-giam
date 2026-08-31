@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [develop, staging, giam]
+    branches: [main, staging, develop]
   pull_request:
 
 concurrency:
@@ -14,8 +14,8 @@ jobs:
   # Three failures this job catches that a reviewer would not: a route that exists and is not in the
   # document, a document committed from a source tree it no longer matches, and an operation missing
   # the error cases an integrator has to handle.
-  giam-contract:
-    name: GIAM API contract
+  contract:
+    name: API contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,36 +28,33 @@ jobs:
           npm install --no-audit --no-fund
           npm install --prefix packages/eventbus --no-audit --no-fund
           npm install --prefix packages/platform-links --no-audit --no-fund
-          npm install --prefix giam/backend --no-audit --no-fund
+          npm install --prefix backend --no-audit --no-fund
 
       - name: Type-check
-        run: npm run type-check --prefix giam/backend
+        run: npm run type-check --prefix backend
 
       - name: Re-emit the OpenAPI document
-        run: npm run openapi:emit --prefix giam/backend
+        run: npm run openapi:emit --prefix backend
 
       # The committed document must equal the one the current source produces. Without this the file
       # is a snapshot of whatever the author last remembered to regenerate.
       - name: The committed document matches the source
         run: |
-          if ! git diff --exit-code -- giam/backend/openapi.json; then
-            echo "::error::giam/backend/openapi.json is stale. Run: npm run openapi:emit --prefix giam/backend"
+          if ! git diff --exit-code -- backend/openapi.json; then
+            echo "::error::backend/openapi.json is stale. Run: npm run openapi:emit --prefix backend"
             exit 1
           fi
 
       - name: Spec-lint
-        run: npm run openapi:lint --prefix giam/backend
+        run: npm run openapi:lint --prefix backend
 
       # Route coverage, the "names a specification or says none applies" rule, and the
       # provably-public rule. None of them are expressible as a linter rule.
       - name: Contract tests
-        run: npx vitest run test/giam/backend/unit
+        run: npx vitest run test/backend/unit
 
-  # GIAM's own suite. Deliberately scoped to GIAM: between the extraction phases the other
-  # applications are expected to be broken, and a job that fails on them would stop reporting
-  # anything useful about the work actually in progress.
-  giam-tests:
-    name: GIAM unit tests
+  tests:
+    name: Unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +67,7 @@ jobs:
           npm install --no-audit --no-fund
           npm install --prefix packages/eventbus --no-audit --no-fund
           npm install --prefix packages/platform-links --no-audit --no-fund
-          npm install --prefix giam/backend --no-audit --no-fund
+          npm install --prefix backend --no-audit --no-fund
 
       - name: Unit tests
-        run: npx vitest run test/giam/backend/unit
+        run: npx vitest run test/backend/unit

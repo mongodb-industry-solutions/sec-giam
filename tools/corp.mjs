@@ -12,7 +12,7 @@
 //   --url <full-url>        exact host, wins over everything
 //   CORP_LOGIN_URL          env, exact full URL
 //   CORP_URL_TEMPLATE       env, template with {app} + {env} placeholders
-//   CORP_APP                env, just the app name (default sec-fsi-pci-dss-frontend), keeps the template
+//   CORP_APP                env, just the app name (default sec-giam-frontend), keeps the template
 //
 // First run (or once the session expires): a browser window opens; complete the Okta login (MFA
 // included), then press Enter in the terminal. Subsequent runs reuse the session silently.
@@ -62,7 +62,7 @@ const host = envName === 'prod' || envName === 'production' ? 'prod' : 'staging'
 //   3. CORP_URL_TEMPLATE env          template with {app} + {env} placeholders
 //   4. built-in default template      {app} defaults to CORP_APP (this project's frontend)
 // App name is its own placeholder ({app}) so you can keep the whole template and just swap the app.
-const appName = process.env.CORP_APP ?? 'sec-fsi-pci-dss-frontend';
+const appName = process.env.CORP_APP ?? 'sec-giam-frontend';
 const URL_TEMPLATE =
   process.env.CORP_URL_TEMPLATE ??
   'https://{app}.industrysolutions.{env}.corp.mongodb.com/';

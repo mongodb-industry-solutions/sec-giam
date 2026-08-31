@@ -1,9 +1,11 @@
 import fp from 'fastify-plugin';
 import { FastifyInstance } from 'fastify';
 import { Db } from 'mongodb';
+import * as dotenv from 'dotenv';
+import { resolve } from 'path';
 import { getQEClient, closeQEClient } from '../vendors/encryption/qeClient';
 import { initEventBus, getEventBus } from '../vendors/eventbus';
-import { config } from '../config';
+import { config, keyVaultNamespace } from '../config';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -37,6 +39,42 @@ async function teardownRuntime(): Promise<void> {
     await getEventBus().stop().catch(() => {});
   } catch { /* bus not initialised */ }
   await closeQEClient();
+}
+
+/**
+ * Rebuilds the datastore runtime in place, without restarting the process.
+ *
+ * A drop plus a setup plus a seed leaves this process holding a client bound to a key vault that no
+ * longer exists, and every encrypted read then fails with a driver-level message about unsatisfied
+ * keys. On a host an operator can restart that is a restart; on one they cannot, this is the only way
+ * back, and it is deliberately independent of the restart route.
+ */
+export async function reloadDbRuntime(fastify: FastifyInstance): Promise<{ steps: string[] }> {
+  const steps: string[] = [];
+  const started = Date.now();
+
+  // The same candidates the process started from, so a reload cannot read a different file than the
+  // boot did. A missing one is not an error: a container is configured through injected variables.
+  const candidates = ['../.env', '../../.env', '../../../.env'].map((p) => resolve(__dirname, p));
+  const result = dotenv.config({ path: candidates, override: true });
+  steps.push(result.error
+    ? 'no .env found, continuing with the current process environment'
+    : `.env reloaded (${Object.keys(result.parsed ?? {}).length} variable(s))`);
+
+  await teardownRuntime();
+  steps.push('torn down: event bus and the cached encrypted client');
+  await connectAndWire(fastify);
+  steps.push(`re-wired against database "${config.mongodb.dbName}"`);
+
+  try {
+    const dekCount = await fastify.db.collection(config.mongodb.keyVaultCollection).countDocuments();
+    steps.push(`key vault ${keyVaultNamespace()}: ${dekCount} key(s) available`);
+  } catch (err) {
+    steps.push(`key vault check skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  steps.push(`reload complete in ${Date.now() - started}ms`);
+  return { steps };
 }
 
 // Fault tolerant on purpose: the process still starts so the health and posture endpoints can report

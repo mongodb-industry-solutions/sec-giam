@@ -1,0 +1,43 @@
+{
+  "services": [
+    {
+      "id": "api-server",
+      "name": "Identity API",
+      "description": "The authority itself: runtime, encryption library and key custody",
+      "type": "api",
+      "url": "/api/v1/system/health",
+      "method": "GET",
+      "enabled": true,
+      "intervalMs": 30000,
+      "timeoutMs": 10000,
+      "expectedStatus": 200,
+      "useApiBase": true
+    },
+    {
+      "id": "mongodb",
+      "name": "Datastore",
+      "description": "Database connectivity, reported by the same probe a deployment uses",
+      "type": "atlas",
+      "url": "/api/v1/system/health",
+      "method": "GET",
+      "enabled": true,
+      "intervalMs": 30000,
+      "timeoutMs": 10000,
+      "expectedStatus": 200,
+      "useApiBase": true
+    },
+    {
+      "id": "console",
+      "name": "Console",
+      "description": "These pages and the sign-in screens. Probed at a file this origin serves itself, since /health on it is forwarded to the identity API",
+      "type": "http",
+      "url": "/favicon.ico",
+      "method": "GET",
+      "enabled": true,
+      "intervalMs": 60000,
+      "timeoutMs": 10000,
+      "expectedStatus": 200,
+      "useApiBase": false
+    }
+  ]
+}

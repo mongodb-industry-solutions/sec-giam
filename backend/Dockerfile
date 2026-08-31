@@ -1,5 +1,6 @@
 # ── GIAM, the identity and access authority ───────────────────────
-# Build context: repo root (docker compose sets context: .), like the other backends.
+# Build context: repo root (docker compose sets context: .), because the backend installs the shared
+# workspace packages under packages/ through file: paths.
 # ──────────────────────────────────────────────────────────────────
 
 FROM node:22-slim
@@ -31,25 +32,25 @@ ENV PORT=8080
 ENV GIAM_PORT=8080
 
 # ── Dependencies ──────────────────────────────────────────────────
-# Shared workspace packages first: GIAM installs them through file:, and their prepare script builds
-# dist/ during the install.
+# Shared workspace packages first: the backend installs them through file:, and their prepare script
+# builds dist/ during the install.
+COPY tsconfig.base.json ./
 COPY packages/ packages/
 RUN cd packages/eventbus && npm install
 RUN cd packages/platform-links && npm install
 
-COPY giam/backend/package.json giam/backend/
-RUN cd giam/backend && npm install
+COPY backend/package.json backend/
+RUN cd backend && npm install
 
 # ── Source ────────────────────────────────────────────────────────
-COPY giam/backend/ giam/backend/
-COPY tsconfig.base.json ./
+COPY backend/ backend/
 
-RUN cd giam/backend && npm run build
+RUN cd backend && npm run build
 
 # Where the instance-local key provider holds THIS replica's private key. Created before the ownership
 # change so the non-root user can write it, and never baked into the image: a signing key in an image
 # is a signing key in a registry, and this one signs every token on the platform.
-RUN mkdir -p /app/giam/backend/keys
+RUN mkdir -p /app/backend/keys
 
 # ── Runtime (non-root) ────────────────────────────────────────────
 RUN chown -R node:node /app
@@ -58,6 +59,6 @@ USER node
 EXPOSE 8080
 
 ENV NODE_ENV=production
-ENV GIAM_SEED_DATA_DIR=/app/giam/backend/data
+ENV GIAM_SEED_DATA_DIR=/app/backend/data
 
-CMD ["node", "giam/backend/dist/bin/server.js"]
+CMD ["node", "backend/dist/bin/server.js"]

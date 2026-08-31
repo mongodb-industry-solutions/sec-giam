@@ -1,0 +1,18 @@
+{
+  "name": "@leafypay/platform-links",
+  "version": "1.0.0",
+  "description": "Environment aware resolution of the platform's service links. Shared by the PSP and bankcore seeders so the \"which host in which environment\" logic exists once.",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^5.9.3"
+  }
+}

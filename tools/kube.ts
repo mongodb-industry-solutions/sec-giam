@@ -38,7 +38,7 @@ function contextName(apiUrl: string): string {
   return apiUrl.replace(/^https?:\/\//, "");
 }
 
-const DEMO_NAME = process.env.KUBE_DEMO_NAME ?? "sec-fsi-pci-dss";
+const DEMO_NAME = process.env.KUBE_DEMO_NAME ?? "sec-giam";
 const RELEASE_BACKEND = process.env.KUBE_RELEASE_BACKEND ?? `${DEMO_NAME}-backend`;
 const RELEASE_FRONTEND = process.env.KUBE_RELEASE_FRONTEND ?? `${DEMO_NAME}-frontend`;
 const RELEASE_MERCHANT = process.env.KUBE_RELEASE_MERCHANT ?? `${DEMO_NAME}-merchant`;
@@ -906,9 +906,8 @@ async function preDeployChecklist() {
   check(".drone.yml exists", existsSync(join(PROJECT_ROOT, ".drone.yml")));
   check("environments/staging.yaml", existsSync(join(PROJECT_ROOT, "environments", "staging.yaml")));
   check("environments/production.yaml", existsSync(join(PROJECT_ROOT, "environments", "production.yaml")));
-  check("psp/backend/Dockerfile exists", existsSync(join(PROJECT_ROOT, "psp/backend", "Dockerfile")));
-  check("psp/frontend/Dockerfile exists", existsSync(join(PROJECT_ROOT, "psp/frontend", "Dockerfile")));
-  check("bank/backend/Dockerfile exists", existsSync(join(PROJECT_ROOT, "bank/backend", "Dockerfile")));
+  check("backend/Dockerfile exists", existsSync(join(PROJECT_ROOT, "backend", "Dockerfile")));
+  check("frontend/Dockerfile exists", existsSync(join(PROJECT_ROOT, "frontend", "Dockerfile")));
 
   const color = failed === 0 ? GREEN : YELLOW;
   console.log(`\n  ${color}Result: ${passed} passed, ${failed} failed${NC}`);
@@ -1071,8 +1070,8 @@ async function deployEnvSetup() {
 
   step(".drone.yml", existsSync(join(PROJECT_ROOT, ".drone.yml")));
   step(`environments/${envLabel}.yaml`, existsSync(envYaml));
-  step("psp/backend/Dockerfile", existsSync(join(PROJECT_ROOT, "psp/backend", "Dockerfile")));
-  step("psp/frontend/Dockerfile", existsSync(join(PROJECT_ROOT, "psp/frontend", "Dockerfile")));
+  step("backend/Dockerfile", existsSync(join(PROJECT_ROOT, "backend", "Dockerfile")));
+  step("frontend/Dockerfile", existsSync(join(PROJECT_ROOT, "frontend", "Dockerfile")));
 
   // ── Summary ───────────────────────────────────────────────
   const total = passed + failed;
@@ -1095,6 +1094,12 @@ async function deployEnvSetup() {
 const BACKEND_SVC_URL = `http://${RELEASE_BACKEND}-web-app:80`;
 
 async function applyApiProxy() {
+  // Not applicable here. This is a one-shot migration that rewrites the LeafyPay PSP frontend's
+  // next.config.js and Dockerfile; the GIAM console already proxies same-origin through its own
+  // rewrites, so running it would overwrite a working configuration with another product's.
+  fail("apiproxy is a LeafyPay-only migration; the GIAM console already proxies same-origin.");
+  return;
+
   const dronePath = join(PROJECT_ROOT, ".drone.yml");
   const nextConfigPath = join(PROJECT_ROOT, "psp/frontend", "next.config.js");
   const dockerfilePath = join(PROJECT_ROOT, "psp/frontend", "Dockerfile");

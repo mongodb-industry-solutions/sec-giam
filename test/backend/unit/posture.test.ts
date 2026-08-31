@@ -7,12 +7,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { PORT_REGISTRIES } from '../../../../giam/backend/src/shared/ports';
-import { registerBuiltinPorts } from '../../../../giam/backend/src/shared/ports/builtins';
+import { PORT_REGISTRIES } from '../../../backend/src/shared/ports';
+import { registerBuiltinPorts } from '../../../backend/src/shared/ports/builtins';
 import {
   buildPostureReport, postureBanner,
-} from '../../../../giam/backend/src/modules/admin/services/posture.service';
-import { config } from '../../../../giam/backend/src/config';
+} from '../../../backend/src/modules/admin/services/posture.service';
+import { config } from '../../../backend/src/config';
 
 const RUNBOOK = readFileSync(resolve(__dirname, '../../../../giam/docs/runbook.md'), 'utf8');
 

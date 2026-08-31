@@ -1,0 +1,79 @@
+# GIAM staging values. Both releases (sec-giam and sec-giam-console) read
+# this one file, so it carries the API's variables and the console's single private address.
+env:
+  NODE_ENV: staging
+
+  # ── Addresses ──────────────────────────────────────────────────────────────────────────────────
+  # PRIVATE in-cluster service, for what a relying party calls server side: discovery, token,
+  # introspection, JWKS. The name is derived from the helm release by the web-app chart. GIAM is its
+  # own repository and its own release, so it owns this name; relying parties resolve it by
+  # configuration rather than by sharing a deployment with it.
+  GIAM_BASE_URL: "http://sec-giam-web-app:80"
+  # PUBLIC, and it has to be. A realm issuer URL is built from this value and ends up inside every
+  # token as `iss`, and the browser is redirected here to sign in. A private in-cluster host would
+  # verify correctly server side and be unreachable from the browser doing the signing in, which
+  # reads as a broken login rather than as a wrong URL.
+  GIAM_PUBLIC_URL: "https://sec-giam.industrysolutions.staging.corp.mongodb.com"
+  # Where the login, consent, registration and administration screens live.
+  GIAM_FRONTEND_URL: "https://sec-giam-console.industrysolutions.staging.corp.mongodb.com"
+  # The origins allowed to call the identity API from a browser: the console and each relying party.
+  # The console itself proxies same-origin, so it is listed only for the cases that bypass the proxy.
+  GIAM_CORS_ORIGIN: "https://sec-giam-console.industrysolutions.staging.corp.mongodb.com,https://sec-fsi-pci-dss-frontend.industrysolutions.staging.corp.mongodb.com,https://sec-fsi-pci-dss-merchant.industrysolutions.staging.corp.mongodb.com"
+  # The container listens on 8080 in every environment, which is the port the platform probes.
+  GIAM_PORT: "8080"
+
+  # ── The console ────────────────────────────────────────────────────────────────────────────────
+  # Read by the frontend release only. Server side: the console forwards /api, /realms and
+  # /.well-known to this address through the Next.js rewrites, so the browser never makes a
+  # cross-origin call and the console needs no CORS entry of its own.
+  GIAM_API_PRIVATE_URL: "http://sec-giam-web-app:80"
+
+  # ── Storage ────────────────────────────────────────────────────────────────────────────────────
+  # GIAM_DB_URI is deliberately NOT set: the config falls back to MONGODB_URI, so one cluster secret
+  # serves every service here. Set GIAM_DB_URI only when this authority moves to its own cluster.
+  # The DATABASE is separate regardless (GIAM_DB_NAME below), and it is a secret, not a value here.
+
+  # ── Key material ───────────────────────────────────────────────────────────────────────────────
+  # Per-instance signing keys with one shared published key set: correct at any replica count, with
+  # no KMS, no shared volume and no shared secret. This is why the GIAM releases carry no
+  # replicaCount pin while the PSP backend and bankcore do.
+  GIAM_KEY_PROVIDER: instance-local
+  # At least the maximum access-token lifetime, so scaling down does not invalidate live tokens.
+  GIAM_KEY_PUBLICATION_GRACE_SECONDS: "3600"
+  # Envelope encryption for the data, distinct from the signing keys above. Local provider: the
+  # master key is a secret below, not a KMS ARN, because no KMS is provisioned in this namespace.
+  GIAM_KMS_PROVIDER: local
+
+  # ── Queryable Encryption ───────────────────────────────────────────────────────────────────────
+  # Substring search on encrypted names needs crypt_shared 8.2+ AND server 8.2+. The image ships
+  # 8.2.4; turn this off if the cluster behind MONGODB_URI is older, or reads return 500.
+  GIAM_QE_TEXT_SEARCH: "true"
+
+envSecrets:
+  # Shared with the other releases in this namespace: same cluster, different database. The secret
+  # object is reused rather than duplicated so a credential rotation happens in one place.
+  MONGODB_URI: sec-fsi-pci-dss-secrets-staging
+  # GIAM's own database and its OWN key vault collection inside it. Never the vault the applications
+  # share: an identity system holding the same key material as what it protects cannot contain a
+  # breach. Both are secrets so the deployed names are not published in this repository.
+  GIAM_DB_NAME: sec-fsi-pci-dss-secrets-staging
+  GIAM_DB_KEYVAULT: sec-fsi-pci-dss-secrets-staging
+  # 96 random bytes, base64. NOT rotatable in place: everything under queryable encryption is written
+  # under this key, so replacing it needs --reset plus a reseed.
+  GIAM_KMS_LOCAL_MASTER_KEY: sec-fsi-pci-dss-secrets-staging
+  # The credential for /admin/*, which includes SCIM provisioning and client registration. Unset
+  # means CLOSED: the surface answers 503 rather than opening because nobody set a variable.
+  GIAM_ADMIN_TOKEN: sec-fsi-pci-dss-secrets-staging
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+
+serviceAccount:
+  enabled: true
+  create: false
+  name: irsa-industrysolutions-staging

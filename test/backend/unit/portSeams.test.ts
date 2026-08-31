@@ -10,8 +10,8 @@ import {
   authenticationMethods, credentialStores, identityProviders, keyProviders,
   policyEvaluators, tokenFormats, proofOfPossessionModes, eventSinks, provisioningTargets,
   type PortName,
-} from '../../../../giam/backend/src/shared/ports';
-import { registerBuiltinPorts } from '../../../../giam/backend/src/shared/ports/builtins';
+} from '../../../backend/src/shared/ports';
+import { registerBuiltinPorts } from '../../../backend/src/shared/ports/builtins';
 import { registerFakes, FAKE_PREFIX, fakeAllowEvaluator, fakeDenyEvaluator } from '../support/portFakes';
 
 /**

@@ -55,7 +55,7 @@ export function configurationReport(): StartupLine[] {
     { label: 'console', value: config.server.frontendUrl },
     { label: 'swagger', value: `${config.server.baseUrl}/doc` },
     { label: 'health', value: `${config.server.baseUrl}/api/v1/system/health` },
-    { label: 'posture', value: `${config.server.baseUrl}/admin/posture` },
+    { label: 'posture', value: `${config.server.baseUrl}/api/v1/admin/posture` },
     { label: 'issuer pattern', value: realmIssuer('<realm>') },
     { label: 'database', value: config.mongodb.dbName },
     { label: 'cluster', value: redactMongoUri(config.mongodb.uri) },

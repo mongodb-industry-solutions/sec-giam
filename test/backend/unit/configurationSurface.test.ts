@@ -11,9 +11,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const ROOT = resolve(__dirname, '../../../..');
-const CONFIG = readFileSync(resolve(ROOT, 'giam/backend/src/config.ts'), 'utf8');
-const EXAMPLE = readFileSync(resolve(ROOT, 'giam/backend/env.example'), 'utf8');
+const ROOT = resolve(__dirname, '../../..');
+const CONFIG = readFileSync(resolve(ROOT, 'backend/src/config.ts'), 'utf8');
+const EXAMPLE = readFileSync(resolve(ROOT, 'backend/env.example'), 'utf8');
 
 /** Every variable the configuration actually reads, by the prefixed name an operator would set. */
 function readByConfig(): Set<string> {

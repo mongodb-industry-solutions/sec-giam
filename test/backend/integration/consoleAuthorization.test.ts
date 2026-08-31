@@ -104,7 +104,7 @@ describe('v39: administering the authority is authorised by role', () => {
 
   it('refuses the catalog to a caller with no credential at all', async () => {
     if (!live) return;
-    const response = await fetch(`${GIAM}/admin/views`, { signal: AbortSignal.timeout(20000) });
+    const response = await fetch(`${GIAM}/api/v1/admin/views`, { signal: AbortSignal.timeout(20000) });
     expect(response.status).toBe(401);
   });
 
@@ -116,7 +116,7 @@ describe('v39: administering the authority is authorised by role', () => {
       expect(token, `${expectation.login} could not sign in`).toBeTruthy();
       const headers = { authorization: `Bearer ${token}` };
 
-      const catalog = await fetch(`${GIAM}/admin/views`, { headers, signal: AbortSignal.timeout(20000) });
+      const catalog = await fetch(`${GIAM}/api/v1/admin/views`, { headers, signal: AbortSignal.timeout(20000) });
       expect(catalog.status, 'the catalog answers to any authenticated principal').toBe(200);
       const { views } = await catalog.json() as { views: Array<{ name: string; canManage: boolean }> };
 
@@ -137,7 +137,7 @@ describe('v39: administering the authority is authorised by role', () => {
         expect(manageable.map((view) => view.name)).not.toContain('keys');
       }
 
-      const guarded = await fetch(`${GIAM}/admin/views/identities`, { headers, signal: AbortSignal.timeout(20000) });
+      const guarded = await fetch(`${GIAM}/api/v1/admin/views/identities`, { headers, signal: AbortSignal.timeout(20000) });
       expect(guarded.status).toBe(expectation.identities);
     });
   }

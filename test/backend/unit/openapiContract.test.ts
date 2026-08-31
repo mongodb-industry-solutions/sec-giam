@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   buildOpenApiApp, isContractRoute, toOpenApiPath, DOCUMENTED_METHODS,
   type OpenApiDocument, type OpenApiOperation, type RegisteredRoute,
-} from '../../../../giam/backend/src/shared/services/openapi';
+} from '../../../backend/src/shared/services/openapi';
 
 /**
  * Routes that are public by decision, not by omission.
@@ -21,6 +21,19 @@ const PROVABLY_PUBLIC = new Set([
   'get /',
   'get /health',
   'get /api/v1/system/health',
+
+  // Public by nature: it is where the operator credential is presented, so it cannot require one
+  // first. Attempts are rate limited per address, which is what stands in for a credential here.
+  'post /api/v1/admin/login',
+
+  // The delivery inspector's receiver. An emitter under test cannot present an operator credential,
+  // and the receiver only RECORDS: reading what it recorded is behind the credential like everything
+  // else on this surface.
+  'get /api/v1/admin/webhook/hook',
+  'put /api/v1/admin/webhook/hook',
+  'post /api/v1/admin/webhook/hook',
+  'delete /api/v1/admin/webhook/hook',
+  'patch /api/v1/admin/webhook/hook',
 
   // Public BY SPECIFICATION. Discovery names endpoints and the key set contains public keys whose
   // entire purpose is to be held by anyone verifying a signature. Requiring a credential to read

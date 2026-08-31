@@ -6,7 +6,7 @@ import { provisionGiamDeks, findOrphanedDeks } from '../encryption/keyVault';
 import { getQEClient, closeQEClient, assertCryptSharedLib } from '../encryption/qeClient';
 import { config, keyVaultNamespace } from '../../config';
 
-// Works regardless of CWD: npm --prefix changes it to giam/backend/.
+// Works regardless of CWD: npm --prefix changes it to backend/.
 dotenv.config({ path: resolve(__dirname, '../../../../../.env') });
 
 export async function runSetup(reset = false): Promise<void> {
@@ -34,7 +34,7 @@ export async function runSetup(reset = false): Promise<void> {
       if (orphans.length > 0) {
         throw new Error(
           `These collections reference DEKs that no longer exist in ${keyVaultNamespace()}: ${orphans.join(', ')}.\n`
-          + '  Rebuild with:  npm run setup:db:reset --prefix giam/backend',
+          + '  Rebuild with:  npm run setup:db:reset --prefix backend',
         );
       }
     }
@@ -52,7 +52,7 @@ export async function runSetup(reset = false): Promise<void> {
     console.log('');
 
     console.log('GIAM setup complete.');
-    console.log('  Seed it with: npm run setup:seed --prefix giam/backend');
+    console.log('  Seed it with: npm run setup:seed --prefix backend');
   } finally {
     await closeQEClient();
   }

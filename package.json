@@ -1,21 +1,68 @@
 {
   "name": "sec-giam",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "GIAM: General Identity and Access Manager. The identity authority for people and systems. Industry neutral: no financial concept in its model, API or policy vocabulary.",
+  "private": true,
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mongodb-industry-solutions/sec-giam.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/mongodb-industry-solutions/sec-giam/issues"
   },
-  "homepage": "https://github.com/mongodb-industry-solutions/sec-giam#readme"
+  "homepage": "https://github.com/mongodb-industry-solutions/sec-giam#readme",
+  "scripts": {
+    "setup": "npm install && npm install --prefix packages/eventbus && npm install --prefix packages/platform-links && npm install --prefix packages/giam-client && npm install --prefix backend && npm install --prefix frontend",
+    "build:packages": "npm run build --prefix packages/eventbus && npm run build --prefix packages/platform-links && npm run build --prefix packages/giam-client",
+    "build": "npm run build:packages && npm run build --prefix backend && npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+    "build:frontend": "npm run build --prefix frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:stop": "node tools/devStop.mjs",
+    "dev:restart": "npm run dev:stop && npm run dev",
+    "setup:key:master": "npm run setup:key:master --prefix backend",
+    "setup:db": "npm run setup:db --prefix backend --",
+    "setup:db:reset": "npm run setup:db --prefix backend -- --reset",
+    "setup:db:drop": "npm run setup:db:drop --prefix backend --",
+    "setup:check": "npm run setup:check --prefix backend --",
+    "setup:seed": "npm run seed --prefix backend --",
+    "seed": "npm run seed --prefix backend --",
+    "setup:reset": "npm run setup:db:reset && npm run setup:seed",
+    "setup:corp:stg": "node tools/corp.mjs --env staging",
+    "setup:corp:prd": "node tools/corp.mjs --env prod",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:ci": "npm run test:unit",
+    "test:unit": "vitest run test/backend/unit",
+    "test:integration": "vitest run test/backend/integration",
+    "test:watch": "vitest watch",
+    "lint": "npm run lint --prefix frontend",
+    "type-check": "tsc --noEmit --project packages/eventbus/tsconfig.json && tsc --noEmit --project packages/platform-links/tsconfig.json && tsc --noEmit --project packages/giam-client/tsconfig.json && tsc --noEmit --project backend/tsconfig.json && tsc --noEmit --project frontend/tsconfig.json",
+    "openapi:emit": "npm run openapi:emit --prefix backend",
+    "openapi:lint": "npm run openapi:lint --prefix backend",
+    "openapi": "npm run openapi:emit && npm run openapi:lint",
+    "deploy": "npm run deploy:kube",
+    "deploy:docker": "docker compose up --build",
+    "deploy:kube": "tsx tools/kube.ts"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^26.1.2",
+    "@vitest/coverage-v8": "^4.1.0",
+    "bcryptjs": "^2.4.3",
+    "concurrently": "^10.0.3",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.8.3",
+    "jsonwebtoken": "^9.0.2",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.22.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
 }

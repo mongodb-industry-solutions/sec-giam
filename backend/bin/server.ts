@@ -1,8 +1,10 @@
 import dotenv from 'dotenv';
 import { resolve } from 'path';
 
-// The repo root .env, three levels up from giam/backend/bin/.
-dotenv.config({ path: resolve(__dirname, '../../../.env') });
+// The repo root .env, or backend/.env. Several candidates because this file runs both from source
+// (backend/src, backend/bin) and from the build output (backend/dist/...), which sit at different
+// depths; the first file that exists wins and a missing one is not an error.
+dotenv.config({ path: ['../.env', '../../.env', '../../../.env'].map((p) => resolve(__dirname, p)) });
 
 import { buildApp } from '../src/app';
 import { appendLog } from '../src/shared/services/logBuffer';

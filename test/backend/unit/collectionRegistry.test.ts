@@ -6,8 +6,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   GIAM_COLLECTIONS, GIAM_COLLECTIONS as REGISTRY, collectionSpec, encryptedCollections,
-} from '../../../../giam/backend/src/shared/models/collections';
-import { buildEncryptedFieldsMaps } from '../../../../giam/backend/src/vendors/encryption/encryptedFieldsMaps';
+} from '../../../backend/src/shared/models/collections';
+import { buildEncryptedFieldsMaps } from '../../../backend/src/vendors/encryption/encryptedFieldsMaps';
 
 /** Every collection the data model specifies, by the section that specifies it. */
 const SPECIFIED: Record<string, string[]> = {

@@ -8,9 +8,9 @@
 // make a result MORE restrictive, so nobody has to reason about evaluation order to know what a
 // policy does.
 import { describe, it, expect } from 'vitest';
-import { combineDecisions } from '../../../../giam/backend/src/modules/authorization/services/policyEvaluators';
-import { matchesPattern } from '../../../../giam/backend/src/modules/authorization/models/policy.model';
-import type { PolicyEvaluator, AuthorizationRequest } from '../../../../giam/backend/src/shared/ports';
+import { combineDecisions } from '../../../backend/src/modules/authorization/services/policyEvaluators';
+import { matchesPattern } from '../../../backend/src/modules/authorization/models/policy.model';
+import type { PolicyEvaluator, AuthorizationRequest } from '../../../backend/src/shared/ports';
 
 const request: AuthorizationRequest = {
   realmId: 'r1',

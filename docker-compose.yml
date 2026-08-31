@@ -1,0 +1,124 @@
+# ── GIAM, the identity and access authority ─────────────────────────────────────
+# Usage:
+#   docker compose up --build                     # mongo + API + console
+#   docker compose exec giam npm --prefix backend run setup:db    # collections, indexes, DEKs
+#   docker compose exec giam npm --prefix backend run setup:seed  # realms, clients, identities
+#
+# Prerequisites:
+#   1. Copy backend/env.example to .env at the repo root and fill GIAM_KMS_LOCAL_MASTER_KEY
+#      (node -e "console.log(require('crypto').randomBytes(96).toString('base64'))")
+#      and GIAM_ADMIN_TOKEN. Unset means the administrative surface stays closed, not open.
+#   2. Nothing else. The mongo service below is a single-node replica set with the enterprise
+#      build, which is what queryable encryption needs; no external cluster is required.
+#
+# Running alongside the LeafyPay monorepo stack:
+#   This file creates the network `sec-giam`. The monorepo's compose attaches to it by declaring
+#
+#     networks:
+#       sec-giam:
+#         external: true
+#
+#   on the services that talk to the authority, and by pointing their GIAM_BASE_URL at
+#   http://giam:8080 and their sign-in URL at http://localhost:8086. Start this stack first: an
+#   external network must already exist when the other compose file is brought up.
+#
+# Host ports: 8085 for the API and 8086 for the console, the same two the monorepo's giam services
+# used before the extraction, so removing them there frees exactly these and every URL that already
+# names them keeps resolving. The monorepo's other apps hold 8080, 8081, 8082 and 8084.
+# ────────────────────────────────────────────────────────────────────────────────
+
+services:
+  # Single-node replica set. Queryable encryption needs the enterprise build, and a replica set is
+  # required for the transactions setup and seed run, so a standalone mongod is not enough.
+  mongo:
+    image: mongodb/mongodb-enterprise-server:8.2-ubi9
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      # 27018 on the host: a locally installed mongod usually already holds 27017.
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiates the replica set on the first probe and reports healthy once it answers a ping.
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # The identity API. PUBLIC, and it has to be: a browser is redirected here to sign in, so a private
+  # in-network host would work for a server-side call and be unreachable from the laptop demoing it.
+  giam:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8085:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      GIAM_SEED_DATA_DIR: /app/backend/data
+      MONGODB_CRYPT_SHARED_LIB_PATH: /usr/local/lib/mongo_crypt_v1.so
+      GIAM_CRYPT_SHARED_LIB_PATH: /usr/local/lib/mongo_crypt_v1.so
+      # The compose mongo by default. directConnection, because the replica set advertises itself as
+      # `mongo:27017` and a driver that follows that advertisement from outside the network hangs.
+      GIAM_DB_URI: ${GIAM_DB_URI:-mongodb://mongo:27017/?replicaSet=rs0&directConnection=true}
+      GIAM_DB_NAME: ${GIAM_DB_NAME:-giamdb}
+      GIAM_DB_KEYVAULT: ${GIAM_DB_KEYVAULT:-keyVault}
+      # In-network, for the services that resolve discovery server side.
+      GIAM_BASE_URL: ${GIAM_BASE_URL:-http://giam:8080}
+      # Browser facing, and what a realm issuer URL is built from: it ends up inside every token as
+      # `iss`, so it must be the address a relying party can actually reach.
+      GIAM_PUBLIC_URL: ${GIAM_PUBLIC_URL:-http://localhost:8085}
+      GIAM_FRONTEND_URL: ${GIAM_FRONTEND_URL:-http://localhost:8086}
+      # The console plus the monorepo apps, for the calls that do not go through the console's proxy.
+      GIAM_CORS_ORIGIN: ${GIAM_CORS_ORIGIN:-http://localhost:8086,http://localhost:8080,http://localhost:8082,http://localhost:8084}
+      GIAM_KEY_PROVIDER: ${GIAM_KEY_PROVIDER:-instance-local}
+      GIAM_KMS_PROVIDER: ${GIAM_KMS_PROVIDER:-local}
+    volumes:
+      # This replica's own private key. Mounted rather than baked: a signing key in an image is a
+      # signing key in a registry. With the default provider each replica holds its own, and the
+      # published key set is what they share, so this volume is per replica and never shared.
+      - ./backend/keys:/app/backend/keys
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # The identity console: login, consent, registration, credentials, and the administration of realms,
+  # providers, identities, roles, policies, clients, keys, sessions and audit.
+  giam-console:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      # Server side only: the console proxies the API same-origin, so the browser never learns this
+      # address and no CORS entry is needed for the console to work.
+      GIAM_API_PRIVATE_URL: ${GIAM_BASE_URL:-http://giam:8080}
+    depends_on:
+      giam:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
+
+networks:
+  default:
+    # Fixed name so the monorepo's compose can attach to it as an external network.
+    name: sec-giam

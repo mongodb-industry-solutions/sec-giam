@@ -1,4 +1,4 @@
-// Ring buffer of recent GIAM log lines, read by the administration console over /admin/logs.
+// Ring buffer of recent GIAM log lines, read by the administration console over /api/v1/admin/logs.
 //
 // Per-process state by nature, so it is GIAM's own rather than a shared module: sharing the
 // implementation would still need one instance per service, and every failure path has to reach it or
@@ -6,10 +6,22 @@
 const MAX_LINES = 500;
 const lines: string[] = [];
 let consoleMirrored = false;
+// Monotonic, so a watcher can tell "nothing new" from "the buffer wrapped" without holding a copy.
+let writes = 0;
 
 export function appendLog(line: string): void {
   lines.push(line);
+  writes += 1;
   if (lines.length > MAX_LINES) lines.splice(0, lines.length - MAX_LINES);
+}
+
+/** Total lines ever appended. Only differences between readings are meaningful. */
+export function writeCount(): number {
+  return writes;
+}
+
+export function logBufferLength(): number {
+  return lines.length;
 }
 
 export function levelLabel(level: number): string {

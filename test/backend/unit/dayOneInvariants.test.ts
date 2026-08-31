@@ -10,12 +10,12 @@ import {
   GIAM_COLLECTIONS, scopedCollections,
   IDENTITY_COLLECTION, AGENT_COLLECTION, DELEGATION_COLLECTION, GRANT_COLLECTION,
   SECURITY_EVENT_COLLECTION, TENANT_COLLECTION,
-} from '../../../../giam/backend/src/shared/models/collections';
-import { plannedIndexes } from '../../../../giam/backend/src/vendors/setup/createIndexes';
+} from '../../../backend/src/shared/models/collections';
+import { plannedIndexes } from '../../../backend/src/vendors/setup/createIndexes';
 
-const SRC = resolve(__dirname, '../../../../giam/backend/src');
+const SRC = resolve(__dirname, '../../../backend/src');
 
-/** Every .ts file under giam/backend/src, with the directories a rule exempts removed. */
+/** Every .ts file under backend/src, with the directories a rule exempts removed. */
 function sourceFiles(exclude: string[] = []): Array<{ path: string; text: string }> {
   const found: Array<{ path: string; text: string }> = [];
   const walk = (dir: string) => {

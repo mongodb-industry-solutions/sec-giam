@@ -1,0 +1,56 @@
+# ── Root .dockerignore ─────────────────────────────────────────────
+# Used when the backend builds with context = repo root (compose and drone both set context: .),
+# because the image also needs packages/ and tsconfig.base.json. Keeps that context lean.
+
+# Dependencies (reinstalled inside the image)
+**/node_modules/
+
+# Build artifacts (rebuilt inside the image)
+backend/dist/
+frontend/.next/
+frontend/out/
+
+# Environment files (injected via env_file / environment in Compose)
+.env
+.env.*
+!.env.example
+
+# Signing keys (never bake into image; the instance-local provider writes its own at runtime)
+backend/keys/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# IDE, AI tooling, agent transcripts
+.agents/
+.claude/
+.cursor/
+.vscode/
+agent-transcripts/
+terminals/
+tmp/
+
+# CI/CD config (not needed at runtime)
+.drone.yml
+
+# Documentation and K8s values
+docs/
+environments/
+
+# Test sources and artifacts (the API image runs neither)
+test/
+test-results/
+coverage/
+
+# Operator scripts, not runtime code
+tools/
+
+# Misc
+*.log
+*.tgz
+*.tsbuildinfo
+
+# Shared workspace packages are copied and rebuilt inside the image.
+packages/*/dist/

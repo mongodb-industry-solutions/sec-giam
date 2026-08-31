@@ -8,8 +8,8 @@ import type {
   AuthenticationMethod, CredentialStore, IdentityProviderAdapter, KeyProvider,
   PolicyEvaluator, TokenFormat, ProofOfPossession, EventSink, ProvisioningTarget,
   SecurityEventRecord, PortName,
-} from '../../../../giam/backend/src/shared/ports';
-import { PORT_REGISTRIES } from '../../../../giam/backend/src/shared/ports';
+} from '../../../backend/src/shared/ports';
+import { PORT_REGISTRIES } from '../../../backend/src/shared/ports';
 
 /** The prefix every fake's name carries, so a real implementation can never be mistaken for one. */
 export const FAKE_PREFIX = 'fake-';

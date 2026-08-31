@@ -17,26 +17,33 @@ interface CommandDef {
 }
 
 const COMMANDS: CommandDef[] = [
-  { id: 'setup',            label: 'Full Setup',        description: 'Install all dependencies (frontend + backend)',    icon: '📦', group: 'setup' },
-  { id: 'setup:key:master', label: 'Generate Master Key', description: 'Generate the local KMS master key for Queryable Encryption (KMS_LOCAL_MASTER_KEY)', icon: '🔑', group: 'setup' },
-  { id: 'setup:key:rsa',    label: 'Generate RSA Keys', description: 'Generate the RSA OAuth/OIDC signing keypair (private.pem + public.pem)', icon: '🔐', group: 'setup' },
-  { id: 'setup:db',         label: 'Setup Database',    description: 'Create collections, indexes, and provision DEKs', icon: '🗄️', group: 'setup' },
-  { id: 'setup:generate',   label: 'Generate Data',     description: 'Generate synthetic demo dataset',                  icon: '🎲', group: 'setup' },
-  { id: 'setup:seed',       label: 'Seed Database',     description: 'Insert generated data into MongoDB Atlas',         icon: '🌱', group: 'setup' },
-  { id: 'setup:check',     label: 'Validate Setup',    description: 'Check env vars, collections, indexes, DEKs, and Atlas roles are provisioned', icon: '✅', group: 'setup' },
-  { id: 'reload',           label: 'Reload Runtime',    description: 'Hot-reload .env + QE client + event bus in-process (no restart). Use after Drop + Setup DB + Seed on servers you cannot restart, to pick up the new key vault / DEKs.', icon: '♻️', group: 'setup' },
-  { id: 'test',             label: 'All Tests',         description: 'Run unit + integration test suites',                              icon: '🧪', group: 'test'  },
-  { id: 'test:unit',        label: 'Unit Tests',        description: 'Run unit tests only',                                             icon: '🔬', group: 'test'  },
-  { id: 'test:integration', label: 'Integration Tests', description: 'Run integration tests only',                                      icon: '🔗', group: 'test'  },
-  { id: 'test:e2e',         label: 'E2E Tests',         description: 'Run Playwright end-to-end tests (requires live stack on :3000)',   icon: '🎭', group: 'test'  },
-  { id: 'type-check',       label: 'Type Check',        description: 'TypeScript type check (no emit)',                                  icon: '📐', group: 'test'  },
+  { id: 'setup',            label: 'Install Everything', description: 'Install the dependencies of the shared packages and of both applications', icon: '📦', group: 'setup' },
+  { id: 'setup:key:master', label: 'Generate Master Key', description: 'Generate the local master key the encrypted collections are keyed from. It cannot be rotated in place: data written under one key is unreadable under another', icon: '🔑', group: 'setup' },
+  { id: 'setup:db',         label: 'Set Up Database',   description: 'Create the collections and indexes and provision the data encryption keys', icon: '🗄️', group: 'setup' },
+  { id: 'setup:seed',       label: 'Load Records',      description: 'Load the reference and demonstration records',              icon: '🌱', group: 'setup' },
+  { id: 'setup:check',      label: 'Validate Setup',    description: 'Report the collections, document counts, indexes, encrypted fields and key state, and say which of them disagree with the model', icon: '✅', group: 'setup' },
+  { id: 'reload',           label: 'Reload Runtime',    description: 'Rebuild the encrypted client and the event bus in place, with no restart. Use it after rebuilding the database on a host you cannot restart, so this process stops holding a client bound to a key vault that no longer exists', icon: '♻️', group: 'setup' },
+  { id: 'test',             label: 'All Tests',         description: 'Run every suite',                                            icon: '🧪', group: 'test'  },
+  { id: 'test:unit',        label: 'Unit Tests',        description: 'Run the unit suite',                                         icon: '🔬', group: 'test'  },
+  { id: 'test:integration', label: 'Integration Tests', description: 'Run the integration suite, which needs a reachable cluster',  icon: '🔗', group: 'test'  },
+  { id: 'type-check',       label: 'Type Check',        description: 'Type-check every project without emitting',                   icon: '📐', group: 'test'  },
+  { id: 'openapi',          label: 'API Document',      description: 'Regenerate the API document and check it against the documentation rules', icon: '📘', group: 'test'  },
+  {
+    id: 'setup:db:reset',
+    label: 'Rebuild Database',
+    description: 'Drop everything and create it again. The only way to apply a change to an encrypted field, since setup skips a collection that already exists',
+    icon: '🔁',
+    group: 'danger',
+    confirmMessage: 'This drops the database, its key vault and every key in it, then creates them again empty. Every record is lost and the load step has to be run afterwards. This cannot be undone.',
+    confirmLabel: 'Rebuild Database',
+  },
   {
     id: 'setup:db:drop',
     label: 'Drop Everything',
-    description: 'Drop all collections, key vault, indexes, Atlas roles and DB users',
+    description: 'Drop the database, and with it the key vault that only serves it',
     icon: '🗑️',
     group: 'danger',
-    confirmMessage: 'This will permanently delete all collections, the QE key vault, all indexes, and Atlas custom roles and DB users. All data will be lost. This cannot be undone.',
+    confirmMessage: 'This permanently deletes the database, its key vault and every encryption key in it. Every record is lost and nothing else on the cluster is touched. This cannot be undone.',
     confirmLabel: 'Drop Everything',
   },
 ];
@@ -272,7 +279,7 @@ export default function SetupPage() {
         {/* Left column - command list */}
         <div className="flex-shrink-0 space-y-4 lg:w-2/5 lg:overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#00ED64_#111827] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#00ED64]/30 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-[#00ED64]/60">
           <CommandGroup label="Setup" cmds={setupCmds} activeCommand={activeCommand} running={running} onRun={handleRun} />
-          <CommandGroup label="Test & Quality" cmds={testCmds} activeCommand={activeCommand} running={running} onRun={handleRun} />
+          <CommandGroup label="Checks" cmds={testCmds} activeCommand={activeCommand} running={running} onRun={handleRun} />
           {dangerCmds.length > 0 && (
             <DangerCommandGroup cmds={dangerCmds} activeCommand={activeCommand} running={running} onRun={handleRun} />
           )}

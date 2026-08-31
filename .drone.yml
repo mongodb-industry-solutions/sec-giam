@@ -1,0 +1,211 @@
+---
+kind: pipeline
+type: kubernetes
+name: staging
+
+trigger:
+  branch:
+    - staging
+  event:
+    - push
+
+steps:
+  - name: publish-backend
+    image: plugins/kaniko-ecr
+    settings:
+      create_repository: true
+      registry: 795250896452.dkr.ecr.us-east-1.amazonaws.com
+      repo: industrysolutions/sec-giam-backend
+      dockerfile: backend/Dockerfile
+      context: .
+      tags:
+        - git-${DRONE_COMMIT_SHA:0:7}
+        - latest
+      access_key:
+        from_secret: ecr_access_key
+      secret_key:
+        from_secret: ecr_secret_key
+
+  - name: publish-frontend
+    image: plugins/kaniko-ecr
+    settings:
+      create_repository: true
+      registry: 795250896452.dkr.ecr.us-east-1.amazonaws.com
+      repo: industrysolutions/sec-giam-frontend
+      dockerfile: frontend/Dockerfile
+      context: frontend/
+      tags:
+        - git-${DRONE_COMMIT_SHA:0:7}
+        - latest
+      build_args:
+        # The console reaches the API same-origin through the Next.js rewrites, resolved at RUNTIME
+        # from GIAM_API_PRIVATE_URL, so one image is correct in every environment. These two are the
+        # only NEXT_PUBLIC_* values the source reads for addresses (frontend/src/lib/constants.ts):
+        # an empty API URL keeps the same-origin proxy, and the public URL is what the operations
+        # panel links a person to. frontend/Dockerfile declares the matching ARG and ENV lines.
+        - NEXT_PUBLIC_GIAM_API_URL=
+        - NEXT_PUBLIC_GIAM_API_PUBLIC_URL=https://sec-giam.industrysolutions.staging.corp.mongodb.com
+      access_key:
+        from_secret: ecr_access_key
+      secret_key:
+        from_secret: ecr_secret_key
+
+  - name: deploy-backend-staging
+    image: public.ecr.aws/kanopy/drone-helm:v3
+    settings:
+      chart: mongodb/web-app
+      chart_version: 4.25.0
+      add_repos:
+        - mongodb=https://10gen.github.io/helm-charts
+      namespace: industrysolutions
+      # The Kanopy web-app chart derives the in-cluster service name from the release, so this one
+      # publishes `sec-giam-web-app`. Relying parties resolve that name server side, and LeafyPay's
+      # environments are updated to it in the same change: both sides move together.
+      release: sec-giam
+      values:
+        - image.tag=git-${DRONE_COMMIT_SHA:0:7}
+        - image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/sec-giam-backend
+        - ingress.enabled=true
+        - ingress.hosts[0]=sec-giam.industrysolutions.staging.corp.mongodb.com
+        # Public (no corp Okta SSO): a realm issuer URL is built from this host and ends up inside
+        # every token, and the browser is redirected here to sign in, so an SSO-gated ingress would
+        # put a second login in front of the login. Every /admin route still needs the admin token.
+        - ingress.authenticated=false
+        - mesh.enabled=true
+        # No replicaCount pin here, unlike the PSP backend and bankcore. The default key provider is
+        # instance-local: each replica generates its own pair, publishes only the public half, and the
+        # realm's key set is the union, so a token signed by one replica verifies at any other. Leases
+        # plus a publication grace keep a scale-down from invalidating live tokens.
+      wait: true
+      timeout: 300s
+      api_server: https://api.staging.corp.mongodb.com
+      kubernetes_token:
+        from_secret: staging_kubernetes_token
+      values_files:
+        - environments/staging.yaml
+
+  - name: deploy-frontend-staging
+    image: public.ecr.aws/kanopy/drone-helm:v3
+    settings:
+      chart: mongodb/web-app
+      chart_version: 4.25.0
+      add_repos:
+        - mongodb=https://10gen.github.io/helm-charts
+      namespace: industrysolutions
+      # Browser facing: this is the host LeafyPay and the merchant send a person to in order to sign in.
+      release: sec-giam-console
+      values:
+        - image.tag=git-${DRONE_COMMIT_SHA:0:7}
+        - image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/sec-giam-frontend
+        - ingress.enabled=true
+        - ingress.hosts[0]=sec-giam-console.industrysolutions.staging.corp.mongodb.com
+        # Public: this host serves the login, consent and registration screens, which anyone signing
+        # in has to reach before they have any identity at all.
+        - ingress.authenticated=false
+        - mesh.enabled=true
+      wait: true
+      timeout: 300s
+      api_server: https://api.staging.corp.mongodb.com
+      kubernetes_token:
+        from_secret: staging_kubernetes_token
+      values_files:
+        - environments/staging.yaml
+
+---
+kind: pipeline
+type: kubernetes
+name: production
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+
+steps:
+  - name: publish-backend
+    image: plugins/kaniko-ecr
+    settings:
+      create_repository: true
+      registry: 795250896452.dkr.ecr.us-east-1.amazonaws.com
+      repo: industrysolutions/sec-giam-backend
+      dockerfile: backend/Dockerfile
+      context: .
+      tags:
+        - git-${DRONE_COMMIT_SHA:0:7}
+        - latest
+      access_key:
+        from_secret: ecr_access_key
+      secret_key:
+        from_secret: ecr_secret_key
+
+  - name: publish-frontend
+    image: plugins/kaniko-ecr
+    settings:
+      create_repository: true
+      registry: 795250896452.dkr.ecr.us-east-1.amazonaws.com
+      repo: industrysolutions/sec-giam-frontend
+      dockerfile: frontend/Dockerfile
+      context: frontend/
+      tags:
+        - git-${DRONE_COMMIT_SHA:0:7}
+        - latest
+      build_args:
+        # See the staging step: same-origin proxy at runtime, public host only for the panel links.
+        - NEXT_PUBLIC_GIAM_API_URL=
+        - NEXT_PUBLIC_GIAM_API_PUBLIC_URL=https://sec-giam.industrysolutions.prod.corp.mongodb.com
+      access_key:
+        from_secret: ecr_access_key
+      secret_key:
+        from_secret: ecr_secret_key
+
+  - name: deploy-backend-production
+    image: public.ecr.aws/kanopy/drone-helm:v3
+    settings:
+      chart: mongodb/web-app
+      chart_version: 4.25.0
+      add_repos:
+        - mongodb=https://10gen.github.io/helm-charts
+      namespace: industrysolutions
+      # Publishes the in-cluster service `sec-giam-web-app`; see the staging step.
+      release: sec-giam
+      values:
+        - image.tag=git-${DRONE_COMMIT_SHA:0:7}
+        - image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/sec-giam-backend
+        - ingress.enabled=true
+        - ingress.hosts[0]=sec-giam.industrysolutions.prod.corp.mongodb.com
+        # Public: the issuer host and the sign-in redirect target. See the staging step.
+        - ingress.authenticated=false
+        - mesh.enabled=true
+        # Again no replicaCount pin: instance-local custody is multi-replica correct by construction.
+      wait: true
+      timeout: 300s
+      api_server: https://api.prod.corp.mongodb.com
+      kubernetes_token:
+        from_secret: prod_kubernetes_token
+      values_files:
+        - environments/production.yaml
+
+  - name: deploy-frontend-production
+    image: public.ecr.aws/kanopy/drone-helm:v3
+    settings:
+      chart: mongodb/web-app
+      chart_version: 4.25.0
+      add_repos:
+        - mongodb=https://10gen.github.io/helm-charts
+      namespace: industrysolutions
+      release: sec-giam-console
+      values:
+        - image.tag=git-${DRONE_COMMIT_SHA:0:7}
+        - image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/sec-giam-frontend
+        - ingress.enabled=true
+        - ingress.hosts[0]=sec-giam-console.industrysolutions.prod.corp.mongodb.com
+        - ingress.authenticated=false
+        - mesh.enabled=true
+      wait: true
+      timeout: 300s
+      api_server: https://api.prod.corp.mongodb.com
+      kubernetes_token:
+        from_secret: prod_kubernetes_token
+      values_files:
+        - environments/production.yaml

@@ -24,11 +24,8 @@ import { dirname, resolve } from 'node:path';
 
 // The services `npm run dev` starts, each on the port its own package declares.
 const SERVICES = [
-  { port: 8080, name: 'psp/frontend' },
-  { port: 8081, name: 'psp/backend' },
-  { port: 8082, name: 'merchant' },
-  { port: 8083, name: 'bank/backend' },
-  { port: 8084, name: 'bank/frontend' },
+  { port: 8085, name: 'backend' },
+  { port: 8086, name: 'frontend' },
 ];
 
 const isWindows = process.platform === 'win32';

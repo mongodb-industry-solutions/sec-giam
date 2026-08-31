@@ -9,7 +9,7 @@
 // than assumed.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { generateKeyPairSync, createPublicKey, createPrivateKey, sign as cryptoSign, KeyObject } from 'crypto';
-import { GiamClient, isLogoutToken } from '../../../../packages/giam-client/src/index';
+import { GiamClient, isLogoutToken } from '../../../packages/giam-client/src/index';
 
 const ISSUER = 'https://authority.test/realms/acme';
 const AUDIENCE = 'orders-api';

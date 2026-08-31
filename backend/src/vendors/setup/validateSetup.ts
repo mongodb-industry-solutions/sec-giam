@@ -54,8 +54,16 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
   }>;
   const byName = new Map(info.map((c) => [c.name, c]));
 
+  // The inventory, with what each holds. A collection that exists and is empty and a collection that
+  // is missing fail in very different ways, and reporting only presence leaves a reader unable to tell
+  // "never seeded" from "seeded and wrong".
   for (const spec of GIAM_COLLECTIONS) {
-    add(`collection ${spec.name}`, byName.has(spec.name), byName.has(spec.name) ? undefined : 'missing');
+    if (!byName.has(spec.name)) {
+      add(`collection ${spec.name}`, false, 'missing');
+      continue;
+    }
+    const count = await db.collection(spec.name).estimatedDocumentCount().catch(() => -1);
+    add(`collection ${spec.name}`, true, count < 0 ? 'present, count unavailable' : `${count} document(s)`);
   }
 
   // The registry is the ownership record. A collection in the database that is absent from it is an

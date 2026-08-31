@@ -20,7 +20,7 @@ import type { FastifyInstance } from 'fastify';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const DATA = resolve(__dirname, '../../../../giam/backend/data');
+const DATA = resolve(__dirname, '../../../backend/data');
 const REALM = 'leafypay';
 const DEMO_PASSWORD = 'demo-password';
 
@@ -42,7 +42,7 @@ const subject = identities.find(
 let app: FastifyInstance;
 
 beforeAll(async () => {
-  const { buildApp } = await import('../../../../giam/backend/src/app');
+  const { buildApp } = await import('../../../backend/src/app');
   app = await buildApp();
   await app.ready();
 }, 120_000);

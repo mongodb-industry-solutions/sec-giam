@@ -1,8 +1,10 @@
 import dotenv from 'dotenv';
 import { resolve } from 'path';
 
-// The repo root .env, three levels up from giam/backend/src/.
-dotenv.config({ path: resolve(__dirname, '../../../.env') });
+// The repo root .env, or backend/.env. Several candidates because this file runs both from source
+// (backend/src, backend/bin) and from the build output (backend/dist/...), which sit at different
+// depths; the first file that exists wins and a missing one is not an error.
+dotenv.config({ path: ['../.env', '../../.env', '../../../.env'].map((p) => resolve(__dirname, p)) });
 
 import Fastify, { FastifyInstance } from 'fastify';
 import corsPlugin from './plugins/cors';
@@ -108,7 +110,12 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
   fastify.addHook('preHandler', async (request, reply) => {
     const url = request.url;
     const isProbe = url === '/health' || url.startsWith('/api/v1/system/health');
-    if (fastify.dbError !== null && !isProbe && !url.startsWith('/doc') && !url.startsWith('/admin/posture')) {
+    // The operations surface stays reachable with the datastore down: signing in, reading the logs and
+    // rebuilding the runtime are what an operator needs at exactly that moment, and refusing them
+    // would leave the only way to diagnose a broken database behind the broken database. The console
+    // views are excluded, because reading a record with no datastore is not a thing that can succeed.
+    const isOperations = url.startsWith('/api/v1/admin/') && !url.startsWith('/api/v1/admin/views');
+    if (fastify.dbError !== null && !isProbe && !isOperations && !url.startsWith('/doc')) {
       return reply.status(503).send(problem(503, 'Service unavailable', fastify.dbError));
     }
   });

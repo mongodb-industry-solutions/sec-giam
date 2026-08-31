@@ -64,6 +64,12 @@ export interface PostureReport {
   };
   administration: {
     credentialConfigured: boolean;
+    /**
+     * Whether whoever holds the administrative credential can run an arbitrary command in the
+     * checkout. Reported rather than gated: it is a reasonable thing for an operator to be able to do
+     * and an unreasonable thing to have to infer.
+     */
+    shellReachable: boolean;
   };
   findings: PostureFinding[];
 }
@@ -119,12 +125,14 @@ export function buildPostureReport(input: PostureInput): PostureReport {
     });
   }
 
-  if (!config.app.adminToken) {
+  const administrationConfigured = Boolean(config.app.adminToken)
+    || Boolean(config.app.adminUser && config.app.adminPasswordSha256);
+  if (!administrationConfigured) {
     findings.push({
       code: 'administration_closed',
       level: 'degraded',
       detail: 'No administrative credential is configured, so the operational surface refuses every call.',
-      remedy: 'Set GIAM_ADMIN_TOKEN.',
+      remedy: 'Set GIAM_ADMIN_TOKEN, or GIAM_ADMIN_USER with GIAM_ADMIN_PASSWORD_SHA256.',
     });
   }
 
@@ -175,7 +183,10 @@ export function buildPostureReport(input: PostureInput): PostureReport {
       encryptionLibraryPresent,
       queryableTextSearch: config.mongodb.textSearch,
     },
-    administration: { credentialConfigured: Boolean(config.app.adminToken) },
+    administration: {
+      credentialConfigured: administrationConfigured,
+      shellReachable: config.app.adminShell,
+    },
     findings,
   };
 }
@@ -188,6 +199,6 @@ export function postureBanner(report: PostureReport): string[] {
     ...report.findings
       .filter((finding) => finding.level === 'degraded')
       .flatMap((finding) => [`   [${finding.code}] ${finding.detail}`, `   remedy: ${finding.remedy}`]),
-    '   Full report: GET /admin/posture',
+    '   Full report: GET /api/v1/admin/posture',
   ];
 }

@@ -9,16 +9,16 @@ import { mkdtempSync, rmSync, existsSync, readdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { resolve } from 'path';
 import { createPublicKey, verify as cryptoVerify } from 'crypto';
-import { keyProviders, PORT_REGISTRIES } from '../../../../giam/backend/src/shared/ports';
-import { registerBuiltinPorts } from '../../../../giam/backend/src/shared/ports/builtins';
-import { InstanceLocalKeyProvider } from '../../../../giam/backend/src/modules/keys/providers/instanceLocal.provider';
-import { FilesystemKeyProvider } from '../../../../giam/backend/src/modules/keys/providers/filesystem.provider';
+import { keyProviders, PORT_REGISTRIES } from '../../../backend/src/shared/ports';
+import { registerBuiltinPorts } from '../../../backend/src/shared/ports/builtins';
+import { InstanceLocalKeyProvider } from '../../../backend/src/modules/keys/providers/instanceLocal.provider';
+import { FilesystemKeyProvider } from '../../../backend/src/modules/keys/providers/filesystem.provider';
 import {
   SharedStoreKeyProvider, InMemoryWrappedKeyStore,
-} from '../../../../giam/backend/src/modules/keys/providers/sharedStore.provider';
-import { KmsKeyProvider } from '../../../../giam/backend/src/modules/keys/providers/kms.provider';
-import { KeyRing, InMemorySigningKeyStore } from '../../../../giam/backend/src/modules/keys/services/keyRing.service';
-import { assertNoPlaintextPrivateKey } from '../../../../giam/backend/src/modules/keys/models/signingKey.model';
+} from '../../../backend/src/modules/keys/providers/sharedStore.provider';
+import { KmsKeyProvider } from '../../../backend/src/modules/keys/providers/kms.provider';
+import { KeyRing, InMemorySigningKeyStore } from '../../../backend/src/modules/keys/services/keyRing.service';
+import { assertNoPlaintextPrivateKey } from '../../../backend/src/modules/keys/models/signingKey.model';
 
 const REALM = 'realm-under-test';
 const temporaryDirs: string[] = [];

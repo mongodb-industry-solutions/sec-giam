@@ -3,7 +3,7 @@
   "info": {
     "title": "GIAM (General Identity and Access Manager)",
     "version": "1.0.0",
-    "description": "\n## Overview\n\nGIAM is the identity authority for **people and systems equally**: employees, customers,\nmicroservices, applications, AI agents and workloads. It is industry neutral, so nothing in its\nmodel, its API or its policy vocabulary names a business concept belonging to the applications it\nprotects.\n\nIt is an identity **broker** as well as an authority: an application speaks one protocol (OIDC) to\none issuer, and GIAM federates behind that to an upstream provider, several at once if needed. Adding\none is a configuration record, not a change in any application.\n\n## How to read this document\n\nEvery operation declares its category:\n\n| Category | Meaning |\n|---|---|\n| **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |\n| **No applicable standard** | Plain REST: plural resources, correct verb semantics, `PATCH` for partial updates, RFC 9457 `application/problem+json` errors, `ETag` and `If-Match` on mutable resources, cursor pagination, `Idempotency-Key` on unsafe operations. |\n\nPublic protocol endpoints live under a realm's issuer path; administrative ones live under\n`/admin/`, so a reader can tell them apart from the URL alone.\n\n## Realms\n\nA realm is a trust and key boundary: its own issuer, its own signing keys, its own JWKS. A token\nminted in one realm is refused by another, which is what makes an institutional boundary real rather\nthan declared. A tenant is a data boundary INSIDE a realm.\n\n## Token validation\n\nBoth models are supported and the choice belongs to the resource server, per operation:\n\n- **Decentralised.** Verification uses only the public keys GIAM publishes, downloaded and cached by\n  the client. No secret at the client, no network call per request, and a GIAM outage does not\n  invalidate an already-issued token.\n- **Centralised.** Introspection at GIAM, so revocation is immediate and the answer reflects current\n  account status rather than what was true at issuance.\n\nThe recommended default is to verify locally on every request and introspect only where the decision\nis expensive to get wrong.\n"
+    "description": "\n## Overview\n\nGIAM is the identity authority for **people and systems equally**: employees, customers,\nmicroservices, applications, AI agents and workloads. It is industry neutral, so nothing in its\nmodel, its API or its policy vocabulary names a business concept belonging to the applications it\nprotects.\n\nIt is an identity **broker** as well as an authority: an application speaks one protocol (OIDC) to\none issuer, and GIAM federates behind that to an upstream provider, several at once if needed. Adding\none is a configuration record, not a change in any application.\n\n## How to read this document\n\nEvery operation declares its category:\n\n| Category | Meaning |\n|---|---|\n| **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |\n| **No applicable standard** | Plain REST: plural resources, correct verb semantics, `PATCH` for partial updates, RFC 9457 `application/problem+json` errors, `ETag` and `If-Match` on mutable resources, cursor pagination, `Idempotency-Key` on unsafe operations. |\n\nPublic protocol endpoints live under a realm's issuer path; administrative ones live under\n`/api/v1/admin/`, so a reader can tell them apart from the URL alone.\n\n## Realms\n\nA realm is a trust and key boundary: its own issuer, its own signing keys, its own JWKS. A token\nminted in one realm is refused by another, which is what makes an institutional boundary real rather\nthan declared. A tenant is a data boundary INSIDE a realm.\n\n## Token validation\n\nBoth models are supported and the choice belongs to the resource server, per operation:\n\n- **Decentralised.** Verification uses only the public keys GIAM publishes, downloaded and cached by\n  the client. No secret at the client, no network call per request, and a GIAM outage does not\n  invalidate an already-issued token.\n- **Centralised.** Introspection at GIAM, so revocation is immediate and the answer reflects current\n  account status rather than what was true at issuance.\n\nThe recommended default is to verify locally on every request and introspect only where the decision\nis expensive to get wrong.\n"
   },
   "components": {
     "securitySchemes": {
@@ -468,6 +468,176 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/def-1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/protocol/openid-connect/userinfo": {
+      "get": {
+        "operationId": "userinfo",
+        "summary": "Claims about the authenticated subject",
+        "tags": [
+          "oauth"
+        ],
+        "description": "OpenID Connect Core 1.0 section 5.3. Requires the access token issued to this subject. The claims returned are those the granted scopes permit: `profile` carries the name, `email` carries the address, and a scope that was not granted yields no claim rather than an error.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Claims about the subject, bounded by the granted scopes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Claims about the subject, bounded by the granted scopes.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "sub"
+                  ],
+                  "properties": {
+                    "sub": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "preferred_username": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "email_verified": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "sub": "a1b2c3",
+                  "name": "Ada Lovelace",
+                  "preferred_username": "ada",
+                  "email": "ada@example.com"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The subject no longer exists in the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "userinfoPost",
+        "summary": "Claims about the authenticated subject",
+        "tags": [
+          "oauth"
+        ],
+        "description": "OpenID Connect Core 1.0 section 5.3. Requires the access token issued to this subject. The claims returned are those the granted scopes permit: `profile` carries the name, `email` carries the address, and a scope that was not granted yields no claim rather than an error.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Claims about the subject, bounded by the granted scopes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Claims about the subject, bounded by the granted scopes.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "sub"
+                  ],
+                  "properties": {
+                    "sub": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "preferred_username": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "email_verified": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "sub": "a1b2c3",
+                  "name": "Ada Lovelace",
+                  "preferred_username": "ada",
+                  "email": "ada@example.com"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The subject no longer exists in the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -1671,6 +1841,16 @@
             "schema": {
               "type": "string"
             },
+            "example": "acme-portal",
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "description": "The application the person is signing in to. It already travels in the authorization request, so nothing extra is passed: the roster is narrowed to the roles that client declares, because the useful personas differ from one application to the next."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "example": "acme",
             "in": "path",
             "name": "realm",
@@ -2499,6 +2679,138 @@
           },
           "401": {
             "description": "Client authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/protocol/openid-connect/ext/ciba/auth/pending": {
+      "get": {
+        "operationId": "listPendingBackchannelRequests",
+        "summary": "Approvals waiting for the calling principal",
+        "tags": [
+          "authentication"
+        ],
+        "description": "OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half. Scoped to the CALLER: an approving device shows its owner what is waiting for them, and this cannot be used to discover what anybody else has been asked to approve.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What is waiting, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "What is waiting, newest first.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "pending"
+                  ],
+                  "properties": {
+                    "pending": {
+                      "type": "array",
+                      "items": {
+                        "description": "What the approving device shows and signs.",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "auth_req_id",
+                          "challenge",
+                          "client_id",
+                          "scopes",
+                          "status"
+                        ],
+                        "properties": {
+                          "auth_req_id": {
+                            "type": "string"
+                          },
+                          "challenge": {
+                            "type": "string"
+                          },
+                          "binding_message": {
+                            "type": "string"
+                          },
+                          "client_id": {
+                            "type": "string"
+                          },
+                          "client_name": {
+                            "type": "string"
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "example": {
+                          "auth_req_id": "5f1b…",
+                          "challenge": "Yk8s…",
+                          "binding_message": "Approve sign-in at Acme",
+                          "client_id": "acme-portal",
+                          "client_name": "Acme Portal",
+                          "scopes": [
+                            "openid"
+                          ],
+                          "status": "pending"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "pending": [
+                    {
+                      "auth_req_id": "5f1b…",
+                      "challenge": "Yk8s…",
+                      "binding_message": "Approve sign-in at Acme",
+                      "client_id": "acme-portal",
+                      "client_name": "Acme Portal",
+                      "scopes": [
+                        "openid"
+                      ],
+                      "status": "pending"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5926,7 +6238,7 @@
         }
       }
     },
-    "/admin/posture": {
+    "/api/v1/admin/posture": {
       "get": {
         "operationId": "getAdminPosture",
         "summary": "Effective security posture",
@@ -6056,7 +6368,7 @@
         }
       }
     },
-    "/admin/logs": {
+    "/api/v1/admin/logs": {
       "get": {
         "operationId": "getAdminLogs",
         "summary": "Recent log lines",
@@ -6135,7 +6447,1281 @@
         }
       }
     },
-    "/admin/views": {
+    "/api/v1/admin/login": {
+      "post": {
+        "operationId": "createAdminSession",
+        "summary": "Sign in to the operations console",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Exchanges the operator name and password for a token valid for four hours. The password is never stored: the server compares its digest against the configured one. Public by nature, because it is where a credential is presented and so cannot require one first. Attempts are rate limited per address, which is the only thing standing between a guessable password and the whole operations surface.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "username",
+                  "password"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "example": "admin"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Compared as a digest, never stored or logged."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Signed in.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "token"
+                  ],
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "Present as a bearer token on the other operations routes."
+                    }
+                  }
+                },
+                "example": {
+                  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The name or the password did not match.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No operator credential is configured, so nobody can sign in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/run": {
+      "post": {
+        "operationId": "runAdminCommand",
+        "summary": "Run one named maintenance script",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Runs one of a fixed set of maintenance scripts and streams its output as server-sent events. The set is named in the source, not read from a package file, so a new capability is a decision somebody made rather than a consequence of editing a script entry. The stream sends a comment frame every fifteen seconds, because a long silent step is otherwise dropped by a proxy and the console waits forever on a run that already ended.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "enum": [
+                      "setup",
+                      "setup:key:master",
+                      "setup:db",
+                      "setup:db:reset",
+                      "setup:seed",
+                      "setup:reset",
+                      "setup:check",
+                      "setup:db:drop",
+                      "test",
+                      "test:unit",
+                      "test:integration",
+                      "type-check",
+                      "openapi"
+                    ],
+                    "example": "setup:check"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The run, streamed. Frames are `start`, `log`, `error` and `done`.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "examples": [
+                    "event: log\ndata: {\"text\":\"setup complete\"}\n\n"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No such command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/exec": {
+      "post": {
+        "operationId": "runAdminShellCommand",
+        "summary": "Run a shell command in the checkout",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Runs an arbitrary command and streams its output. This is the one route with no allowlist, so it is switchable on its own with GIAM_ADMIN_SHELL and the posture report states which way it is set: a capability this broad should never be something a reader has to infer. The working directory is confined to the checkout, so a run cannot wander into the rest of the host through a relative path.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "example": "git status --short"
+                  },
+                  "cwd": {
+                    "type": "string",
+                    "description": "Must resolve inside the checkout. Defaults to its root."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The command, streamed. Frames are `start`, `log`, `error` and `done`.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "examples": [
+                    "event: log\ndata: {\"text\":\"setup complete\"}\n\n"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty command, or a working directory outside the checkout.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The shell is switched off in this deployment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/logs/stream": {
+      "get": {
+        "operationId": "streamAdminLogs",
+        "summary": "Watch the log buffer as it fills",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Sends the buffered lines, then every new one as it arrives. A comment frame every fifteen silent seconds keeps a proxy from dropping an idle stream, which would leave the console showing a service that had simply stopped being watched. Reconnect with `snapshot=false` so the lines already held are not sent a second time. Messages are length capped and never carry a stack, because a stack from this service can carry a credential.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "true"
+            },
+            "in": "query",
+            "name": "snapshot",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The log stream. Each frame is a `log` event carrying one line.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "examples": [
+                    "event: log\ndata: {\"text\":\"setup complete\"}\n\n"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/system": {
+      "get": {
+        "operationId": "getAdminSystem",
+        "summary": "The running system: host, runtime, package and configuration",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. What this process actually is, so a question about behaviour can be answered against the running configuration rather than against what somebody believes was deployed. Any variable whose NAME suggests a secret is replaced with `***` and a connection string keeps everything but its password: a screenshot of this page travels further than the page.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The running system.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The running system.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "os": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "node": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "package": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "env": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "dotenvKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "os": {
+                    "platform": "linux",
+                    "cpus": 4
+                  },
+                  "node": {
+                    "version": "v22.12.0",
+                    "uptimeSeconds": 812
+                  },
+                  "package": {
+                    "name": "giam-backend",
+                    "version": "1.0.0"
+                  },
+                  "env": {
+                    "GIAM_DB_NAME": "giamdb",
+                    "GIAM_ADMIN_TOKEN": "***"
+                  },
+                  "dotenvKeys": [
+                    "GIAM_DB_NAME"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/env": {
+      "patch": {
+        "operationId": "updateAdminEnv",
+        "summary": "Change one configuration variable",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Writes one key into the checkout's environment file and applies it to this process at once. Most of what reads configuration reads it at start-up, so the answer always says a reload is needed rather than pretending the change took full effect.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "example": "GIAM_DB_NAME"
+                  },
+                  "value": {
+                    "type": "string",
+                    "example": "giamdb"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Written.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "updated",
+                    "reloadRequired"
+                  ],
+                  "properties": {
+                    "updated": {
+                      "type": "boolean"
+                    },
+                    "reloadRequired": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "updated": true,
+                  "reloadRequired": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The key or the value is not writable to an environment file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/restart": {
+      "post": {
+        "operationId": "restartAdminTarget",
+        "summary": "Restart the service or the console",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. The service answers first and then exits, so whatever supervises it starts it again; under a watcher or an orchestrator that is a restart, and with neither it is a stop, which is why the answer says what it did rather than what it achieved. The console is ended by port and started again.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "target"
+                ],
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "backend",
+                      "frontend"
+                    ],
+                    "example": "backend"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The restart was started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The restart was started.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "ok",
+                    "message"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "ok": true,
+                  "message": "The service is exiting so its supervisor restarts it."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reload": {
+      "post": {
+        "operationId": "reloadAdminRuntime",
+        "summary": "Rebuild the datastore runtime without restarting",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Re-reads the configuration and rebuilds the encrypted client and the event bus in place. After the database has been dropped and built again this process still holds a client bound to a key vault that no longer exists, and every encrypted read fails with a message about unsatisfied keys. On a host that cannot be restarted this is the way back.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The runtime was rebuilt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The runtime was rebuilt.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "ok",
+                    "message",
+                    "steps"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "ok": true,
+                  "message": "The runtime was rebuilt.",
+                  "steps": [
+                    "re-wired against database \"giamdb\""
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The runtime could not be rebuilt; the reason is in the log.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/webhook/hook": {
+      "get": {
+        "operationId": "receiveDeliveryGet",
+        "summary": "Receive a GET delivery for inspection",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Accepts a delivery of any shape and records what arrived, so an operator can point an outbound target here and see exactly what this service sends. It is a mirror and nothing else: it changes no record, starts no flow and reaches no other part of the service, so an anonymous caller drives nothing by reaching it. It is open because an emitter under test cannot present an operator credential, and only the RECEIVING is open: reading what was received requires one like everything else here. Captures are held in memory, capped, rate limited per address so nobody can push a genuine capture out of the window, and any credential-bearing header is truncated before the capture leaves this process.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Received and recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Received and recorded.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "received",
+                    "id"
+                  ],
+                  "properties": {
+                    "received": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "received": true,
+                  "id": "7c1f2c2a-6a1a-4d0f-9b0f-2b0f6b1a5e21"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The delivery was larger than the receiver accepts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many deliveries from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "receiveDeliveryPost",
+        "summary": "Receive a POST delivery for inspection",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Accepts a delivery of any shape and records what arrived, so an operator can point an outbound target here and see exactly what this service sends. It is a mirror and nothing else: it changes no record, starts no flow and reaches no other part of the service, so an anonymous caller drives nothing by reaching it. It is open because an emitter under test cannot present an operator credential, and only the RECEIVING is open: reading what was received requires one like everything else here. Captures are held in memory, capped, rate limited per address so nobody can push a genuine capture out of the window, and any credential-bearing header is truncated before the capture leaves this process.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Received and recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Received and recorded.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "received",
+                    "id"
+                  ],
+                  "properties": {
+                    "received": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "received": true,
+                  "id": "7c1f2c2a-6a1a-4d0f-9b0f-2b0f6b1a5e21"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The delivery was larger than the receiver accepts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many deliveries from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "receiveDeliveryPut",
+        "summary": "Receive a PUT delivery for inspection",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Accepts a delivery of any shape and records what arrived, so an operator can point an outbound target here and see exactly what this service sends. It is a mirror and nothing else: it changes no record, starts no flow and reaches no other part of the service, so an anonymous caller drives nothing by reaching it. It is open because an emitter under test cannot present an operator credential, and only the RECEIVING is open: reading what was received requires one like everything else here. Captures are held in memory, capped, rate limited per address so nobody can push a genuine capture out of the window, and any credential-bearing header is truncated before the capture leaves this process.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Received and recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Received and recorded.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "received",
+                    "id"
+                  ],
+                  "properties": {
+                    "received": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "received": true,
+                  "id": "7c1f2c2a-6a1a-4d0f-9b0f-2b0f6b1a5e21"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The delivery was larger than the receiver accepts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many deliveries from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "receiveDeliveryPatch",
+        "summary": "Receive a PATCH delivery for inspection",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Accepts a delivery of any shape and records what arrived, so an operator can point an outbound target here and see exactly what this service sends. It is a mirror and nothing else: it changes no record, starts no flow and reaches no other part of the service, so an anonymous caller drives nothing by reaching it. It is open because an emitter under test cannot present an operator credential, and only the RECEIVING is open: reading what was received requires one like everything else here. Captures are held in memory, capped, rate limited per address so nobody can push a genuine capture out of the window, and any credential-bearing header is truncated before the capture leaves this process.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Received and recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Received and recorded.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "received",
+                    "id"
+                  ],
+                  "properties": {
+                    "received": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "received": true,
+                  "id": "7c1f2c2a-6a1a-4d0f-9b0f-2b0f6b1a5e21"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The delivery was larger than the receiver accepts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many deliveries from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "receiveDeliveryDelete",
+        "summary": "Receive a DELETE delivery for inspection",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Accepts a delivery of any shape and records what arrived, so an operator can point an outbound target here and see exactly what this service sends. It is a mirror and nothing else: it changes no record, starts no flow and reaches no other part of the service, so an anonymous caller drives nothing by reaching it. It is open because an emitter under test cannot present an operator credential, and only the RECEIVING is open: reading what was received requires one like everything else here. Captures are held in memory, capped, rate limited per address so nobody can push a genuine capture out of the window, and any credential-bearing header is truncated before the capture leaves this process.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Received and recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Received and recorded.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "received",
+                    "id"
+                  ],
+                  "properties": {
+                    "received": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "received": true,
+                  "id": "7c1f2c2a-6a1a-4d0f-9b0f-2b0f6b1a5e21"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The delivery was larger than the receiver accepts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many deliveries from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/webhook/stream": {
+      "get": {
+        "operationId": "streamDeliveries",
+        "summary": "Watch deliveries as they arrive",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Replays what is held, then sends each new delivery as it lands. A comment frame every fifteen silent seconds keeps a proxy from dropping an idle stream, which would leave the panel showing nothing arriving when nothing was being forwarded.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The delivery stream. Frames are `request`, `clear` and `delete`.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "examples": [
+                    "event: request\ndata: {\"text\":\"{\\\"id\\\":\\\"7c1f2c2a\\\"}\"}\n\n"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/webhook/requests": {
+      "delete": {
+        "operationId": "clearDeliveries",
+        "summary": "Discard every captured delivery",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Empties what the inspector holds and tells every watcher, so two operators looking at the same panel do not disagree about what is there.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Discarded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Discarded.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "cleared"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "cleared": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/webhook/requests/{id}": {
+      "delete": {
+        "operationId": "deleteDelivery",
+        "summary": "Discard one captured delivery",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. Removes one capture and tells every watcher it has gone.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "7c1f2c2a-6a1a-4d0f-9b0f-2b0f6b1a5e21",
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Discarded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Discarded.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "deleted"
+                  ],
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "deleted": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No capture with that identifier is held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/views": {
       "get": {
         "operationId": "listConsoleViews",
         "summary": "What the console can read, and what each view withholds",
@@ -6177,6 +7763,9 @@
                             "type": "string"
                           },
                           "realmScoped": {
+                            "type": "boolean"
+                          },
+                          "canManage": {
                             "type": "boolean"
                           },
                           "fields": {
@@ -6230,7 +7819,7 @@
         }
       }
     },
-    "/admin/views/{view}": {
+    "/api/v1/admin/views/{view}": {
       "get": {
         "operationId": "readConsoleView",
         "summary": "Read one view",
@@ -6331,6 +7920,16 @@
           },
           "401": {
             "description": "No administrative credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller holds no role permitting this view.",
             "content": {
               "application/json": {
                 "schema": {
