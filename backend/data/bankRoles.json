@@ -1,0 +1,291 @@
+[
+  {
+    "realm": "bankcore",
+    "resourceServer": "bankcore",
+    "name": "bank_operations",
+    "displayName": "Bank Operations",
+    "description": "Day-to-day banking operations: account holders, accounts, movements and the cards this bank issued.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "Operates cards without being able to disclose one. Authority to administer a card is deliberately not authority to read its number, which is why cardData is a separate resource from issuedCards and why this role holds the second and not the first.",
+    "permissions": {
+      "accountHolders": [
+        "view",
+        "manage"
+      ],
+      "accounts": [
+        "view",
+        "manage"
+      ],
+      "movements": [
+        "view"
+      ],
+      "issuedCards": [
+        "view",
+        "manage"
+      ],
+      "creditAssessments": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "cardData",
+        "action": "viewSensitive",
+        "reason": "Disclosing a card number is a distinct authority held by the card officer. An operations role that could also disclose would make the two indistinguishable in the audit trail, which is the separation this bank previously could not express at all."
+      },
+      {
+        "resource": "movements",
+        "action": "manage",
+        "reason": "Correcting a ledger record is not an operations task. It changes the bank's own books and belongs to a role whose actions are reviewed."
+      }
+    ]
+  },
+  {
+    "realm": "bankcore",
+    "resourceServer": "bankcore",
+    "name": "bank_card_officer",
+    "displayName": "Card Officer",
+    "description": "Card administration including disclosure of a card number from the issuer vault, which is the only role that may.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "The only role holding cardData:viewSensitive. Every disclosure is therefore attributable to a person in this role, which is what makes a reveal reviewable rather than merely logged.",
+    "permissions": {
+      "accountHolders": [
+        "view"
+      ],
+      "accounts": [
+        "view"
+      ],
+      "issuedCards": [
+        "view",
+        "manage"
+      ],
+      "cardData": [
+        "viewSensitive"
+      ]
+    }
+  },
+  {
+    "realm": "bankcore",
+    "resourceServer": "bankcore",
+    "name": "bank_compliance",
+    "displayName": "Compliance",
+    "description": "Read-only oversight across the bank, including account-access consents and the request trail.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "Read-only is the whole role. Someone who can change what they oversee cannot attest to it, so no permission here grants a mutation and none may be added without ending the role's independence.",
+    "permissions": {
+      "accountHolders": [
+        "view"
+      ],
+      "accounts": [
+        "view"
+      ],
+      "movements": [
+        "view"
+      ],
+      "issuedCards": [
+        "view"
+      ],
+      "consents": [
+        "view"
+      ],
+      "tppRegistrations": [
+        "view"
+      ],
+      "creditAssessments": [
+        "view"
+      ],
+      "counterpartyBanks": [
+        "view"
+      ],
+      "bankAudit": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "cardData",
+        "action": "viewSensitive",
+        "reason": "Oversight does not require the number itself. Compliance reviews that a disclosure happened and who made it, which the audit trail carries; being able to disclose would make the reviewer indistinguishable from the reviewed."
+      },
+      {
+        "resource": "consents",
+        "action": "manage",
+        "reason": "Revoking an account-access consent is an operational act with an effect on a third party's live access. A read-only role that could revoke would be changing the arrangement it exists to audit."
+      }
+    ],
+    "authorityPermissions": {
+      "realms": [
+        "view"
+      ],
+      "tenants": [
+        "view"
+      ],
+      "providers": [
+        "view"
+      ],
+      "identities": [
+        "view"
+      ],
+      "credentials": [
+        "view"
+      ],
+      "clients": [
+        "view"
+      ],
+      "roles": [
+        "view"
+      ],
+      "assignments": [
+        "view"
+      ],
+      "policies": [
+        "view"
+      ],
+      "permissions": [
+        "view"
+      ],
+      "resourceServers": [
+        "view"
+      ],
+      "sessions": [
+        "view"
+      ],
+      "grants": [
+        "view"
+      ],
+      "keys": [
+        "view"
+      ]
+    }
+  },
+  {
+    "realm": "bankcore",
+    "resourceServer": "bankcore",
+    "name": "bank_admin",
+    "displayName": "Bank Administrator",
+    "description": "Bank configuration: registered third parties, reachable institutions and engine configuration.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "Configures the bank without reading what flows through it. It registers third parties and sets engine policy, and holds no permission over an account holder, an account or a card, which keeps the person who configures access apart from the data that access reaches.",
+    "permissions": {
+      "tppRegistrations": [
+        "view",
+        "manage"
+      ],
+      "counterpartyBanks": [
+        "view",
+        "manage"
+      ],
+      "bankModules": [
+        "view",
+        "manage"
+      ],
+      "consents": [
+        "view",
+        "manage"
+      ],
+      "bankAudit": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "accounts",
+        "reason": "A configuration role has no need for customer data, and granting it would collapse the separation this role exists to maintain."
+      },
+      {
+        "resource": "cardData",
+        "action": "viewSensitive",
+        "reason": "Administering the bank does not include disclosing a card number. That authority sits with the card officer and nowhere else."
+      }
+    ],
+    "authorityPermissions": {
+      "realms": [
+        "view",
+        "manage"
+      ],
+      "tenants": [
+        "view",
+        "manage"
+      ],
+      "providers": [
+        "view",
+        "manage"
+      ],
+      "identities": [
+        "view",
+        "manage"
+      ],
+      "credentials": [
+        "view",
+        "manage"
+      ],
+      "clients": [
+        "view",
+        "manage"
+      ],
+      "roles": [
+        "view",
+        "manage"
+      ],
+      "assignments": [
+        "view",
+        "manage"
+      ],
+      "policies": [
+        "view",
+        "manage"
+      ],
+      "permissions": [
+        "view",
+        "manage"
+      ],
+      "resourceServers": [
+        "view",
+        "manage"
+      ],
+      "sessions": [
+        "view",
+        "manage"
+      ],
+      "grants": [
+        "view",
+        "manage"
+      ],
+      "keys": [
+        "view"
+      ]
+    }
+  },
+  {
+    "realm": "bankcore",
+    "resourceServer": "bankcore",
+    "name": "bank_customer",
+    "displayName": "Account Holder",
+    "description": "An account holder at this bank, seeing their own accounts, balances and movements directly.",
+    "scopeKind": "self",
+    "builtin": true,
+    "sodRationale": "Needs no consent, because there is no third party in the arrangement: this is their own data at their own institution. What they do need is to be unable to reach anybody else's, which the self scope binds by subject rather than by role.",
+    "permissions": {
+      "accounts": [
+        "view"
+      ],
+      "movements": [
+        "view"
+      ],
+      "issuedCards": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "cardData",
+        "action": "viewSensitive",
+        "reason": "An account holder sees the card they hold, not its stored number. The number is disclosed through the card officer's audited path, not read from a self-service screen."
+      }
+    ]
+  }
+]

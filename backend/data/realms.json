@@ -1,0 +1,109 @@
+[
+  {
+    "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
+    "name": "leafypay",
+    "displayName": "Leafy Pay",
+    "aliases": [
+      "local"
+    ],
+    "enabled": true,
+    "demoMode": true,
+    "registration": {
+      "selfServiceEnabled": true,
+      "autoApprove": false
+    },
+    "branding": {
+      "displayName": "Leafy Pay",
+      "primaryColor": "#00ED64",
+      "backgroundStyle": "leaf"
+    },
+    "providers": [
+      {
+        "providerId": "d1a2b3c4-0002-0002-0002-000000000002",
+        "name": "msentra",
+        "displayName": "Microsoft Entra ID",
+        "protocol": "oidc",
+        "adapter": "oidc",
+        "enabled": false,
+        "notice": "Microsoft Entra ID integration is configured but not yet active in this build.",
+        "config": {
+          "tenant": "",
+          "clientId": "",
+          "scopes": [
+            "openid",
+            "profile",
+            "email"
+          ]
+        },
+        "claimMappings": []
+      },
+      {
+        "providerId": "d1a2b3c4-0003-0003-0003-000000000003",
+        "name": "bigid",
+        "displayName": "BigID",
+        "protocol": "oidc",
+        "adapter": "oidc",
+        "enabled": false,
+        "notice": "BigID integration is configured but not yet active in this build.",
+        "config": {
+          "issuer": "",
+          "clientId": ""
+        },
+        "claimMappings": []
+      },
+      {
+        "providerId": "d1a2b3c4-0004-0004-0004-000000000004",
+        "name": "partnerbank",
+        "displayName": "Partner Bank (staff SSO)",
+        "protocol": "oidc",
+        "adapter": "oidc",
+        "enabled": true,
+        "notice": "Federated through this authority. No application here holds its configuration, learns its group names, or is redeployed when it changes.",
+        "config": {
+          "issuer": "http://localhost:8085/realms/bankcore",
+          "clientId": "partnerbank-federation",
+          "clientSecretRef": "GIAM_FEDERATION_PARTNERBANK_SECRET",
+          "redirectUri": "http://localhost:8086/auth/federation/partnerbank/callback",
+          "scopes": [
+            "openid",
+            "profile",
+            "email"
+          ],
+          "emailDomains": [
+            "partnerbank.example"
+          ]
+        },
+        "claimMappings": [
+          {
+            "claim": "roles",
+            "value": "fraud_investigator",
+            "roleName": "level2_investigator"
+          },
+          {
+            "claim": "roles",
+            "value": "compliance",
+            "roleName": "security_auditor"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "realmId": "d1a2b3c4-0004-0004-0004-000000000004",
+    "name": "bankcore",
+    "displayName": "BankCore",
+    "aliases": [],
+    "enabled": true,
+    "demoMode": false,
+    "registration": {
+      "selfServiceEnabled": false,
+      "autoApprove": false
+    },
+    "branding": {
+      "displayName": "BankCore",
+      "primaryColor": "#001E2B",
+      "backgroundStyle": "plain"
+    },
+    "providers": []
+  }
+]

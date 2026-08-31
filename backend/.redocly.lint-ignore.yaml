@@ -1,0 +1,17 @@
+# Exemptions from spec-lint, each one a recorded decision rather than a rule turned off globally.
+#
+# Only infrastructure routes appear here, and they are exempt for a reason that does not generalise:
+# a deployment probe and a documentation redirect have no client-error case to document, and inventing
+# a 404 or a 429 for them so a linter passes would be a false entry in the contract. Turning the rule
+# off instead would exempt every future endpoint too, which is the outcome this file exists to avoid.
+#
+# Nothing on the protocol or administrative surface may be added here. An operation that genuinely
+# cannot fail on the client's side is an operation that has not been thought through yet.
+openapi.json:
+  # The root redirect answers 302 and nothing else.
+  operation-2xx-response:
+    - '#/paths/~1/get/responses'
+  operation-4xx-response:
+    - '#/paths/~1/get/responses'
+    - '#/paths/~1health/get/responses'
+    - '#/paths/~1api~1v1~1system~1health/get/responses'

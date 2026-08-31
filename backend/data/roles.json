@@ -1,0 +1,400 @@
+[
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "customer",
+    "displayName": "Customer",
+    "description": "Account holder. Own transactions, own stored cards, own accounts, own contacts and own consents.",
+    "scopeKind": "self",
+    "builtin": true,
+    "sodRationale": "Scoped to self by the role rather than by each permission, because the answer is the same for all of them: viewing transactions means viewing one's own, and no permission changes that.",
+    "permissions": {
+      "transactions": [
+        "view"
+      ],
+      "cards": [
+        "view",
+        "manage"
+      ],
+      "merchants": [
+        "view"
+      ],
+      "consents": [
+        "view"
+      ],
+      "accounts": [
+        "view",
+        "manage"
+      ],
+      "beneficiaries": [
+        "view",
+        "manage"
+      ],
+      "paymentRequests": [
+        "view",
+        "manage"
+      ]
+    }
+  },
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "level1_analyst",
+    "displayName": "L1 Fraud Analyst",
+    "description": "First-line fraud triage: view transactions, customers and cards, investigate cases, escalate to L2.",
+    "scopeKind": "all",
+    "builtin": true,
+    "permissions": {
+      "transactions": [
+        "view"
+      ],
+      "customers": [
+        "view"
+      ],
+      "cards": [
+        "view"
+      ],
+      "merchants": [
+        "view"
+      ],
+      "fraudCases": [
+        "view",
+        "investigate"
+      ],
+      "beneficiaries": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "auditEvents",
+        "reason": "The platform-wide event stream is cross-entity, covering every customer, merchant and integration payload, which first-line triage has no job-related need for. L1 still gets the per-case trail through fraudCases:investigate."
+      },
+      {
+        "resource": "beneficiaries",
+        "action": "investigate",
+        "reason": "view is drill-down for a known owner. Cross-party SEARCH requires investigate, which first-line triage deliberately does not hold: it has no need to enumerate counterparties across the whole customer base."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "level2_investigator",
+    "displayName": "L2 Investigator",
+    "description": "Senior investigator: everything L1 sees, plus sensitive cardholder and personal data through an elevation, plus case resolution.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "Sensitive reveals are gated by a time-bound elevation rather than by the role alone, so holding the role is not the same as exercising it, and every reveal has an approval behind it.",
+    "permissions": {
+      "transactions": [
+        "view",
+        "viewSensitive"
+      ],
+      "customers": [
+        "view",
+        "viewSensitive"
+      ],
+      "cards": [
+        "view",
+        "viewSensitive"
+      ],
+      "merchants": [
+        "view"
+      ],
+      "fraudCases": [
+        "view",
+        "investigate"
+      ],
+      "auditEvents": [
+        "view"
+      ],
+      "accounts": [
+        "view",
+        "viewSensitive"
+      ],
+      "beneficiaries": [
+        "view",
+        "investigate",
+        "manage"
+      ],
+      "paymentRequests": [
+        "view"
+      ],
+      "grants": [
+        "view",
+        "manage"
+      ]
+    }
+  },
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "security_auditor",
+    "displayName": "Security Auditor",
+    "description": "Read-only global oversight, including sensitive fields, plus integration and configuration visibility. No mutations anywhere.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "Read-only is the whole role. An auditor able to change what it audits cannot attest to it, so no permission here grants a mutation and none may be added without ending the role's independence.",
+    "permissions": {
+      "transactions": [
+        "view",
+        "viewSensitive"
+      ],
+      "customers": [
+        "view",
+        "viewSensitive"
+      ],
+      "cards": [
+        "view",
+        "viewSensitive"
+      ],
+      "fraudCases": [
+        "view",
+        "viewSensitive"
+      ],
+      "merchants": [
+        "view"
+      ],
+      "providers": [
+        "view"
+      ],
+      "modules": [
+        "view"
+      ],
+      "auditEvents": [
+        "view"
+      ],
+      "accounts": [
+        "view",
+        "viewSensitive"
+      ],
+      "beneficiaries": [
+        "view",
+        "investigate"
+      ],
+      "paymentRequests": [
+        "view"
+      ],
+      "grants": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "beneficiaries",
+        "action": "manage",
+        "reason": "The role is documented as read-only oversight, and it previously held manage while the interface rendered add and remove for it. A read-only auditor able to delete a beneficiary is a separation-of-duties finding. investigate gives it the cross-party search it actually needs."
+      }
+    ],
+    "authorityPermissions": {
+      "realms": [
+        "view"
+      ],
+      "tenants": [
+        "view"
+      ],
+      "providers": [
+        "view"
+      ],
+      "identities": [
+        "view"
+      ],
+      "credentials": [
+        "view"
+      ],
+      "clients": [
+        "view"
+      ],
+      "roles": [
+        "view"
+      ],
+      "assignments": [
+        "view"
+      ],
+      "policies": [
+        "view"
+      ],
+      "permissions": [
+        "view"
+      ],
+      "resourceServers": [
+        "view"
+      ],
+      "sessions": [
+        "view"
+      ],
+      "grants": [
+        "view"
+      ],
+      "keys": [
+        "view"
+      ]
+    }
+  },
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "merchant_officer",
+    "displayName": "Merchant Officer",
+    "description": "Business acquiring: the decision authority over a business file, reviewing and then approving, rejecting or suspending it, plus its configuration.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "This role owns the DECISION on a business file. The operations officer owns DATA CORRECTION on an already-registered one. Both touch the same resource and emit the same compliance events; the boundary is procedural and is recorded in the audit actor. A verdict override stays here and never appears on the administration surface.",
+    "permissions": {
+      "merchants": [
+        "view",
+        "manage"
+      ],
+      "accounts": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "auditEvents",
+        "reason": "A decision officer would otherwise read events for businesses and customers unrelated to any file under review, which is need-to-know rather than role scope."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "operations_officer",
+    "displayName": "Operations Officer",
+    "description": "Operations: administers cardholder cards and payout accounts through the platform capabilities, and reviews and corrects customer and business identity records including beneficial owners.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "The correction half of the split with the merchant officer: this role corrects an already-registered business file and its beneficial owners, and never decides whether the business is approved. Administration is gated by the DATA resource rather than by the modules resource, so there is no path where administering modules confers the ability to edit business data.",
+    "permissions": {
+      "cards": [
+        "view",
+        "manage"
+      ],
+      "accounts": [
+        "view",
+        "manage"
+      ],
+      "customers": [
+        "view",
+        "manage"
+      ],
+      "merchants": [
+        "view",
+        "manage"
+      ],
+      "modules": [
+        "view",
+        "manage"
+      ],
+      "providers": [
+        "view"
+      ],
+      "auditEvents": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "customers",
+        "action": "viewSensitive",
+        "reason": "Decrypted identity fields still require the elevation, exactly like the investigator path. Correcting a record does not require reading the sensitive values inside it."
+      },
+      {
+        "resource": "providers",
+        "action": "manage",
+        "reason": "External provider configuration and routing stay with the platform administrator. Read-only visibility here exists so the operations view can show which provider currently serves each capability."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "resourceServer": "leafypay",
+    "name": "manager",
+    "displayName": "Integration Manager",
+    "description": "Platform administration: external providers, capability modules, authentication configuration and roles.",
+    "scopeKind": "all",
+    "builtin": true,
+    "sodRationale": "Platform administration with NO access to business or cardholder data. The separation is the point: the role that configures the platform cannot read what flows through it. Its authentication-configuration and role-administration permissions now belong to the AUTHORITY's own resource server rather than to the application, because that is where those objects live after the extraction; the application no longer has a roles resource to grant.",
+    "permissions": {
+      "providers": [
+        "view",
+        "manage"
+      ],
+      "modules": [
+        "view"
+      ],
+      "auditEvents": [
+        "view"
+      ]
+    },
+    "authorityPermissions": {
+      "realms": [
+        "view",
+        "manage"
+      ],
+      "tenants": [
+        "view",
+        "manage"
+      ],
+      "providers": [
+        "view",
+        "manage"
+      ],
+      "identities": [
+        "view",
+        "manage"
+      ],
+      "credentials": [
+        "view",
+        "manage"
+      ],
+      "clients": [
+        "view",
+        "manage"
+      ],
+      "roles": [
+        "view",
+        "manage"
+      ],
+      "assignments": [
+        "view",
+        "manage"
+      ],
+      "policies": [
+        "view",
+        "manage"
+      ],
+      "permissions": [
+        "view",
+        "manage"
+      ],
+      "resourceServers": [
+        "view",
+        "manage"
+      ],
+      "sessions": [
+        "view",
+        "manage"
+      ],
+      "grants": [
+        "view",
+        "manage"
+      ],
+      "keys": [
+        "view"
+      ]
+    },
+    "denialRationale": [
+      {
+        "resource": "modules",
+        "action": "manage",
+        "reason": "Module engine and policy configuration is a business and risk process owned by the operations officer. This role keeps read access for platform troubleshooting and security oversight without editing business policy."
+      },
+      {
+        "resource": "transactions",
+        "reason": "A platform administrator has no need for business or cardholder data, and granting it would collapse the separation this role exists to maintain."
+      }
+    ]
+  }
+]

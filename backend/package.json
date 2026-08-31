@@ -1,0 +1,51 @@
+{
+  "name": "giam-backend",
+  "version": "1.0.0",
+  "description": "GIAM: General Identity and Access Manager. The identity authority for people and systems. Industry neutral: no financial concept in its model, API or policy vocabulary.",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch bin/server.ts",
+    "build": "tsc",
+    "start": "node dist/bin/server.js",
+    "setup:db": "ts-node bin/setup.ts",
+    "setup:db:reset": "ts-node bin/setup.ts --reset",
+    "setup:db:drop": "ts-node bin/setup-drop.ts",
+    "setup:check": "ts-node bin/validate.ts",
+    "setup:seed": "ts-node bin/seed.ts",
+    "seed": "ts-node bin/seed.ts",
+    "openapi:emit": "ts-node bin/openapi-emit.ts",
+    "openapi:lint": "redocly lint openapi.json",
+    "type-check": "tsc --noEmit",
+    "setup:key:master": "ts-node bin/setup-master-key.ts",
+    "loadtest": "node bin/loadtest.mjs",
+    "clients:credentials": "node bin/clientCredentials.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^6.1.0",
+    "@leafypay/eventbus": "file:../../packages/eventbus",
+    "@leafypay/platform-links": "file:../../packages/platform-links",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.8.3",
+    "fastify-plugin": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^7.5.0",
+    "mongodb-client-encryption": "^7.2.0",
+    "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.25.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^26.1.2",
+    "@types/uuid": "^11.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.22.3",
+    "typescript": "^5.9.3"
+  }
+}

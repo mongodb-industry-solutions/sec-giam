@@ -1,10 +1,23 @@
+# OAuth/OIDC signing keys — generated locally via `npm run setup:key:rsa`, never commit
+psp/backend/keys/
+# The bank's notification signing key, generated on first use. `*.pem` above already covers the current
+# format; this covers the directory, so a key written in any other format cannot slip through (v37).
+bank/backend/keys/
+*.pem
+
 # Logs
 logs
+!psp/frontend/src/app/**/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+package-lock.json
+test/.verify-carousel/
+test-results/
+test/.playwright-report/
+kube.env
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
@@ -21,7 +34,7 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage
 *.lcov
-
+*graphify*
 # nyc test coverage
 .nyc_output
 
@@ -82,6 +95,11 @@ out
 .nuxt
 dist
 .output
+CLAUDE.md
+.claude
+skills-lock.json
+.agents
+tmp
 
 # Gatsby files
 .cache/
@@ -141,3 +159,8 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+psp/frontend/next-env.d.ts
+
+# corp SSO session harvest (tools/corp.mjs) — personal session credentials, never commit
+.corp/

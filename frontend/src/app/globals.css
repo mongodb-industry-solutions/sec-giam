@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* Theme tokens as utilities and CSS variables. The console keeps the platform palette so a reader
+   moving between the applications and the identity console is not looking at two products. */
+@theme {
+  --color-mongodb-green: #00ED64;
+  --color-mongodb-dark: #001E2B;
+  --color-mongodb-gray: #3D4F58;
+}
+
+/* Tailwind v4 changed the default border colour to currentColor; this restores the soft line that
+   bare `border` utilities are written against. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
+
+:root {
+  --mongodb-green: #00ED64;
+  --mongodb-dark: #001E2B;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+
+/* About page (/about): staggered card entrance. Cards set --about-delay inline so the grid
+   reveals in sequence on large screens and TVs. */
+@keyframes about-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.about-rise {
+  opacity: 0;
+  animation: about-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--about-delay, 0ms);
+}
+/* Short luminous rule separating the team intro from the contact message. A travelling
+   highlight crosses the gradient so the header keeps a slight pulse on a wall display. */
+@keyframes about-divider-sweep {
+  0%   { transform: translateX(-120%); }
+  60%  { transform: translateX(120%); }
+  100% { transform: translateX(120%); }
+}
+.about-divider {
+  position: relative;
+  height: 1px;
+  width: 6rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, var(--mongodb-green), transparent);
+  box-shadow: 0 0 12px 1px rgb(0 237 100 / 0.35);
+}
+.about-divider::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, #ffffff, transparent);
+  animation: about-divider-sweep 4.5s ease-in-out infinite;
+}
+/* The dot anchors the rule so it reads as a deliberate mark, not a hairline artifact. */
+.about-divider-dot {
+  height: 0.3rem;
+  width: 0.3rem;
+  border-radius: 9999px;
+  background: var(--mongodb-green);
+  box-shadow: 0 0 10px 2px rgb(0 237 100 / 0.5);
+}
+
+/* Slow aurora behind the header, keeps a wall display from looking static. */
+@keyframes about-aurora {
+  0%, 100% { transform: translate3d(-6%, -4%, 0) scale(1); opacity: 0.5; }
+  50%      { transform: translate3d(6%, 4%, 0) scale(1.15); opacity: 0.8; }
+}
+.about-aurora { animation: about-aurora 14s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .about-rise { animation: none; opacity: 1; }
+  .about-aurora { animation: none; }
+  .about-divider::after { animation: none; opacity: 0; }
+}

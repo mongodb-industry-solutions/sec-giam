@@ -1,0 +1,163 @@
+[
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0001-operations",
+    "userName": "Marta Oliveira",
+    "kind": "human",
+    "email": "marta.oliveira@bankcore.example",
+    "name": {
+      "formatted": "Marta Oliveira",
+      "givenName": "Marta",
+      "familyName": "Oliveira"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_operations"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0002-cardofficer",
+    "userName": "Tomas Reyes",
+    "kind": "human",
+    "email": "tomas.reyes@bankcore.example",
+    "name": {
+      "formatted": "Tomas Reyes",
+      "givenName": "Tomas",
+      "familyName": "Reyes"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_card_officer"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0003-compliance",
+    "userName": "Ingrid Larsen",
+    "kind": "human",
+    "email": "ingrid.larsen@bankcore.example",
+    "name": {
+      "formatted": "Ingrid Larsen",
+      "givenName": "Ingrid",
+      "familyName": "Larsen"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_compliance"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0004-admin",
+    "userName": "Samuel Adeyemi",
+    "kind": "human",
+    "email": "samuel.adeyemi@bankcore.example",
+    "name": {
+      "formatted": "Samuel Adeyemi",
+      "givenName": "Samuel",
+      "familyName": "Adeyemi"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_admin"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-cus-0001-holder",
+    "userName": "Elena Duarte",
+    "kind": "human",
+    "email": "elena.duarte@example.com",
+    "name": {
+      "formatted": "Elena Duarte",
+      "givenName": "Elena",
+      "familyName": "Duarte"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_customer",
+    "accountHolderRef": "hld00001-0000-4000-8000-000000000001"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0006-operations",
+    "userName": "Nadia Haddad",
+    "kind": "human",
+    "email": "nadia.haddad@bankcore.example",
+    "name": {
+      "formatted": "Nadia Haddad",
+      "givenName": "Nadia",
+      "familyName": "Haddad"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_operations"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0007-cards",
+    "userName": "Petra Novak",
+    "kind": "human",
+    "email": "petra.novak@bankcore.example",
+    "name": {
+      "formatted": "Petra Novak",
+      "givenName": "Petra",
+      "familyName": "Novak"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_card_officer"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0008-compliance",
+    "userName": "Owen Bradley",
+    "kind": "human",
+    "email": "owen.bradley@bankcore.example",
+    "name": {
+      "formatted": "Owen Bradley",
+      "givenName": "Owen",
+      "familyName": "Bradley"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_compliance"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-emp-0009-admin",
+    "userName": "Ruth Nakamura",
+    "kind": "human",
+    "email": "ruth.nakamura@bankcore.example",
+    "name": {
+      "formatted": "Ruth Nakamura",
+      "givenName": "Ruth",
+      "familyName": "Nakamura"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_admin"
+  },
+  {
+    "realm": "bankcore",
+    "subjectId": "bank-cus-0010-holder",
+    "userName": "Viktor Ilyin",
+    "kind": "human",
+    "email": "viktor.ilyin@bankcore.example",
+    "name": {
+      "formatted": "Viktor Ilyin",
+      "givenName": "Viktor",
+      "familyName": "Ilyin"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "bank_customer"
+  }
+]

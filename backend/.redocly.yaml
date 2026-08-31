@@ -1,0 +1,44 @@
+# Spec-lint for the GIAM API document. The bar of the plan's API section, expressed as rules a build
+# can fail on rather than as something a reviewer is expected to notice.
+#
+# The route-coverage and "names a specification or says none applies" checks are not expressible here,
+# so they live in test/giam/backend/unit/openapiContract.test.ts and run in the same CI job.
+
+extends:
+  - recommended
+
+apis:
+  giam:
+    root: ./openapi.json
+
+rules:
+  # Every operation is identifiable, describable and grouped.
+  operation-operationId: error
+  operation-operationId-unique: error
+  operation-operationId-url-safe: error
+  operation-summary: error
+  operation-description: error
+  operation-tag-defined: error
+  tags-alphabetical: off
+  tag-description: error
+
+  # Every operation says what can go wrong. A contract that documents only the happy path is a
+  # contract an integrator finds the rest of in production.
+  operation-4xx-response: error
+  no-invalid-media-type-examples: error
+
+  # Security is declared, referenced schemes exist, and nothing is protected by accident.
+  security-defined: error
+
+  # Structural hygiene: no dangling reference, no duplicated inline shape passed off as a type.
+  no-unresolved-refs: error
+  no-identical-paths: error
+  no-ambiguous-paths: error
+  path-parameters-defined: error
+  spec-strict-refs: off
+
+  # Servers and descriptions.
+  info-license: off
+  info-contact: off
+  no-server-example.com: error
+  no-empty-servers: error

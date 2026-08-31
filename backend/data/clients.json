@@ -1,0 +1,318 @@
+[
+  {
+    "realm": "leafypay",
+    "clientId": "oauth001-0000-4000-8000-000000000001",
+    "clientName": "Espresso Works",
+    "clientType": "confidential",
+    "redirectUris": [
+      "http://localhost:8082/api/auth/callback",
+      "http://127.0.0.1:8082/api/auth/callback"
+    ],
+    "postLogoutRedirectUris": [
+      "http://localhost:8082",
+      "http://127.0.0.1:8082"
+    ],
+    "grantTypes": [
+      "authorization_code",
+      "refresh_token",
+      "urn:openid:params:grant-type:ciba"
+    ],
+    "scope": "openid profile email read:beneficiaries write:beneficiaries write:transfers read:accounts read:transactions read:rtp write:rtp read:merchant_profile read:notifications write:payments",
+    "requirePkce": true,
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "applicationType": "web",
+    "status": "active",
+    "owner": {
+      "kind": "merchant",
+      "ref": "m0000001-0000-4000-8000-000000000001",
+      "displayName": "Espresso Works"
+    },
+    "demoRoster": [
+      "customer"
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "clientId": "f1dc0169-4f90-402c-adc8-f7e2c5c0fc7d",
+    "clientName": "Leafy Wallet",
+    "clientType": "confidential",
+    "redirectUris": [
+      "http://localhost:3000/auth/callback",
+      "http://127.0.0.1:3000/auth/callback"
+    ],
+    "grantTypes": [
+      "authorization_code",
+      "refresh_token",
+      "urn:openid:params:grant-type:ciba"
+    ],
+    "scope": "openid profile email read:beneficiaries write:beneficiaries write:transfers read:accounts read:transactions read:rtp write:rtp",
+    "requirePkce": true,
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "applicationType": "web",
+    "status": "active",
+    "backchannel": {
+      "deliveryMode": "poll"
+    },
+    "owner": {
+      "kind": "merchant",
+      "ref": "m0000002-0000-4000-8000-000000000002",
+      "displayName": "Leafy Wallet"
+    },
+    "demoRoster": [
+      "customer"
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "clientId": "leafypay-backend",
+    "clientName": "LeafyPay backend service",
+    "clientType": "confidential",
+    "redirectUris": [],
+    "grantTypes": [
+      "client_credentials"
+    ],
+    "scope": "openid",
+    "requirePkce": false,
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "applicationType": "service",
+    "status": "active",
+    "serviceIdentity": {
+      "kind": "service",
+      "userName": "LeafyPay backend service",
+      "roleName": "platform_service",
+      "owner": {
+        "kind": "application",
+        "ref": "leafypay",
+        "displayName": "LeafyPay"
+      },
+      "resourceServer": "leafypay",
+      "permissions": {
+        "auditEvents": [
+          "view"
+        ],
+        "modules": [
+          "view"
+        ]
+      }
+    },
+    "demoRoster": [
+      "customer",
+      "manager",
+      "operations_officer",
+      "level1_analyst",
+      "level2_investigator",
+      "security_auditor",
+      "merchant_officer"
+    ]
+  },
+  {
+    "realm": "bankcore",
+    "clientId": "leafypay-psp",
+    "clientName": "LeafyPay, as a registered third party",
+    "clientType": "confidential",
+    "redirectUris": [],
+    "grantTypes": [
+      "client_credentials"
+    ],
+    "scope": "accounts balances transactions payments funds-confirmations card-data card-authorisations credit-assessments demo-credits",
+    "requirePkce": false,
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "applicationType": "service",
+    "status": "active",
+    "serviceIdentity": {
+      "kind": "service",
+      "userName": "LeafyPay, as a registered third party",
+      "roleName": "third_party_provider",
+      "owner": {
+        "kind": "application",
+        "ref": "leafypay",
+        "displayName": "LeafyPay"
+      },
+      "resourceServer": "bankcore",
+      "permissions": {
+        "accounts": [
+          "view"
+        ],
+        "movements": [
+          "view"
+        ],
+        "psd2Role": [
+          "AISP",
+          "PISP",
+          "CBPII"
+        ]
+      }
+    }
+  },
+  {
+    "realm": "bankcore",
+    "clientId": "bankcore-backend",
+    "clientName": "BankCore backend service",
+    "clientType": "confidential",
+    "redirectUris": [],
+    "grantTypes": [
+      "client_credentials"
+    ],
+    "scope": "openid",
+    "requirePkce": false,
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "applicationType": "service",
+    "status": "active",
+    "serviceIdentity": {
+      "kind": "service",
+      "userName": "BankCore backend service",
+      "roleName": "platform_service",
+      "owner": {
+        "kind": "application",
+        "ref": "bankcore",
+        "displayName": "BankCore"
+      },
+      "resourceServer": "bankcore",
+      "permissions": {
+        "accounts": [
+          "view"
+        ],
+        "bankAudit": [
+          "view"
+        ]
+      }
+    }
+  },
+  {
+    "realm": "bankcore",
+    "clientId": "bankcore-console",
+    "clientName": "BankCore administration console",
+    "clientType": "public",
+    "redirectUris": [
+      "http://localhost:8084/api/auth/callback",
+      "http://127.0.0.1:8084/api/auth/callback"
+    ],
+    "postLogoutRedirectUris": [
+      "http://localhost:8084",
+      "http://127.0.0.1:8084"
+    ],
+    "grantTypes": [
+      "authorization_code",
+      "refresh_token"
+    ],
+    "scope": "openid profile email",
+    "requirePkce": true,
+    "tokenEndpointAuthMethod": "none",
+    "applicationType": "web",
+    "status": "active",
+    "demoRoster": [
+      "bank_admin",
+      "bank_compliance",
+      "bank_operations",
+      "bank_card_officer",
+      "bank_customer"
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "clientId": "giam-console",
+    "clientName": "Identity console",
+    "clientType": "public",
+    "redirectUris": [
+      "http://localhost:8086/auth/callback",
+      "http://127.0.0.1:8086/auth/callback"
+    ],
+    "postLogoutRedirectUris": [
+      "http://localhost:8086",
+      "http://127.0.0.1:8086"
+    ],
+    "grantTypes": [
+      "authorization_code",
+      "refresh_token"
+    ],
+    "scope": "openid profile email",
+    "requirePkce": true,
+    "tokenEndpointAuthMethod": "none",
+    "applicationType": "web",
+    "status": "active",
+    "demoRoster": [
+      "manager",
+      "security_auditor",
+      "customer"
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "clientId": "leafypay-simulator",
+    "clientName": "LeafyPay simulator",
+    "clientType": "confidential",
+    "redirectUris": [],
+    "grantTypes": [
+      "client_credentials",
+      "urn:ietf:params:oauth:grant-type:token-exchange"
+    ],
+    "scope": "openid profile email",
+    "requirePkce": false,
+    "tokenEndpointAuthMethod": "client_secret_post",
+    "applicationType": "service",
+    "status": "active",
+    "serviceIdentity": {
+      "kind": "service",
+      "userName": "LeafyPay simulator",
+      "roleName": "demonstration_simulator",
+      "owner": {
+        "kind": "application",
+        "ref": "leafypay",
+        "displayName": "LeafyPay"
+      },
+      "resourceServer": "authority",
+      "permissions": {
+        "impersonation": [
+          "exercise"
+        ]
+      }
+    },
+    "demoRoster": [
+      "customer",
+      "manager",
+      "operations_officer",
+      "level1_analyst",
+      "level2_investigator",
+      "security_auditor",
+      "merchant_officer"
+    ]
+  },
+  {
+    "realm": "bankcore",
+    "clientId": "another-tpp",
+    "clientName": "Another Provider",
+    "clientType": "confidential",
+    "redirectUris": [],
+    "grantTypes": [
+      "client_credentials"
+    ],
+    "scope": "accounts balances transactions payments",
+    "requirePkce": false,
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "applicationType": "service",
+    "status": "active",
+    "serviceIdentity": {
+      "kind": "service",
+      "userName": "Another Provider, a second registered third party",
+      "roleName": "third_party_provider_secondary",
+      "owner": {
+        "kind": "tenant",
+        "ref": "another-tpp",
+        "displayName": "Another Provider"
+      },
+      "resourceServer": "bankcore",
+      "permissions": {
+        "accounts": [
+          "view"
+        ],
+        "movements": [
+          "view"
+        ],
+        "psd2Role": [
+          "AISP",
+          "PISP"
+        ]
+      }
+    }
+  }
+]
