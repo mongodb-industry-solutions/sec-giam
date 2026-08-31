@@ -159,6 +159,51 @@ database is built and every record is reproducible.
 | `GIAM_SEED_DATA_DIR` | beside the code | Set in a container. |
 | `GIAM_DOCS_ENABLED` | `true` | The API reference at `/doc`. |
 
+### Client registration enforcement
+
+What happens when a caller presents a client that is **not registered**. Configured per realm on the
+realm record (`clientEnforcement`), with `GIAM_CLIENT_ENFORCEMENT` as the deployment default. The
+default is **`strict`**.
+
+| Mode | Behaviour |
+|---|---|
+| `strict` | The client is refused. Nothing about it is new. |
+| `soft` | The client is admitted, marked and limited. |
+
+**`soft` is an onboarding ramp with evidence, not a security setting, and it is meant to be
+temporary.** It exists so a deployment can be brought up before every consumer has been registered
+without the refusals being invisible. It is not "skip verification". A soft admission:
+
+- **carries less authority**: no `permissions` claim, no `roles` claim, no refresh token, and the
+  scope cut to `openid`, so it cannot reach anything a registration would have granted it;
+- **is recorded**: a `client.soft_admission` security event naming the presented client id, the
+  hashed address, the endpoint and the exact reduction. That event stream is the list of who still
+  has to register;
+- **degrades the posture**: `/api/v1/admin/posture` reports `client_enforcement_soft` per realm, and
+  the console renders it as a banner like any other degraded finding.
+
+Soft mode relaxes **exactly one thing: not being registered yet**. A wrong secret on a *known*
+client, a revoked or suspended client, an unregistered redirect URI and an expired code are refused
+identically in both modes. Soft admission is offered at the token and authorization endpoints only,
+never at introspection or decoupled authentication.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `GIAM_CLIENT_ENFORCEMENT` | `strict` | `strict` or `soft`. A realm record may override it. |
+
+### Registering a consumer
+
+A consuming application needs three things: a client id, its secret, and a redirect URI registered
+here that matches the one it builds. The **canonical variable names for any new consumer are
+`GIAM_CLIENT_ID` and `GIAM_CLIENT_SECRET`**, and a new consumer should use those rather than invent a
+third spelling. Existing consumers that read another name are not renamed for it; the convention
+applies going forward.
+
+Where a client is confidential, its secret is derived by `clientSecretFor(<client id>)` in
+`packages/platform-links`, which is the same derivation this authority seeds and the consumer
+presents. A deployment that would rather hold a literal secret sets the variable named in
+`CLIENT_SECRET_REFS` for that client id, and the derivation yields to it.
+
 ### Event delivery
 
 `GIAM_EVENT_BUS_ENGINE` (`in-process`, `kafka`, `rabbitmq`) and `GIAM_EVENT_BUS_TOPIC_PREFIX`, plus

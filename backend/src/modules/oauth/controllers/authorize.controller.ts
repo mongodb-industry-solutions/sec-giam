@@ -2,12 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash, randomBytes } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
-import { ClientAuthService } from '../services/clientAuth.service';
+import { ClientAuthService, provisionalClient, recordSoftAdmission } from '../services/clientAuth.service';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { AUTHORIZATION_REQUEST_COLLECTION, SESSION_COLLECTION } from '../../../shared/models/collections';
 import { AuthorizationRequestRecord } from '../models/authorizationRequest.model';
 import { SessionRecord, isLive } from '../../authentication/models/session.model';
 import { scopesOf } from '../models/client.model';
+import { enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { oauthError } from '../../../shared/models/problem';
 
@@ -89,10 +90,20 @@ export async function authorizeController(fastify: FastifyInstance) {
     const realm = await new RealmService(fastify.db).byName(realmName);
     if (!realm || !realm.enabled) return reply.status(400).send(oauthError(400, 'unknown realm'));
 
-    const client = await new ClientAuthService(fastify.db).find(realm.realmId, body.client_id);
-    if (!client || client.status !== 'active') {
+    const registered = await new ClientAuthService(fastify.db).find(realm.realmId, body.client_id);
+    if (registered && registered.status !== 'active') {
       return reply.status(400).send(oauthError(400, 'unknown client'));
     }
+
+    // Soft mode admits a client that has never registered. It does NOT admit one that registered and
+    // then presented the wrong redirect: that client is known, so its registration is the answer.
+    const softAdmitted = !registered && enforcementFor(realm) === 'soft';
+    if (!registered && !softAdmitted) {
+      return reply.status(400).send(oauthError(400, 'unknown client'));
+    }
+    // A provisional client has no registered redirect, so the one presented is the one it gets, and
+    // it holds the minimum scope rather than whatever it asked for.
+    const client = registered ?? provisionalClient(realm, body.client_id, [body.redirect_uri]);
 
     // Exact match, never a prefix. A redirect URI compared loosely is how an authorization code ends
     // up delivered to an attacker's path on a legitimate host.
@@ -104,11 +115,22 @@ export async function authorizeController(fastify: FastifyInstance) {
       return reply.status(400).send(oauthError(400, 'this client requires PKCE'));
     }
 
-    const requested = (body.scope ?? 'openid').split(' ').filter(Boolean);
+    if (softAdmitted) {
+      await recordSoftAdmission(fastify.db, realm, {
+        clientId: client.clientId,
+        endpoint: 'authorize',
+        address: request.ip,
+      });
+    }
+
+    const asked = (body.scope ?? 'openid').split(' ').filter(Boolean);
     const permitted = scopesOf(client);
-    const refused = requested.filter((scope) => !permitted.includes(scope));
-    // Refused rather than narrowed. Silently dropping a scope means the client believes it holds
-    // authority it does not, and discovers otherwise at the point of use.
+    // Narrowed for a soft admission, refused for a registered client. The two are different cases:
+    // narrowing here IS the limit soft mode applies, and the reduction is recorded above and echoed
+    // in the token's scope, so the client learns what it actually holds. For a registered client
+    // silently dropping a scope would mean it believes it holds authority it does not.
+    const requested = softAdmitted ? permitted : asked;
+    const refused = softAdmitted ? [] : asked.filter((scope) => !permitted.includes(scope));
     if (refused.length > 0) {
       return reply.status(400).send(oauthError(400, `scope not permitted: ${refused.join(' ')}`));
     }

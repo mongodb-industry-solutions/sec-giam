@@ -53,7 +53,7 @@ export default function LandingPage() {
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
           <a
-            href="https://github.com/mongodb-industry-solutions/sec-fsi-pci-dss/wiki"
+            href="https://github.com/mongodb-industry-solutions/sec-giam/wiki"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-gray-700 bg-white/5 hover:border-gray-500 hover:bg-white/10 text-gray-300 hover:text-white text-sm font-medium transition-all"

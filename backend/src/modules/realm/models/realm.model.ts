@@ -1,4 +1,5 @@
 import { Meta, Scoped } from '../../../shared/models/base.model';
+import { config, ClientEnforcementMode } from '../../../config';
 
 /**
  * A realm: a trust and key boundary.
@@ -66,7 +67,22 @@ export interface RealmRecord extends Scoped {
    * an environment means a production realm cannot issue one no matter how the process was started.
    */
   demoMode: boolean;
+  /**
+   * What happens to a client that is not registered here.
+   *
+   * Per realm rather than per process, because onboarding is something a single realm goes through
+   * while the others beside it are already established. Absent means the deployment default, which
+   * is `strict`. `soft` admits an unregistered client with reduced authority, records every
+   * admission and reports the realm as degraded; it relaxes NOT BEING REGISTERED and nothing else,
+   * so a wrong secret, a revoked client or a mismatched redirect is still refused.
+   */
+  clientEnforcement?: ClientEnforcementMode;
   meta: Meta;
+}
+
+/** The mode actually in force for a realm: its own, or the deployment default. */
+export function enforcementFor(realm: Pick<RealmRecord, 'clientEnforcement'>): ClientEnforcementMode {
+  return realm.clientEnforcement ?? config.app.clientEnforcement;
 }
 
 /** Resolves a name or an alias to a realm. Replaces the platform's hardcoded alias resolver. */

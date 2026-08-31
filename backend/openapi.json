@@ -6295,6 +6295,10 @@
                       "type": "object",
                       "additionalProperties": true
                     },
+                    "clientRegistration": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
                     "administration": {
                       "type": "object",
                       "additionalProperties": true

@@ -24,6 +24,7 @@ interface RealmFixture {
   notice?: string;
   enabled?: boolean;
   demoMode?: boolean;
+  clientEnforcement?: RealmRecord['clientEnforcement'];
   registration?: Partial<RealmRecord['registration']>;
   tokenPolicy?: Partial<RealmRecord['tokenPolicy']>;
   passwordPolicy?: Partial<RealmRecord['passwordPolicy']>;
@@ -91,6 +92,8 @@ export async function seedRealms(db: Db): Promise<void> {
         passwordPolicy: { ...DEFAULT_PASSWORD_POLICY, ...fixture.passwordPolicy },
         branding: { displayName: fixture.displayName, ...fixture.branding },
         demoMode: fixture.demoMode ?? false,
+        // Absent in the fixture means the realm inherits the deployment default, which is strict.
+        ...(fixture.clientEnforcement ? { clientEnforcement: fixture.clientEnforcement } : {}),
       },
       // A realm is its own partition, and its own record sits in its default tenant.
       { realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },

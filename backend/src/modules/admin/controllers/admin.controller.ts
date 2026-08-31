@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { readLogs } from '../../../shared/services/logBuffer';
 import { requireAdmin } from '../../../vendors/middleware/adminAuth';
 import { buildPostureReport } from '../services/posture.service';
+import { RealmService } from '../../realm/services/realm.service';
+import { enforcementFor } from '../../realm/models/realm.model';
 
 // Operational diagnostics. Not part of the integration contract, and behind the administrative
 // credential: a log buffer from an identity service is not something to publish.
@@ -33,6 +35,7 @@ export async function adminController(fastify: FastifyInstance) {
             proofOfPossession: { type: 'object', additionalProperties: true },
             attestation: { type: 'object', additionalProperties: true },
             storage: { type: 'object', additionalProperties: true },
+            clientRegistration: { type: 'object', additionalProperties: true },
             administration: { type: 'object', additionalProperties: true },
             findings: {
               type: 'array',
@@ -60,12 +63,21 @@ export async function adminController(fastify: FastifyInstance) {
       },
     },
     preHandler: requireAdmin,
-  }, async () => buildPostureReport({
+  }, async () => {
     // Deliberately answerable while the database is down: an operator asking why the service is
-    // degraded needs the report most at exactly that moment.
-    databaseReachable: fastify.dbError === null,
-    databaseError: fastify.dbError,
-  }));
+    // degraded needs the report most at exactly that moment, so the realms are best effort.
+    const realms = fastify.dbError === null
+      ? await new RealmService(fastify.db).list()
+        .then((found) => found.map((realm) => ({ name: realm.name, mode: enforcementFor(realm) })))
+        .catch(() => [])
+      : [];
+
+    return buildPostureReport({
+      databaseReachable: fastify.dbError === null,
+      databaseError: fastify.dbError,
+      realms,
+    });
+  });
 
   fastify.get('/logs', {
     preHandler: requireAdmin,

@@ -1,6 +1,6 @@
 import { existsSync } from 'fs';
 import { keyProviders } from '../../../shared/ports';
-import { config } from '../../../config';
+import { config, ClientEnforcementMode } from '../../../config';
 
 /**
  * The honest alternative to gating on environment.
@@ -62,6 +62,17 @@ export interface PostureReport {
     encryptionLibraryPresent: boolean;
     queryableTextSearch: boolean;
   };
+  /**
+   * How each realm treats a client that has not registered.
+   *
+   * Per realm, because onboarding is something one realm goes through while the others beside it are
+   * already established, and a single process-wide answer would hide exactly that.
+   */
+  clientRegistration: {
+    /** What a realm inherits when its record states nothing. */
+    defaultMode: ClientEnforcementMode;
+    realms: Array<{ realm: string; mode: ClientEnforcementMode }>;
+  };
   administration: {
     credentialConfigured: boolean;
     /**
@@ -77,6 +88,8 @@ export interface PostureReport {
 export interface PostureInput {
   databaseReachable: boolean;
   databaseError?: string | null;
+  /** The realms and the enforcement in force for each. Empty when the database is unreachable. */
+  realms?: Array<{ name: string; mode: ClientEnforcementMode }>;
 }
 
 export function buildPostureReport(input: PostureInput): PostureReport {
@@ -122,6 +135,25 @@ export function buildPostureReport(input: PostureInput): PostureReport {
         + `lease (${config.keys.leaseSeconds}s), so a key can leave the published set while tokens `
         + 'it signed are still valid.',
       remedy: 'Set GIAM_KEY_PUBLICATION_GRACE_SECONDS to at least the maximum access-token lifetime.',
+    });
+  }
+
+  // One finding per soft realm, named, so the banner says WHICH realm is admitting strangers rather
+  // than that something somewhere is.
+  const realms = input.realms ?? [];
+  for (const realm of realms.filter((entry) => entry.mode === 'soft')) {
+    findings.push({
+      code: 'client_enforcement_soft',
+      level: 'degraded',
+      detail:
+        `Realm "${realm.name}" admits a client that is not registered. Such a client is admitted `
+        + 'with reduced authority (no permissions claim, no roles claim, no refresh token, scope cut '
+        + 'to openid) and every admission is recorded as a client.soft_admission security event, but '
+        + 'an unregistered caller still obtains a token. This is an onboarding ramp, not a setting to '
+        + 'leave in place.',
+      remedy:
+        'Register the clients listed by the client.soft_admission events, then set clientEnforcement '
+        + 'on the realm record to "strict" (or unset it, and leave GIAM_CLIENT_ENFORCEMENT at strict).',
     });
   }
 
@@ -182,6 +214,10 @@ export function buildPostureReport(input: PostureInput): PostureReport {
       keyVault: `${config.mongodb.dbName}.${config.mongodb.keyVaultCollection}`,
       encryptionLibraryPresent,
       queryableTextSearch: config.mongodb.textSearch,
+    },
+    clientRegistration: {
+      defaultMode: config.app.clientEnforcement,
+      realms: realms.map((realm) => ({ realm: realm.name, mode: realm.mode })),
     },
     administration: {
       credentialConfigured: administrationConfigured,

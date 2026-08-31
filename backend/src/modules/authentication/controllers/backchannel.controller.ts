@@ -115,9 +115,11 @@ export async function backchannelController(fastify: FastifyInstance) {
 
     const clientAuth = new ClientAuthService(fastify.db);
     const outcome = await clientAuth.authenticate(
-      realm.realmId,
+      realm,
       readClientCredentials(request.headers.authorization, body),
-      { requireAuthentication: true },
+      // No soft admission on a privileged surface. Onboarding explains an unregistered consumer at
+      // the token endpoint; it explains nothing here.
+      { requireAuthentication: true, allowSoftAdmission: false },
     );
     if ('error' in outcome) return fail(reply as never, 401, outcome.error, outcome.description);
     const { client } = outcome;

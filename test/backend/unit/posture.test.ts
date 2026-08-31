@@ -14,7 +14,9 @@ import {
 } from '../../../backend/src/modules/admin/services/posture.service';
 import { config } from '../../../backend/src/config';
 
-const RUNBOOK = readFileSync(resolve(__dirname, '../../../../giam/docs/runbook.md'), 'utf8');
+// The repo's own runbook. It used to be read from a sibling checkout, which only resolved in the
+// layout this repository was extracted from.
+const RUNBOOK = readFileSync(resolve(__dirname, '../../../docs/runbook.md'), 'utf8');
 
 // config is a frozen-by-convention object, so a test changes it the way an operator would change the
 // environment: by writing the value, not by rebuilding the module.
@@ -91,6 +93,44 @@ describe('v39 P0.8: a weaker configuration warns in four places and still runs',
     if (report.status === 'ok') expect(postureBanner(report)).toEqual([]);
   });
 
+  it('reports a realm admitting unregistered clients as degraded, per realm', () => {
+    const report = buildPostureReport({
+      databaseReachable: true,
+      realms: [{ name: 'established', mode: 'strict' }, { name: 'onboarding', mode: 'soft' }],
+    });
+
+    expect(report.status).toBe('degraded');
+    const finding = report.findings.find((f) => f.code === 'client_enforcement_soft');
+    // Named, so an operator knows WHICH realm rather than that something somewhere is loose.
+    expect(finding?.detail).toContain('onboarding');
+    expect(finding?.detail).not.toContain('"established"');
+    // The reduction is stated, because "soft" on its own reads as "off".
+    expect(finding?.detail).toContain('reduced authority');
+    expect(finding?.remedy).toContain('strict');
+    // The whole picture, in the same shape key custody uses.
+    expect(report.clientRegistration.realms).toEqual([
+      { realm: 'established', mode: 'strict' },
+      { realm: 'onboarding', mode: 'soft' },
+    ]);
+  });
+
+  it('says nothing about client registration when every realm is strict', () => {
+    const report = buildPostureReport({
+      databaseReachable: true,
+      realms: [{ name: 'established', mode: 'strict' }],
+    });
+    expect(report.findings.map((f) => f.code)).not.toContain('client_enforcement_soft');
+    expect(report.clientRegistration.defaultMode).toBe('strict');
+  });
+
+  it('carries a soft realm into the console banner', () => {
+    const banner = postureBanner(buildPostureReport({
+      databaseReachable: true,
+      realms: [{ name: 'onboarding', mode: 'soft' }],
+    }));
+    expect(banner.some((line) => line.includes('client_enforcement_soft'))).toBe(true);
+  });
+
   it('documents every finding code in the runbook', () => {
     // The fourth place. A code that fires and is not documented sends an operator to the source.
     keys.provider = 'filesystem';
@@ -100,6 +140,10 @@ describe('v39 P0.8: a weaker configuration warns in four places and still runs',
     const codes = new Set([
       ...buildPostureReport({ databaseReachable: false, databaseError: 'unreachable' }).findings.map((f) => f.code),
       ...buildPostureReport({ databaseReachable: true }).findings.map((f) => f.code),
+      ...buildPostureReport({
+        databaseReachable: true,
+        realms: [{ name: 'onboarding', mode: 'soft' }],
+      }).findings.map((f) => f.code),
     ]);
     expect(codes.size).toBeGreaterThan(0);
     for (const code of codes) {

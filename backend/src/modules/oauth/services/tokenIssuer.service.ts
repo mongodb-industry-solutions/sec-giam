@@ -7,6 +7,7 @@ import { ClientRecord } from '../models/client.model';
 import { JwtTokenFormat } from './jwtTokenFormat';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { newMeta } from '../../../shared/models/base.model';
+import { SOFT_ADMISSION_SCOPE } from './clientAuth.service';
 
 /** The name the authority registers its OWN permissions under. Never an audience for a business token. */
 const AUTHORITY_RESOURCE_SERVER = 'authority';
@@ -50,7 +51,16 @@ export interface TokenResponse {
  * replay, and to say afterwards what was issued to whom, which a stateless design cannot do.
  */
 export class TokenIssuer {
-  constructor(private readonly db: Db, private readonly ring: KeyRing) {}
+  /**
+   * `reducedAuthority` is what a soft admission gets: the scope is cut to the minimum, no permissions
+   * or roles claim is written, and no refresh token is minted. Applied HERE rather than at each call
+   * site, because a reduction that depends on every grant remembering is a reduction with holes.
+   */
+  constructor(
+    private readonly db: Db,
+    private readonly ring: KeyRing,
+    private readonly options: { reducedAuthority?: boolean } = {},
+  ) {}
 
   private get tokens() {
     return this.db.collection<TokenRecord>(TOKEN_COLLECTION);
@@ -114,7 +124,20 @@ export class TokenIssuer {
     } as TokenRecord);
   }
 
-  async issue(input: IssueTokensInput): Promise<TokenResponse> {
+  async issue(request: IssueTokensInput): Promise<TokenResponse> {
+    // A soft-admitted client is stripped of authority before anything is minted, so no grant below
+    // can hand back more than the reduction allows.
+    const input: IssueTokensInput = this.options.reducedAuthority
+      ? {
+        ...request,
+        scope: [SOFT_ADMISSION_SCOPE],
+        permissions: undefined,
+        roles: undefined,
+        accountHolderRef: undefined,
+        includeRefreshToken: false,
+      }
+      : request;
+
     const { realm, client } = input;
     const ttl = this.ttl(realm, client);
     const now = Math.floor(Date.now() / 1000);

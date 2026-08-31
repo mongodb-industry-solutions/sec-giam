@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { createHash, timingSafeEqual } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
-import { ClientAuthService, readClientCredentials } from '../services/clientAuth.service';
+import { ClientAuthService, readClientCredentials, recordSoftAdmission } from '../services/clientAuth.service';
 import { TokenIssuer } from '../services/tokenIssuer.service';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
@@ -103,17 +103,28 @@ export async function tokenController(fastify: FastifyInstance) {
 
     // Every grant except the authorization code with a public client requires the client to
     // authenticate. The code grant is handled below, where PKCE stands in for the secret.
-    const outcome = await clientAuth.authenticate(realm.realmId, presented, {
+    const outcome = await clientAuth.authenticate(realm, presented, {
       requireAuthentication: grantType !== 'authorization_code',
+      // Soft admission is offered here and refused everywhere privileged. What it relaxes is a
+      // consumer that has not registered yet, not a consumer that failed to authenticate.
+      allowSoftAdmission: true,
     });
     if ('error' in outcome) return fail(reply as never, 401, outcome.error, outcome.description);
-    const { client } = outcome;
+    const { client, softAdmitted } = outcome;
 
     if (!clientAuth.allowsGrant(client, grantType)) {
       return fail(reply as never, 400, 'unauthorized_client', 'this client is not registered for that grant');
     }
 
-    const issuer = new TokenIssuer(fastify.db, ring());
+    if (softAdmitted) {
+      await recordSoftAdmission(fastify.db, realm, {
+        clientId: client.clientId,
+        endpoint: 'token',
+        address: request.ip,
+      });
+    }
+
+    const issuer = new TokenIssuer(fastify.db, ring(), { reducedAuthority: softAdmitted });
 
     if (grantType === 'client_credentials') {
       // No user is involved, so no refresh token and no id token: there is no session to refresh and

@@ -2,10 +2,84 @@ import { Db } from 'mongodb';
 import * as bcrypt from 'bcryptjs';
 import { CLIENT_COLLECTION } from '../../../shared/models/collections';
 import { ClientRecord, isConfidential } from '../models/client.model';
+import { RealmRecord, enforcementFor } from '../../realm/models/realm.model';
+import { newMeta } from '../../../shared/models/base.model';
+import { SecurityEventService, hashIp } from '../../audit/services/securityEvent.service';
 
 export interface PresentedClientCredentials {
   clientId?: string;
   clientSecret?: string;
+}
+
+/**
+ * The only authority a soft admission carries.
+ *
+ * `openid` and nothing else: enough to prove who signed in, not enough to reach anything. Soft mode
+ * has to admit a client WITHOUT handing it what registration is for, or registration buys nothing
+ * and nobody completes it.
+ */
+export const SOFT_ADMISSION_SCOPE = 'openid';
+
+/** The grants a soft admission may use. Never the privileged ones, which have no onboarding excuse. */
+const SOFT_ADMISSION_GRANTS: ClientRecord['grantTypes'] = ['authorization_code', 'client_credentials'];
+
+/**
+ * The stand-in record for a client that has not registered yet.
+ *
+ * Built in memory and NEVER written. Persisting it would turn an onboarding ramp into a self-service
+ * registration endpoint, and the whole point is that the registration is still outstanding.
+ */
+export function provisionalClient(
+  realm: RealmRecord,
+  clientId: string,
+  redirectUris: string[] = [],
+): ClientRecord {
+  return {
+    realmId: realm.realmId,
+    tenantId: realm.tenantId,
+    clientId,
+    clientName: `${clientId} (not registered)`,
+    clientType: 'public',
+    redirectUris,
+    grantTypes: SOFT_ADMISSION_GRANTS,
+    scope: SOFT_ADMISSION_SCOPE,
+    requirePkce: false,
+    tokenEndpointAuthMethod: 'none',
+    status: 'active',
+    meta: newMeta('Client'),
+  };
+}
+
+/**
+ * The evidence a soft admission leaves behind.
+ *
+ * Named so an operator can list exactly who still has to register, from which address and against
+ * which endpoint, and see what the reduction cost them. A mode that admits silently is the mode
+ * nobody ever turns off.
+ */
+export async function recordSoftAdmission(db: Db, realm: RealmRecord, input: {
+  clientId: string;
+  endpoint: string;
+  address?: string;
+}): Promise<void> {
+  await new SecurityEventService(db).record({
+    realmId: realm.realmId,
+    tenantId: realm.tenantId,
+    action: 'client.soft_admission',
+    outcome: 'success',
+    category: 'client_registration',
+    clientId: input.clientId,
+    cause: 'client_not_registered',
+    ...(hashIp(input.address) ? { ipHash: hashIp(input.address) } : {}),
+    detail: {
+      mode: 'soft',
+      endpoint: input.endpoint,
+      presentedClientId: input.clientId,
+      grantedScope: SOFT_ADMISSION_SCOPE,
+      reduction: 'no permissions claim, no roles claim, no refresh token, scope reduced to openid',
+      remedy: `Register "${input.clientId}" in realm "${realm.name}", then return the realm to strict.`,
+    },
+  });
 }
 
 /**
@@ -55,18 +129,27 @@ export class ClientAuthService {
    *
    * A public client presents no secret and relies on PKCE, which is why `requirePkce` is not optional
    * for one.
+   *
+   * `allowSoftAdmission` lets a realm in soft mode admit a client it has never seen, with the
+   * reduced authority above. It relaxes EXACTLY ONE thing: not being registered. A known client with
+   * a wrong secret, a suspended one, a revoked one and a grant the client does not hold are all
+   * still refused, in both modes, because none of those is an onboarding gap.
    */
   async authenticate(
-    realmId: string,
+    realm: RealmRecord,
     presented: PresentedClientCredentials,
-    options: { requireAuthentication: boolean },
-  ): Promise<{ client: ClientRecord } | { error: string; description: string }> {
+    options: { requireAuthentication: boolean; allowSoftAdmission?: boolean },
+  ): Promise<{ client: ClientRecord; softAdmitted: boolean } | { error: string; description: string }> {
     if (!presented.clientId) {
       return { error: 'invalid_client', description: 'client_id is required' };
     }
 
-    const client = await this.find(realmId, presented.clientId);
-    if (!client) return { error: 'invalid_client', description: 'unknown client' };
+    const client = await this.find(realm.realmId, presented.clientId);
+    if (!client) {
+      const soft = options.allowSoftAdmission && enforcementFor(realm) === 'soft';
+      if (!soft) return { error: 'invalid_client', description: 'unknown client' };
+      return { client: provisionalClient(realm, presented.clientId), softAdmitted: true };
+    }
     if (client.status !== 'active') return { error: 'invalid_client', description: 'client is not active' };
 
     const confidential = isConfidential(client);
@@ -84,7 +167,7 @@ export class ClientAuthService {
       if (!valid) return { error: 'invalid_client', description: 'invalid client_secret' };
     }
 
-    return { client };
+    return { client, softAdmitted: false };
   }
 
   /** Whether the client is registered for this grant. Refused rather than ignored. */

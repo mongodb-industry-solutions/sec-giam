@@ -18,7 +18,7 @@ env:
   GIAM_FRONTEND_URL: "https://sec-giam-console.industrysolutions.staging.corp.mongodb.com"
   # The origins allowed to call the identity API from a browser: the console and each relying party.
   # The console itself proxies same-origin, so it is listed only for the cases that bypass the proxy.
-  GIAM_CORS_ORIGIN: "https://sec-giam-console.industrysolutions.staging.corp.mongodb.com,https://sec-fsi-pci-dss-frontend.industrysolutions.staging.corp.mongodb.com,https://sec-fsi-pci-dss-merchant.industrysolutions.staging.corp.mongodb.com"
+  GIAM_CORS_ORIGIN: "https://sec-giam-console.industrysolutions.staging.corp.mongodb.com,https://sec-giam-frontend.industrysolutions.staging.corp.mongodb.com,https://sec-giam-merchant.industrysolutions.staging.corp.mongodb.com"
   # The container listens on 8080 in every environment, which is the port the platform probes.
   GIAM_PORT: "8080"
 
@@ -52,18 +52,18 @@ env:
 envSecrets:
   # Shared with the other releases in this namespace: same cluster, different database. The secret
   # object is reused rather than duplicated so a credential rotation happens in one place.
-  MONGODB_URI: sec-fsi-pci-dss-secrets-staging
+  MONGODB_URI: sec-giam-secrets-staging
   # GIAM's own database and its OWN key vault collection inside it. Never the vault the applications
   # share: an identity system holding the same key material as what it protects cannot contain a
   # breach. Both are secrets so the deployed names are not published in this repository.
-  GIAM_DB_NAME: sec-fsi-pci-dss-secrets-staging
-  GIAM_DB_KEYVAULT: sec-fsi-pci-dss-secrets-staging
+  GIAM_DB_NAME: sec-giam-secrets-staging
+  GIAM_DB_KEYVAULT: sec-giam-secrets-staging
   # 96 random bytes, base64. NOT rotatable in place: everything under queryable encryption is written
   # under this key, so replacing it needs --reset plus a reseed.
-  GIAM_KMS_LOCAL_MASTER_KEY: sec-fsi-pci-dss-secrets-staging
+  GIAM_KMS_LOCAL_MASTER_KEY: sec-giam-secrets-staging
   # The credential for /admin/*, which includes SCIM provisioning and client registration. Unset
   # means CLOSED: the surface answers 503 rather than opening because nobody set a variable.
-  GIAM_ADMIN_TOKEN: sec-fsi-pci-dss-secrets-staging
+  GIAM_ADMIN_TOKEN: sec-giam-secrets-staging
 
 resources:
   requests:

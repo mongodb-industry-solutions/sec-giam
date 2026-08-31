@@ -26,6 +26,20 @@ function bool(value: string | undefined, fallback: boolean): boolean {
 // cluster, and the default is multi-replica correct with no KMS, no shared volume and no shared secret.
 export type KeyProviderName = 'instance-local' | 'kms' | 'shared-store' | 'filesystem';
 
+/**
+ * What happens when a caller presents a client that is not registered.
+ *
+ * `strict` refuses it, which is the only correct answer once a deployment is established. `soft`
+ * admits it with reduced authority, records the admission and reports the realm as degraded, so an
+ * onboarding deployment can be brought up before every consumer has been registered without the
+ * refusals being invisible. It is an onboarding ramp with evidence, not a security setting.
+ */
+export type ClientEnforcementMode = 'strict' | 'soft';
+
+function enforcementMode(value: string | undefined): ClientEnforcementMode {
+  return value?.trim().toLowerCase() === 'soft' ? 'soft' : 'strict';
+}
+
 // A stable per-process identity, so a replica can claim and renew a lease on its own signing key.
 function resolveInstanceId(): string {
   return giamEnv('INSTANCE_ID')
@@ -113,6 +127,8 @@ export const config = {
     projectRoot: giamEnv('PROJECT_ROOT'),
     // Swagger UI and the committed OpenAPI document.
     docsEnabled: bool(giamEnv('DOCS_ENABLED'), true),
+    // The default a realm inherits when its record does not state one. strict, deliberately.
+    clientEnforcement: enforcementMode(giamEnv('CLIENT_ENFORCEMENT')),
   },
 
   kafka: {
