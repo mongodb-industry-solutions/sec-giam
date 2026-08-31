@@ -79,7 +79,7 @@ export async function requireAdmin(request: FastifyRequest, reply: FastifyReply)
     return reply.status(503).send(problem(
       503,
       'Administrative surface not configured',
-      'Neither GIAM_ADMIN_TOKEN nor GIAM_ADMIN_USER and GIAM_ADMIN_PASSWORD_SHA256 are set, so this '
+      'Neither GIAM_ADMIN_TOKEN nor GIAM_ADM_USER and GIAM_ADM_PASS are set, so this '
       + 'surface has no credential to check against.',
     ));
   }

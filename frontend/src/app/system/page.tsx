@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { SignInPanel, type SignedIn } from '../../components/SignInPanel';
 import { storedToken, clearSession, CONSOLE_CLIENT_ID } from '../../lib/session';
 import { BRAND } from '../../config/brand';
@@ -82,13 +83,20 @@ export default function SystemPage() {
   }
 
   if (!checked) {
-    return <main className="flex min-h-screen items-center justify-center text-sm text-gray-500">Checking your session…</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#001E2B] text-sm text-gray-400">
+        Checking your session…
+      </main>
+    );
   }
 
   if (!claims) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4 sm:p-8">
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#001E2B] p-4 sm:p-8">
         <SignInPanel heading={`${BRAND.full} console`} clientId={CONSOLE_CLIENT_ID} onSignedIn={afterSignIn} />
+        <Link href="/" className="text-xs text-gray-400 transition-colors hover:text-[#00ED64]">
+          ← Back to Mode Selection
+        </Link>
       </main>
     );
   }
@@ -97,7 +105,8 @@ export default function SystemPage() {
   const cards = [...OWN_IDENTITY, ...(administersIdentity(claims) ? OVERSIGHT : [])];
 
   return (
-    <main className="mx-auto w-full max-w-4xl p-4 sm:p-6 lg:p-8">
+    <main className="min-h-screen bg-[#001E2B] py-4 sm:py-6 lg:py-8">
+      <div className="mx-auto w-full max-w-4xl rounded-2xl bg-gray-50 p-4 shadow-xl sm:p-6 lg:p-8">
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-semibold text-mongodb-dark">{who}</h1>
@@ -146,6 +155,13 @@ export default function SystemPage() {
             <dd className="inline">{claims.exp ? new Date(claims.exp * 1000).toLocaleTimeString() : 'n/a'}</dd>
           </div>
         </dl>
+      </div>
+
+      <div className="mt-8 text-center">
+        <Link href="/" className="text-xs text-gray-400 transition-colors hover:text-mongodb-dark">
+          ← Back to Mode Selection
+        </Link>
+      </div>
       </div>
     </main>
   );

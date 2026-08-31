@@ -164,7 +164,7 @@ export function buildPostureReport(input: PostureInput): PostureReport {
       code: 'administration_closed',
       level: 'degraded',
       detail: 'No administrative credential is configured, so the operational surface refuses every call.',
-      remedy: 'Set GIAM_ADMIN_TOKEN, or GIAM_ADMIN_USER with GIAM_ADMIN_PASSWORD_SHA256.',
+      remedy: 'Set GIAM_ADMIN_TOKEN, or GIAM_ADM_USER with GIAM_ADM_PASS.',
     });
   }
 

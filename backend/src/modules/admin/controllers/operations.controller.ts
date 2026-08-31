@@ -212,7 +212,7 @@ export async function operationsController(fastify: FastifyInstance) {
       return reply.status(503).send(problem(
         503,
         'Sign-in is not configured',
-        'Set GIAM_ADMIN_USER and GIAM_ADMIN_PASSWORD_SHA256 to allow an operator to sign in.',
+        'Set GIAM_ADM_USER and GIAM_ADM_PASS to allow an operator to sign in.',
       ));
     }
 

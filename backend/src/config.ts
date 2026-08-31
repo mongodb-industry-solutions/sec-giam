@@ -117,8 +117,9 @@ export const config = {
     adminToken: giamEnv('ADMIN_TOKEN'),
     // The operator the console signs in as, and the SHA-256 of the password it must present. The
     // plaintext is never configured, so a leaked configuration file does not hand over the console.
-    adminUser: giamEnv('ADMIN_USER'),
-    adminPasswordSha256: giamEnv('ADMIN_PASSWORD_SHA256'),
+    // Named to match the platform convention an operator already knows, with its own prefix.
+    adminUser: giamEnv('ADM_USER'),
+    adminPasswordSha256: giamEnv('ADM_PASS'),
     // Whether the console may run an arbitrary shell command. Configuration, not an environment check:
     // the same build behaves the same way everywhere and the posture report says which way it is.
     adminShell: bool(giamEnv('ADMIN_SHELL'), true),

@@ -153,7 +153,7 @@ database is built and every record is reproducible.
 | `GIAM_FRONTEND_URL` | `http://localhost:8086` | Where the sign-in, consent and admin screens live. |
 | `GIAM_CORS_ORIGIN` | `http://localhost:8086` | |
 | `GIAM_ADMIN_TOKEN` | unset | The credential for `/admin/*`. **Unset means closed, not open.** |
-| `GIAM_ADMIN_USER` / `GIAM_ADMIN_PASSWORD_SHA256` | unset | Console sign-in. Only the hash is configured. |
+| `GIAM_ADM_USER` / `GIAM_ADM_PASS` | unset | Console sign-in. Only the hash is configured. |
 | `GIAM_ADMIN_SHELL` | `true` | Whether the console may run an arbitrary command. |
 | `GIAM_PROJECT_ROOT` | derived | The checkout the console runs scripts from. |
 | `GIAM_SEED_DATA_DIR` | beside the code | Set in a container. |
