@@ -5464,6 +5464,11 @@
                 ],
                 "additionalProperties": false,
                 "properties": {
+                  "roleName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The role being asked for, by name, within this realm."
+                  },
                   "scopeKind": {
                     "type": "string",
                     "description": "What kind of thing this is bound to, in the caller's vocabulary."

@@ -17,6 +17,11 @@ import { apiUrl } from './env';
 export const CONSOLE_CLIENT_ID = 'giam-console';
 const TOKEN_KEY = 'giam.access.token';
 const SESSION_KEY = 'giam.session.id';
+const REALM_KEY = 'giam.realm';
+
+// The realm every console call is addressed to. Remembered at sign-in rather than guessed per page,
+// because a page that guesses wrong reads somebody else's realm or nothing at all.
+export const DEFAULT_REALM = 'leafypay';
 
 function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -36,9 +41,15 @@ export function storedSessionId(): string {
   return typeof window === 'undefined' ? '' : window.sessionStorage.getItem(SESSION_KEY) ?? '';
 }
 
+export function storedRealm(): string {
+  if (typeof window === 'undefined') return DEFAULT_REALM;
+  return window.sessionStorage.getItem(REALM_KEY) || DEFAULT_REALM;
+}
+
 export function clearSession(): void {
   window.sessionStorage.removeItem(TOKEN_KEY);
   window.sessionStorage.removeItem(SESSION_KEY);
+  window.sessionStorage.removeItem(REALM_KEY);
 }
 
 /**
@@ -50,6 +61,7 @@ export function clearSession(): void {
  */
 export async function tokenFromSession(realm: string, sessionId: string): Promise<string | null> {
   window.sessionStorage.setItem(SESSION_KEY, sessionId);
+  window.sessionStorage.setItem(REALM_KEY, realm);
   const redirectUri = `${window.location.origin}/auth/callback`;
 
   try {

@@ -74,6 +74,7 @@ export async function elevationController(fastify: FastifyInstance) {
         required: ['roleName', 'justification'],
         additionalProperties: false,
         properties: {
+          roleName: { type: 'string', minLength: 1, description: 'The role being asked for, by name, within this realm.' },
           scopeKind: { type: 'string', description: 'What kind of thing this is bound to, in the caller\'s vocabulary.' },
           scopeRef: { type: 'string', description: 'Which one. This authority never learns what it names.' },
           justification: { type: 'string', minLength: 1 },
