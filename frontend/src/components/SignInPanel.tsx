@@ -29,6 +29,8 @@ export interface RosterEntry {
   userName: string;
   email?: string;
   role?: string;
+  /** A fixture-written hint, so two personas holding the same role are distinguishable. */
+  demoNote?: string;
 }
 
 export interface LoginContext {
@@ -206,7 +208,9 @@ export function SignInPanel({
               {grouped.map(([role, entries]) => (
                 <optgroup key={role} label={role}>
                   {entries.map((entry) => (
-                    <option key={entry.subjectId} value={entry.userName}>{entry.userName}</option>
+                    <option key={entry.subjectId} value={entry.userName}>
+                      {entry.demoNote ? `${entry.userName} (${entry.demoNote})` : entry.userName}
+                    </option>
                   ))}
                 </optgroup>
               ))}

@@ -15,7 +15,8 @@
     "lifecycleState": "active",
     "demoFeatured": true,
     "roleName": "customer",
-    "accountHolderRef": "b0000001-0000-4000-8000-000000000001"
+    "accountHolderRef": "b0000001-0000-4000-8000-000000000001",
+    "demoNote": "merchant owner: Espresso Works Ltd"
   },
   {
     "realm": "leafypay",
@@ -148,7 +149,8 @@
     "lifecycleState": "active",
     "demoFeatured": true,
     "roleName": "customer",
-    "accountHolderRef": "b0000058-0000-4000-8000-000000000058"
+    "accountHolderRef": "b0000058-0000-4000-8000-000000000058",
+    "demoNote": "merchant owner: Leafy Wallet"
   },
   {
     "realm": "leafypay",

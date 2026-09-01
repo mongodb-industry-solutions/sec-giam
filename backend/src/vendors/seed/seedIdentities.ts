@@ -34,6 +34,7 @@ interface IdentityFixture {
   active: boolean;
   lifecycleState: IdentityRecord['lifecycleState'];
   demoFeatured?: boolean;
+  demoNote?: string;
   roleName?: string;
   /** Binds an account holder to their own records, for a self-scoped role. */
   accountHolderRef?: string;
@@ -93,6 +94,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
         lifecycleState: fixture.lifecycleState,
         sessionEpoch: 0,
         demoFeatured: Boolean(fixture.demoFeatured),
+        ...(fixture.demoNote ? { demoNote: fixture.demoNote } : {}),
         ...(fixture.accountHolderRef ? { accountHolderRef: fixture.accountHolderRef } : {}),
       },
       { subjectId: fixture.subjectId, realmId, tenantId: DEFAULT_TENANT_ID },

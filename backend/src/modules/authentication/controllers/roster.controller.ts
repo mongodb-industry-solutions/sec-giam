@@ -82,6 +82,7 @@ export async function rosterController(fastify: FastifyInstance) {
                   userName: { type: 'string' },
                   email: { type: 'string' },
                   role: { type: 'string' },
+                  demoNote: { type: 'string' },
                 },
               },
             },
@@ -158,6 +159,7 @@ export async function rosterController(fastify: FastifyInstance) {
           userName: identity.userName,
           ...(toScimEmails(identity)[0] ? { email: toScimEmails(identity)[0].value } : {}),
           ...(roleBySubject.get(identity.subjectId) ? { role: roleBySubject.get(identity.subjectId) as string } : {}),
+          ...(identity.demoNote ? { demoNote: identity.demoNote } : {}),
         })),
     });
   });

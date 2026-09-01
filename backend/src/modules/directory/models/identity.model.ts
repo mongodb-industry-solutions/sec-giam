@@ -96,6 +96,13 @@ export interface IdentityRecord extends Scoped {
   /** Offered on the sign-in roster. Also the only set impersonation may ever target. */
   demoFeatured?: boolean;
 
+  /**
+   * A short hint shown beside this persona on the sign-in roster, written by whoever wrote the
+   * fixture. Deliberately opaque: it lets a demonstration distinguish two personas holding the same
+   * role without this authority learning what a merchant, an account or a case is.
+   */
+  demoNote?: string;
+
   meta: Meta;
 }
 
