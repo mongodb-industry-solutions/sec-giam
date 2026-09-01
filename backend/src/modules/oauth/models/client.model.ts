@@ -53,6 +53,20 @@ export interface ClientRecord extends Scoped {
    */
   demoRoster?: string[];
 
+  /**
+   * Whether this client IS the authority, and so has nobody to ask.
+   *
+   * Absent means it is not, which is why consent is the default rather than the exception: a client
+   * added without thinking about this asks, and asking one time too many is a far smaller failure
+   * than an application quietly obtaining an identity nobody agreed to hand over.
+   *
+   * The identities belong to this authority, not to the applications that rely on it, so every
+   * application is a third party here, including the platform's own console. Only this authority's
+   * own console sets the flag, because asking a person to consent to us reading their profile with us
+   * is a question with no meaning.
+   */
+  firstParty?: boolean;
+
   backchannel?: {
     deliveryMode: BackchannelDeliveryMode;
     notificationEndpoint?: string;

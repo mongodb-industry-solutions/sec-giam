@@ -46,6 +46,8 @@ interface ClientFixture {
   status: ClientRecord['status'];
   backchannel?: ClientRecord['backchannel'];
   demoRoster?: string[];
+  /** Only the authority's own console. Absent means the client asks for consent. */
+  firstParty?: boolean;
   /** A set: every owner administers the registration equally, and there is never zero of them. */
   owners?: Array<{ kind: string; ref: string; displayName?: string }>;
   /** Present when this client is a principal in its own right rather than an application's agent. */
@@ -111,6 +113,7 @@ export async function seedClients(db: Db): Promise<void> {
         ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
         ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
         ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),
+        ...(fixture.firstParty ? { firstParty: fixture.firstParty } : {}),
         ...(fixture.owners?.length ? { owners: fixture.owners } : {}),
         status: fixture.status,
       },

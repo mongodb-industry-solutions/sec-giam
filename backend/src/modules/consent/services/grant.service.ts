@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import { GRANT_COLLECTION, CLIENT_COLLECTION } from '../../../shared/models/collections';
-import { GrantRecord, grantedScopes } from '../models/grant.model';
+import { GrantRecord, grantedScopes, covers } from '../models/grant.model';
 import { ClientRecord } from '../../oauth/models/client.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { RealmRecord } from '../../realm/models/realm.model';
@@ -34,6 +34,21 @@ export class GrantService {
 
   private get grants() {
     return this.db.collection<GrantRecord>(GRANT_COLLECTION);
+  }
+
+  /**
+   * Whether this person has already authorised this client for everything it is now asking.
+   *
+   * A partial grant is not a grant: a client that widens its scope is asking a new question, and the
+   * person gets to answer it. A revoked grant never satisfies this, so withdrawing access means the
+   * next authorization asks again rather than silently succeeding.
+   */
+  async covers(realmId: string, subjectId: string, clientId: string, requested: string[]): Promise<boolean> {
+    const grant = await this.grants.findOne(
+      { realmId, subjectId, clientId },
+      { projection: { _id: 0, scope: 1, status: 1 } },
+    );
+    return Boolean(grant && covers(grant, requested));
   }
 
   /** The client's display name and logo travel with the grant, so a caller needs no second read. */

@@ -289,7 +289,8 @@
       "security_auditor",
       "client_administrator",
       "customer"
-    ]
+    ],
+    "firstParty": true
   },
   {
     "realm": "leafypay",

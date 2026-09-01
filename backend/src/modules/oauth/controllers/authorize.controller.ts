@@ -12,6 +12,7 @@ import { enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { oauthError } from '../../../shared/models/problem';
 import { SecurityEventService, hashIp, hashState } from '../../audit/services/securityEvent.service';
+import { GrantService } from '../../consent/services/grant.service';
 
 /**
  * The authorization endpoint, RFC 6749 §4.1 with PKCE.
@@ -61,18 +62,35 @@ export async function authorizeController(fastify: FastifyInstance) {
           code_challenge: { type: 'string' },
           code_challenge_method: { type: 'string', enum: ['S256'] },
           session_id: { type: 'string', description: 'The session established at sign-in.' },
+          prompt: {
+            type: 'string',
+            enum: ['none', 'consent'],
+            description: 'OIDC: `consent` asks again even when a grant already covers the request.',
+          },
+          consent_granted: {
+            type: 'boolean',
+            description: 'Set by the consent screen when the person approved. Never set by a client.',
+          },
         },
       },
       response: {
         200: {
-          description: 'The authorization code, and the state to echo back.',
+          description:
+            'Either the authorization code, or a statement that the person has not yet authorised '
+            + 'this application. `code` is absent in the second case and `consent_required` is true; '
+            + 'the caller shows the scopes and asks, then repeats the request with consent_granted.',
           type: 'object',
           additionalProperties: false,
-          required: ['code', 'redirect_uri'],
+          required: ['redirect_uri'],
           properties: {
             code: { type: 'string' },
             state: { type: 'string' },
             redirect_uri: { type: 'string' },
+            consent_required: { type: 'boolean' },
+            client_name: { type: 'string' },
+            client_uri: { type: 'string' },
+            logo_uri: { type: 'string' },
+            scopes: { type: 'array', items: { type: 'string' } },
           },
           examples: [{ code: 'a1b2…', state: 'xyz', redirect_uri: 'https://app.example/callback' }],
         },
@@ -92,6 +110,8 @@ export async function authorizeController(fastify: FastifyInstance) {
       code_challenge?: string;
       code_challenge_method?: 'S256';
       session_id: string;
+      prompt?: 'none' | 'consent';
+      consent_granted?: boolean;
     };
 
     const realm = await new RealmService(fastify.db).byName(realmName);
@@ -192,6 +212,40 @@ export async function authorizeController(fastify: FastifyInstance) {
 
     const identity = await new DirectoryService(fastify.db).findBySubjectId(session.subjectId);
     if (!identity) return refuse(401, 'no live session', 'subject_no_longer_exists');
+
+    /**
+     * Has this person agreed to hand their identity to this application?
+     *
+     * The identities are this authority's, not the applications', so every application asks, and the
+     * answer is remembered per client and per scope. `prompt=consent` asks again regardless, which is
+     * what lets a person re-read what they granted. Only the authority's own console is exempt.
+     *
+     * A refusal is not modelled here: the person simply is not sent back with a code, and the console
+     * returns `access_denied` to the application on their behalf.
+     */
+    if (!client.firstParty) {
+      const grants = new GrantService(fastify.db);
+      const alreadyHeld = body.prompt === 'consent'
+        ? false
+        : await grants.covers(realm.realmId, identity.subjectId, client.clientId, requested);
+
+      if (!alreadyHeld && !body.consent_granted) {
+        return reply.send({
+          consent_required: true,
+          redirect_uri: body.redirect_uri,
+          client_name: client.clientName ?? client.clientId,
+          scopes: requested,
+          ...(client.clientUri ? { client_uri: client.clientUri } : {}),
+          ...(client.logoUri ? { logo_uri: client.logoUri } : {}),
+          ...(body.state ? { state: body.state } : {}),
+        });
+      }
+      // Recorded as the person's own approval, which is what populates the list of applications they
+      // can later review and withdraw.
+      if (!alreadyHeld) {
+        await grants.consent(realm, identity.subjectId, client, requested);
+      }
+    }
 
     const code = randomBytes(32).toString('base64url');
     const now = new Date();

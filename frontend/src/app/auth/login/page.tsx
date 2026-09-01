@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { SignInPanel, type SignedIn } from '../../../components/SignInPanel';
-import { readAuthorizationRequest, completeAuthorization, type AuthorizationRequest } from '../../../lib/authorizationRequest';
+import {
+  readAuthorizationRequest, completeAuthorization, denyAuthorization,
+  type AuthorizationRequest, type ConsentPrompt,
+} from '../../../lib/authorizationRequest';
+import { ConsentPanel } from '../../../components/ConsentPanel';
 
 /**
  * The sign-in screen every application redirects to.
@@ -20,6 +24,11 @@ export default function LoginPage() {
   const [request, setRequest] = useState<AuthorizationRequest | null>(null);
   const [realm, setRealm] = useState<string | null>(null);
   const [returning, setReturning] = useState(false);
+  // The consent question, and the session that will answer it. Both are held because approving
+  // repeats the same authorization request, and the session is not in the URL.
+  const [consent, setConsent] = useState<ConsentPrompt | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
 
   useEffect(() => {
     const search = window.location.search;
@@ -32,10 +41,36 @@ export default function LoginPage() {
   async function handleSignedIn(result: SignedIn) {
     if (request) {
       setReturning(true);
-      await completeAuthorization(result.realm, result.sessionId, request);
+      const asked = await completeAuthorization(result.realm, result.sessionId, request);
+      // A prompt means the browser stayed here: this person has not authorised this application
+      // before, and nothing is handed over until they say so.
+      if (asked) {
+        setSessionId(result.sessionId);
+        setConsent(asked);
+        setReturning(false);
+      }
       return;
     }
     setSignedIn(result);
+  }
+
+  async function handleApprove() {
+    if (!request || !sessionId) return;
+    setApproving(true);
+    const asked = await completeAuthorization(realm ?? 'leafypay', sessionId, request, { consentGranted: true });
+    // Approving and still being asked would loop the screen, so it is reported rather than repeated.
+    if (asked) setApproving(false);
+  }
+
+  if (consent && request) {
+    return (
+      <ConsentPanel
+        prompt={consent}
+        busy={approving}
+        onApprove={handleApprove}
+        onDeny={() => denyAuthorization(request)}
+      />
+    );
   }
 
   if (returning) {
