@@ -52,6 +52,9 @@ const COMMANDS: CommandDef[] = [
 //  Module-level store: persists across tab switches (mount/unmount)
 // ---------------------------------------------------------------------------
 
+// What the validation concluded, read from the single verdict line the check prints.
+type SetupVerdict = 'converged' | 'converged-with-warnings' | 'not-converged' | 'requires-reset';
+
 interface SetupStore {
   logs: LogEntry[];
   running: boolean;
@@ -59,6 +62,8 @@ interface SetupStore {
   commandStatus: null | 'success' | 'failure';
   summary: TestSummaryData | null;
   startedAt: number | null;
+  verdict: SetupVerdict | null;
+  resetReasons: string[];
 }
 
 let _state: SetupStore = {
@@ -71,6 +76,8 @@ let _state: SetupStore = {
   commandStatus: null,
   summary: null,
   startedAt: null,
+  verdict: null,
+  resetReasons: [],
 };
 
 let _controller: AbortController | null = null;
@@ -103,6 +110,8 @@ async function _runCommand(commandId: string) {
     summary: null,
     logs: [],
     startedAt: Date.now(),
+    verdict: null,
+    resetReasons: [],
   });
 
   // Hot-reload is an in-process action (not a spawned script): plain JSON POST, no SSE stream.
@@ -157,6 +166,7 @@ async function _runCommand(commandId: string) {
           const match = /code\s+(\d+)/i.exec(text);
           _update({ commandStatus: match?.[1] === '0' ? 'success' : 'failure' });
         }
+        _readVerdict(text);
         _pushLog({ type: type as LogEntry['type'], text });
       },
       (s) => _update({ summary: s }),
@@ -187,7 +197,20 @@ function _stop() {
 }
 
 function _clear() {
-  _update({ logs: [], commandStatus: null, summary: null, startedAt: null });
+  _update({ logs: [], commandStatus: null, summary: null, startedAt: null, verdict: null, resetReasons: [] });
+}
+
+const VERDICTS: SetupVerdict[] = ['converged', 'converged-with-warnings', 'not-converged', 'requires-reset'];
+
+// The check prints one verdict line and one line per reason a rebuild is unavoidable.
+function _readVerdict(text: string) {
+  const verdict = /^\s*verdict:\s*(\S+)/.exec(text)?.[1] as SetupVerdict | undefined;
+  if (verdict && VERDICTS.includes(verdict)) {
+    _update({ verdict });
+    return;
+  }
+  const reason = /^\s*reset required:\s*(.+)$/.exec(text)?.[1];
+  if (reason) _update({ resetReasons: [..._state.resetReasons, reason.trim()] });
 }
 
 function subscribe(cb: () => void) {
@@ -195,7 +218,10 @@ function subscribe(cb: () => void) {
   return () => { _listeners.delete(cb); };
 }
 function getSnapshot() { return _state; }
-const serverSnapshot: SetupStore = { logs: [], running: false, activeCommand: null, commandStatus: null, summary: null, startedAt: null };
+const serverSnapshot: SetupStore = {
+  logs: [], running: false, activeCommand: null, commandStatus: null, summary: null, startedAt: null,
+  verdict: null, resetReasons: [],
+};
 function getServerSnapshot() { return serverSnapshot; }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +264,7 @@ function logLineClass(e: LogEntry): string {
 
 export default function SetupPage() {
   const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const { logs, running, activeCommand, commandStatus, summary, startedAt } = state;
+  const { logs, running, activeCommand, commandStatus, summary, startedAt, verdict, resetReasons } = state;
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [pendingConfirm, setPendingConfirm] = useState<CommandDef | null>(null);
@@ -286,6 +312,7 @@ export default function SetupPage() {
         </div>
         {/* Right column - test summary (when applicable) + output panel */}
         <div className="min-h-[280px] lg:flex-1 lg:min-h-0 min-w-0 flex flex-col gap-4">
+          {!running && verdict && <ConvergenceStatus verdict={verdict} resetReasons={resetReasons} />}
           {testSummary && <TestSummary summary={testSummary} status={commandStatus} />}
           <div className="flex-1 min-h-0">
             <LogPanel
@@ -500,6 +527,74 @@ function DangerCommandGroup({ cmds, activeCommand, running, onRun }: {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+const VERDICT_VIEW: Record<SetupVerdict, { label: string; blurb: string; tone: 'pass' | 'warn' | 'fail' }> = {
+  converged: {
+    label: 'Converged',
+    blurb: 'The database matches what the code declares.',
+    tone: 'pass',
+  },
+  'converged-with-warnings': {
+    label: 'Converged, with warnings',
+    blurb: 'Usable and matching. The warnings above clear themselves on the next set up and load.',
+    tone: 'warn',
+  },
+  'not-converged': {
+    label: 'Not converged',
+    blurb: 'Something declared is missing. Run Set Up Database, then Load Records, then check again.',
+    tone: 'warn',
+  },
+  'requires-reset': {
+    label: 'A rebuild is required',
+    blurb: 'This cannot be fixed by setting up again. Rebuild Database, then Load Records.',
+    tone: 'fail',
+  },
+};
+
+function ConvergenceStatus({ verdict, resetReasons }: {
+  verdict: SetupVerdict;
+  resetReasons: string[];
+}) {
+  const view = VERDICT_VIEW[verdict];
+  const frame =
+    view.tone === 'pass' ? 'border-[#00ED64]/40 bg-[#00ED64]/5' :
+    view.tone === 'warn' ? 'border-yellow-700/50 bg-yellow-900/10' :
+    'border-red-700/60 bg-red-950/30';
+  const text =
+    view.tone === 'pass' ? 'text-[#00ED64]' :
+    view.tone === 'warn' ? 'text-yellow-400' :
+    'text-red-400';
+
+  return (
+    <div className={`rounded-xl border p-4 flex-shrink-0 ${frame}`}>
+      <div className="flex items-center gap-2">
+        {view.tone === 'pass'
+          ? <CheckCircle2 size={18} className={text} />
+          : <XCircle size={18} className={text} />}
+        <h3 className={`text-sm font-bold ${text}`}>{view.label}</h3>
+      </div>
+      <p className="text-gray-300 text-xs mt-1.5 leading-relaxed">{view.blurb}</p>
+      {resetReasons.length > 0 && (
+        <div className="mt-3">
+          {/* Named in full: an operator who reruns setup three times was never told it cannot work. */}
+          <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider mb-1.5">
+            Why a rebuild is unavoidable ({resetReasons.length})
+          </p>
+          <div className="space-y-1.5">
+            {resetReasons.map((reason, i) => (
+              <div key={i} className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2">
+                <p className="text-[11px] font-mono text-red-200 break-words">{reason}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">
+            Rebuild Database in the Danger Zone drops and recreates it, then Load Records.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

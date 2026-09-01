@@ -6,6 +6,7 @@ import { seedIdentities } from './seedIdentities';
 import { seedAuthorization } from './seedAuthorization';
 import { seedPolicies } from './seedPolicies';
 import { seedClients } from './seedClients';
+import { retireDeclaredFields } from './upsertSeed';
 import { REALM_COLLECTION } from '../../shared/models/collections';
 import { getQEClient, closeQEClient } from '../encryption/qeClient';
 import { config } from '../../config';
@@ -15,6 +16,7 @@ dotenv.config({ path: resolve(__dirname, '../../../../../.env') });
 // Seeders are idempotent and additive: an existing document is upserted, never clobbered, so a reseed
 // over a populated database does not destroy state a demonstration depends on. Identifiers are
 // deterministic, which is what lets another service reference one without ever reading this database.
+// The one thing it does remove is a field a model has RETIRED, so a rename leaves nothing orphaned.
 export async function runSeed(): Promise<void> {
   if (!config.mongodb.uri) throw new Error('GIAM_DB_URI / MONGODB_URI is not set');
   const client = await getQEClient();
@@ -40,6 +42,8 @@ export async function runSeed(): Promise<void> {
     await seedPolicies(db);
     // Clients last: a service identity's role has to exist before it can be assigned.
     await seedClients(db);
+    // Last: the fields the models have retired, once every writer above has finished.
+    await retireDeclaredFields(db);
     console.log('\nGIAM seed complete.');
   } finally {
     await closeQEClient();

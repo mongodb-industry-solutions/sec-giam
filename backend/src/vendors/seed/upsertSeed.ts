@@ -1,22 +1,10 @@
-import { Collection, Document, Filter, OptionalUnlessRequiredId } from 'mongodb';
+import { Collection, Db, Document, Filter, OptionalUnlessRequiredId } from 'mongodb';
 import { Meta, newMeta, touchMeta } from '../../shared/models/base.model';
+import { collectionsWithRetiredFields } from '../../shared/models/collections';
 
-/**
- * The one way a seeder writes a record.
- *
- * Seeders are idempotent and ADDITIVE: an existing document is updated in the fields the fixture owns
- * and left alone everywhere else, so a reseed over a populated database never destroys state a
- * demonstration depends on.
- *
- * It reads before writing, which looks wasteful and is not. Two reasons:
- *
- * - A blind upsert cannot both initialise `meta` on insert and touch `meta.lastModified` on update,
- *   because MongoDB refuses an update that writes `meta` and `meta.lastModified` in one operation.
- * - `meta.version` is what an ETag is derived from. Bumping it on every reseed, including one that
- *   writes identical values, would invalidate every cached representation for no change at all.
- *
- * So a reseed that changes nothing writes nothing, and the version only moves when the record does.
- */
+// The one way a seeder writes a record: idempotent, and only in the fields the fixture owns.
+// It reads first because `meta` cannot be initialised and touched in one update, and because
+// `meta.version` backs an ETag: a reseed that changes nothing must write nothing.
 export interface SeedOutcome {
   action: 'created' | 'updated' | 'unchanged';
 }
@@ -49,4 +37,21 @@ export async function upsertSeed<T extends Document & { meta: Meta }>(
     $set: { ...Object.fromEntries(changed), meta: touchMeta(existing.meta) },
   } as never);
   return { action: 'updated' };
+}
+
+// Unsets only the fields a model DECLARES retired: no document is deleted, no other field is touched.
+export async function retireDeclaredFields(db: Db): Promise<void> {
+  const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
+
+  for (const spec of collectionsWithRetiredFields()) {
+    if (!existing.has(spec.name)) continue;
+    const fields = spec.retiredFields ?? [];
+    const filter = { $or: fields.map((field) => ({ [field]: { $exists: true } })) };
+    const affected = await db.collection(spec.name).countDocuments(filter);
+    if (affected === 0) continue;
+    await db.collection(spec.name).updateMany(filter, {
+      $unset: Object.fromEntries(fields.map((field) => [field, ''])),
+    });
+    console.log(`  retired: ${spec.name}.${fields.join(', ')} removed from ${affected} document(s)`);
+  }
 }

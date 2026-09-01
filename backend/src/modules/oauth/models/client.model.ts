@@ -85,6 +85,9 @@ export interface ClientRecord extends Scoped {
   meta: Meta;
 }
 
+/** Retired here so the seeder unsets them and nothing writes them again: `owner` became `owners`. */
+export const RETIRED_CLIENT_FIELDS: readonly string[] = ['owner'];
+
 export function scopesOf(client: Pick<ClientRecord, 'scope'>): string[] {
   return client.scope.split(' ').filter(Boolean);
 }

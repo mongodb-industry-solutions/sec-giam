@@ -1,4 +1,5 @@
 import { DOMAIN_EVENT_COLLECTION } from '@leafypay/eventbus';
+import { RETIRED_CLIENT_FIELDS } from '../../modules/oauth/models/client.model';
 
 /**
  * The canonical registry of every collection in the GIAM database, with the module that owns it.
@@ -26,6 +27,8 @@ export interface CollectionSpec {
   encrypted?: boolean;
   /** The field a TTL index expires on, when the collection is ephemeral by design. */
   ttlField?: string;
+  /** Fields no longer declared: the seeder unsets them, validation reports any that survive. */
+  retiredFields?: readonly string[];
 }
 
 // Realm and federation.
@@ -133,6 +136,7 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
     purpose: 'the OAuth client registry: credentials, redirect URIs, grants, scope, token policy',
     scoped: true,
     kind: 'standard',
+    retiredFields: RETIRED_CLIENT_FIELDS,
   },
   {
     name: API_KEY_COLLECTION,
@@ -276,4 +280,8 @@ export function scopedCollections(): CollectionSpec[] {
 
 export function encryptedCollections(): CollectionSpec[] {
   return GIAM_COLLECTIONS.filter((spec) => spec.encrypted);
+}
+
+export function collectionsWithRetiredFields(): CollectionSpec[] {
+  return GIAM_COLLECTIONS.filter((spec) => (spec.retiredFields?.length ?? 0) > 0);
 }

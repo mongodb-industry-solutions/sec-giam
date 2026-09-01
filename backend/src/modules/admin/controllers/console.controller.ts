@@ -34,8 +34,7 @@ interface ConsoleView {
   note?: string;
 }
 
-// Matches no realm, because every realmId is a UUID. Named rather than written inline: it was a
-// literal carrying a NUL byte, which compiled, behaved correctly and made the file read as binary.
+// Matches no realm, because every realmId is a UUID.
 const NO_SUCH_REALM = 'no-such-realm';
 
 const VIEWS: Record<string, ConsoleView> = {
@@ -72,7 +71,7 @@ const VIEWS: Record<string, ConsoleView> = {
   },
   clients: {
     collection: CLIENT_COLLECTION,
-    projection: { _id: 0, realmId: 1, clientId: 1, clientName: 1, type: 1, status: 1, grantTypes: 1, redirectUris: 1, scope: 1, logoUri: 1, owner: 1, requirePkce: 1, backchannel: 1 },
+    projection: { _id: 0, realmId: 1, clientId: 1, clientName: 1, type: 1, status: 1, grantTypes: 1, redirectUris: 1, scope: 1, logoUri: 1, owners: 1, requirePkce: 1, backchannel: 1 },
     realmScoped: true,
     sort: { clientName: 1 },
     summary: 'The applications registered against this authority',

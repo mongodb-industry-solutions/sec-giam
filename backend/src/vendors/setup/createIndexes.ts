@@ -1,6 +1,6 @@
 import { Db, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import {
-  GIAM_COLLECTIONS,
+  GIAM_COLLECTIONS, collectionSpec,
   REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION, TENANT_COLLECTION,
   IDENTITY_COLLECTION, CREDENTIAL_COLLECTION, AGENT_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
   CLIENT_COLLECTION, API_KEY_COLLECTION, AUTHORIZATION_REQUEST_COLLECTION, TOKEN_COLLECTION,
@@ -224,5 +224,79 @@ export async function createIndexes(db: Db): Promise<void> {
     .map((spec) => spec.name);
   if (unindexed.length > 0) {
     console.log(`  note:    no declared index on: ${unindexed.join(', ')}`);
+  }
+
+  await reconcileIndexes(db, existing);
+}
+
+// A time series is left out entirely: its buckets and its default meta index belong to the engine.
+export function reconcilable(collection: string): boolean {
+  return collectionSpec(collection)?.kind !== 'timeseries';
+}
+
+/** What reconciliation concluded about one index that exists in the database. */
+export type IndexVerdict = 'planned' | 'obsolete' | 'engine' | 'unrecognised';
+
+export interface ExistingIndex {
+  name?: string;
+  key?: Record<string, unknown>;
+  weights?: unknown;
+  textIndexVersion?: unknown;
+  '2dsphereIndexVersion'?: unknown;
+}
+
+// Only an index whose every key is an ordinary field path on a plan-managed collection is provably
+// obsolete; anything else is kept, since dropping a driver-managed index would break encryption.
+export function classifyIndex(
+  index: ExistingIndex,
+  plannedNames: Set<string>,
+  collectionIsPlanned: boolean,
+): IndexVerdict {
+  const name = index.name ?? '';
+  if (name === '_id_') return 'planned';
+  if (plannedNames.has(name)) return 'planned';
+  if (!collectionIsPlanned) return 'unrecognised';
+  // A text or geo index is nothing this plan declares, so nothing here can judge it.
+  if (index.weights || index.textIndexVersion || index['2dsphereIndexVersion']) return 'unrecognised';
+  const keys = Object.keys(index.key ?? {});
+  if (keys.length === 0) return 'unrecognised';
+  // The Queryable Encryption safe-content array: the driver's own, and dropping it breaks encryption.
+  if (keys.some((key) => key.startsWith('__'))) return 'engine';
+  if (keys.some((key) => key.startsWith('$'))) return 'unrecognised';
+  return 'obsolete';
+}
+
+// Drops the indexes no longer declared, so a rename does not leave the old one behind forever.
+export async function reconcileIndexes(db: Db, existing?: Set<string>): Promise<void> {
+  const present = existing
+    ?? new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
+
+  const plans = plannedIndexes();
+  const namesByCollection = new Map<string, Set<string>>();
+  for (const plan of plans) {
+    const set = namesByCollection.get(plan.collection) ?? new Set<string>();
+    set.add(plan.options.name);
+    namesByCollection.set(plan.collection, set);
+  }
+
+  for (const [collection, plannedNames] of namesByCollection) {
+    if (!present.has(collection)) continue;
+    if (!reconcilable(collection)) continue;
+    const indexes = await db.collection(collection).indexes().catch(() => []) as ExistingIndex[];
+    for (const index of indexes) {
+      const verdict = classifyIndex(index, plannedNames, true);
+      if (verdict === 'planned') continue;
+      if (verdict !== 'obsolete') {
+        console.log(`  keep:    ${collection}.${index.name} (not declared, ${verdict === 'engine' ? 'managed by the driver' : 'not provably safe to drop'})`);
+        continue;
+      }
+      try {
+        await db.collection(collection).dropIndex(index.name as string);
+        console.log(`  dropped: ${collection}.${index.name} (no longer declared)`);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.log(`  keep:    ${collection}.${index.name} (could not be dropped: ${reason})`);
+      }
+    }
   }
 }

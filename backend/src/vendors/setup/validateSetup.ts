@@ -1,17 +1,40 @@
 import { Db } from 'mongodb';
 import {
-  GIAM_COLLECTIONS, scopedCollections, encryptedCollections,
+  GIAM_COLLECTIONS, scopedCollections, encryptedCollections, collectionsWithRetiredFields,
   REALM_COLLECTION, SIGNING_KEY_COLLECTION,
 } from '../../shared/models/collections';
-import { plannedIndexes } from './createIndexes';
+import { plannedIndexes, classifyIndex, reconcilable, ExistingIndex } from './createIndexes';
 import { assertCryptSharedLib } from '../encryption/qeClient';
 import { findOrphanedDeks } from '../encryption/keyVault';
 import { buildEncryptedFieldsMaps } from '../encryption/encryptedFieldsMaps';
 import { config, keyVaultNamespace } from '../../config';
 
-export interface ValidationResult {
-  checks: Array<{ name: string; ok: boolean; detail?: string }>;
+// warning: converges on the next setup and seed. error: rerun setup. reset: only a rebuild fixes it.
+export type CheckSeverity = 'warning' | 'error' | 'reset';
+
+export type SetupVerdict = 'converged' | 'converged-with-warnings' | 'not-converged' | 'requires-reset';
+
+export interface ValidationCheck {
+  name: string;
   ok: boolean;
+  detail?: string;
+  severity?: CheckSeverity;
+}
+
+export interface ValidationResult {
+  checks: ValidationCheck[];
+  ok: boolean;
+  verdict: SetupVerdict;
+  /** The failures that no amount of re-running setup can fix, in operator words. */
+  resetReasons: string[];
+}
+
+export function verdictOf(checks: ValidationCheck[]): SetupVerdict {
+  const failed = checks.filter((check) => !check.ok);
+  if (failed.some((check) => check.severity === 'reset')) return 'requires-reset';
+  if (failed.length === 0) return 'converged';
+  if (failed.some((check) => check.severity !== 'warning')) return 'not-converged';
+  return 'converged-with-warnings';
 }
 
 // The declared encrypted paths, taken from the same builder setup used, so the two cannot disagree by
@@ -38,8 +61,9 @@ function declaredEncryptedPaths(): Record<string, string[]> {
  * or a driver-level message about unsatisfied keys, which is what makes them expensive.
  */
 export async function validateSetup(db: Db): Promise<ValidationResult> {
-  const checks: ValidationResult['checks'] = [];
-  const add = (name: string, ok: boolean, detail?: string) => checks.push({ name, ok, detail });
+  const checks: ValidationCheck[] = [];
+  const add = (name: string, ok: boolean, detail?: string, severity: CheckSeverity = 'error') =>
+    checks.push({ name, ok, detail, severity });
 
   try {
     add('crypt_shared library', true, assertCryptSharedLib());
@@ -76,10 +100,12 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
     // ownership check into noise a reader learns to skip.
     .filter((name) => !name.startsWith('enxcol_.') && !name.startsWith('system.'))
     .filter((name) => name !== config.mongodb.keyVaultCollection && !known.has(name));
+  // A warning, not an error: reconciliation never drops a collection, so this is somebody's decision.
   add('every collection is registered with an owning module', unregistered.length === 0,
-    unregistered.length === 0 ? undefined : `unregistered: ${unregistered.join(', ')}`);
+    unregistered.length === 0 ? undefined : `unregistered: ${unregistered.join(', ')}`, 'warning');
 
-  for (const plan of plannedIndexes()) {
+  const plans = plannedIndexes();
+  for (const plan of plans) {
     if (plan.options.name === '_id_') continue;
     if (!byName.has(plan.collection)) {
       add(`index ${plan.collection}.${plan.options.name}`, false, 'collection missing');
@@ -88,6 +114,47 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
     const names = (await db.collection(plan.collection).indexes()).map((i) => i.name);
     const ok = names.includes(plan.options.name);
     add(`index ${plan.collection}.${plan.options.name}`, ok, ok ? undefined : 'missing');
+  }
+
+  // The other direction: an index the database has and the plan does not, which a rename leaves behind.
+  const plannedByCollection = new Map<string, Set<string>>();
+  for (const plan of plans) {
+    const set = plannedByCollection.get(plan.collection) ?? new Set<string>();
+    set.add(plan.options.name);
+    plannedByCollection.set(plan.collection, set);
+  }
+  for (const [collection, plannedNames] of plannedByCollection) {
+    if (!byName.has(collection) || !reconcilable(collection)) continue;
+    const indexes = await db.collection(collection).indexes().catch(() => []) as ExistingIndex[];
+    const obsolete: string[] = [];
+    const unknown: string[] = [];
+    for (const index of indexes) {
+      const verdict = classifyIndex(index, plannedNames, true);
+      if (verdict === 'obsolete') obsolete.push(index.name ?? '(unnamed)');
+      if (verdict === 'unrecognised') unknown.push(index.name ?? '(unnamed)');
+    }
+    add(`${collection} carries no index the model dropped`, obsolete.length === 0,
+      obsolete.length === 0 ? undefined : `obsolete: ${obsolete.join(', ')}; setup:db removes them`, 'warning');
+    // Reported, never removed: one of these could be an index something else relies on. A
+    // driver-managed one is not listed, since it is present by design on every healthy database.
+    if (unknown.length > 0) {
+      add(`${collection} has indexes nobody can account for`, false,
+        `left alone: ${unknown.join(', ')}`, 'warning');
+    }
+  }
+
+  // Fields a model retired that survive in documents. The seed step unsets them.
+  for (const spec of collectionsWithRetiredFields()) {
+    if (!byName.has(spec.name)) continue;
+    const fields = spec.retiredFields ?? [];
+    const surviving = await db.collection(spec.name).countDocuments({
+      $or: fields.map((field) => ({ [field]: { $exists: true } })),
+    }).catch(() => 0);
+    add(`${spec.name} holds no field the model retired`, surviving === 0,
+      surviving === 0
+        ? `${fields.join(', ')} absent`
+        : `${surviving} document(s) still hold ${fields.join(', ')}; setup:seed removes them`,
+      'warning');
   }
 
   // The encrypted-fields drift check. Setup SKIPS a collection that already exists, so a map changed
@@ -99,14 +166,23 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
     const expected = declared[spec.name] ?? [];
     const ok = actual.length > 0 && actual.join(',') === expected.join(',');
     add(`encrypted fields on ${spec.name} match the model`, ok,
-      ok ? `${actual.length} field(s)` : `declared [${expected.join(', ')}] but stored [${actual.join(', ')}]; needs --reset`);
+      ok
+        ? `${actual.length} field(s)`
+        : `declared [${expected.join(', ')}] but stored [${actual.join(', ')}]. `
+          + 'An existing collection cannot have its encrypted fields changed, so setup SKIPS it: '
+          + 'running setup:db again will never fix this. Rebuild with setup:db:reset, then setup:seed.',
+      'reset');
   }
 
   // The time-series collection cannot be converted in place, so getting it wrong once is permanent
   // until the collection is dropped.
   for (const spec of GIAM_COLLECTIONS.filter((s) => s.kind === 'timeseries')) {
     const isTimeseries = Boolean(byName.get(spec.name)?.options?.timeseries) || byName.get(spec.name)?.type === 'timeseries';
-    add(`${spec.name} is a time series`, isTimeseries, isTimeseries ? undefined : 'created plain; needs --reset');
+    add(`${spec.name} is a time series`, isTimeseries, isTimeseries
+      ? undefined
+      : 'created as a plain collection. A collection cannot be converted in place, so re-running '
+        + 'setup:db will never fix this. Rebuild with setup:db:reset, then setup:seed.',
+    'reset');
   }
 
   // The vault must be GIAM's own and must hold GIAM's own keys. An empty one means the setup never
@@ -154,5 +230,10 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
     add(`realm ${realm.name} publishes an active signing key`, keys > 0, `${keys} key(s)`);
   }
 
-  return { checks, ok: checks.every((c) => c.ok) };
+  // Warnings do not fail the run: an operator who can never reach green stops reading the result.
+  const ok = checks.every((c) => c.ok || c.severity === 'warning');
+  const resetReasons = checks
+    .filter((c) => !c.ok && c.severity === 'reset')
+    .map((c) => `${c.name}: ${c.detail ?? 'cannot converge'}`);
+  return { checks, ok, verdict: verdictOf(checks), resetReasons };
 }
