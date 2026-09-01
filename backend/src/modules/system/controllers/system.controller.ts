@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { config } from '../../../config';
+import { RELEASE_VERSION } from '../../../shared/services/release';
 
 // Infrastructure, not API. Open so a deployment probe can reach it, and deliberately silent about
 // anything an unauthenticated caller has no business learning.
@@ -38,6 +39,8 @@ export async function systemController(fastify: FastifyInstance) {
       return reply.status(503).send({
         status: 'fail',
         serviceId: 'giam',
+        version: RELEASE_VERSION,
+        releaseId: RELEASE_VERSION,
         detail,
         checks: {
           'mongodb:connectivity': [
@@ -53,6 +56,8 @@ export async function systemController(fastify: FastifyInstance) {
       return reply.send({
         status: 'pass',
         serviceId: 'giam',
+        version: RELEASE_VERSION,
+        releaseId: RELEASE_VERSION,
         detail,
         checks: {
           'mongodb:connectivity': [
@@ -70,6 +75,8 @@ export async function systemController(fastify: FastifyInstance) {
       return reply.status(503).send({
         status: 'fail',
         serviceId: 'giam',
+        version: RELEASE_VERSION,
+        releaseId: RELEASE_VERSION,
         detail,
         checks: {
           'mongodb:connectivity': [

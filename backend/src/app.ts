@@ -29,6 +29,7 @@ import { adminModule } from './modules/admin';
 import { systemModule } from './modules/system';
 import { registerBuiltinPorts } from './shared/ports/builtins';
 import { config } from './config';
+import { RELEASE_VERSION } from './shared/services/release';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -210,6 +211,8 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
       return reply.status(503).send({
         status: 'fail',
         serviceId: 'giam',
+        version: RELEASE_VERSION,
+        releaseId: RELEASE_VERSION,
         checks: { 'mongodb:connectivity': [{ status: 'fail', componentType: 'datastore', output: fastify.dbError, time: now }] },
       });
     }
@@ -219,12 +222,16 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
       return reply.send({
         status: 'pass',
         serviceId: 'giam',
+        version: RELEASE_VERSION,
+        releaseId: RELEASE_VERSION,
         checks: { 'mongodb:connectivity': [{ status: 'pass', componentType: 'datastore', observedValue: Date.now() - started, observedUnit: 'ms', time: now }] },
       });
     } catch (err) {
       return reply.status(503).send({
         status: 'fail',
         serviceId: 'giam',
+        version: RELEASE_VERSION,
+        releaseId: RELEASE_VERSION,
         checks: { 'mongodb:connectivity': [{ status: 'fail', componentType: 'datastore', output: err instanceof Error ? err.message : 'ping failed', time: now }] },
       });
     }

@@ -2,7 +2,7 @@
   "services": [
     {
       "id": "api-server",
-      "name": "Identity API",
+      "name": "Identity Provider (IdP) API",
       "description": "The authority itself: runtime, encryption library and key custody",
       "type": "api",
       "url": "/api/v1/system/health",

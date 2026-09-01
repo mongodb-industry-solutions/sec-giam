@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { BookOpen, Code2, Users } from 'lucide-react';
 import { API_PUBLIC_URL } from '../lib/env';
 import { BRAND } from '../config/brand';
+import { ReleaseVersion } from '../components/ReleaseVersion';
 
 export default function LandingPage() {
   return (
@@ -79,7 +80,7 @@ export default function LandingPage() {
         </div>
 
         <p className="mt-3 text-gray-400 text-xs">
-          v{process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0'} · Identity Authority · OAuth 2.0 · OpenID Connect · SCIM 2.0
+          <ReleaseVersion />Identity Authority · OAuth 2.0 · OpenID Connect · SCIM 2.0
         </p>
         <Link
           href="/admin"
