@@ -282,6 +282,10 @@ export async function seedAuthorization(
     roles: ['view', 'manage'],
     assignments: ['view', 'manage'],
     permissions: ['view'],
+    // Reading a policy and writing one are separate authorities, because a statement that DENIES is
+    // withdrawn by the same verb that adds one, and reviewing the rules is not the same standing as
+    // changing them.
+    policies: ['view', 'manage'],
     sessions: ['view', 'manage'],
     keys: ['view', 'rotate', 'retire'],
   };

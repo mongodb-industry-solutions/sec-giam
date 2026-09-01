@@ -83,7 +83,7 @@ export default function ApplicationsPage() {
   const visible = grants.slice((page - 1) * limit, page * limit);
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-5 p-4 sm:p-6 lg:p-8">
+    <main className="space-y-5">
       <SectionHeader
         icon={Layers}
         title="Authorized applications"

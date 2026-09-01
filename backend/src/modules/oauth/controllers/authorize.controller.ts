@@ -11,6 +11,7 @@ import { scopesOf } from '../models/client.model';
 import { enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { oauthError } from '../../../shared/models/problem';
+import { SecurityEventService, hashIp, hashState } from '../../audit/services/securityEvent.service';
 
 /**
  * The authorization endpoint, RFC 6749 §4.1 with PKCE.
@@ -22,6 +23,12 @@ import { oauthError } from '../../../shared/models/problem';
  * Deliberately NOT a place that accepts credentials. A client sends a browser here and gets a code
  * back; if there is no session, the answer is that one is needed, never a prompt this endpoint
  * handles itself. Keeping credential entry in one place is the whole reason the authority exists.
+ *
+ * The mint and every refusal are recorded. A redirect URI that does not match the registration is the
+ * signal that somebody is trying to have a code delivered somewhere it does not belong, and a trail
+ * that starts at the token endpoint never sees it. The correlator is derived from the state parameter
+ * the same way the token endpoint derives it, so one authorization and its redemption read as one
+ * flow rather than two unrelated entries.
  */
 export async function authorizeController(fastify: FastifyInstance) {
   fastify.post('/realms/:realm/protocol/openid-connect/auth', {
@@ -88,18 +95,51 @@ export async function authorizeController(fastify: FastifyInstance) {
     };
 
     const realm = await new RealmService(fastify.db).byName(realmName);
+    // Not recorded: with no realm there is no trail to record it in, which is the token endpoint's
+    // position on the same case.
     if (!realm || !realm.enabled) return reply.status(400).send(oauthError(400, 'unknown realm'));
+
+    // The same correlator the token endpoint derives, so authorize and redemption group together. The
+    // state is never stored raw: it is a value the client chose, and the trail only needs to say that
+    // two records belong to one flow.
+    const correlationId = body.state ? hashState(body.state) : request.correlationId;
+    const ipHash = hashIp(request.ip);
+    // What is known so far. A refusal names the subject once one is resolved, and the client until
+    // then: a failure recorded against nobody is a failure nobody can be shown.
+    const context: { subjectId?: string } = {};
+
+    /** Refuses and records. The cause is what makes this trail worth reading afterwards. */
+    const refuse = (status: number, description: string, cause: string) => {
+      void new SecurityEventService(fastify.db).record({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        category: 'token',
+        action: 'authorization.code_issued',
+        outcome: 'failure',
+        cause,
+        correlationId,
+        clientId: body.client_id,
+        ...(context.subjectId ? { subjectId: context.subjectId } : {}),
+        ...(ipHash ? { ipHash } : {}),
+        detail: { responseType: body.response_type, scope: body.scope },
+      });
+      return reply.status(status as 400).send(oauthError(status, description));
+    };
+
+    if (body.response_type !== 'code') {
+      return refuse(400, 'unsupported response_type', 'unsupported_response_type');
+    }
 
     const registered = await new ClientAuthService(fastify.db).find(realm.realmId, body.client_id);
     if (registered && registered.status !== 'active') {
-      return reply.status(400).send(oauthError(400, 'unknown client'));
+      return refuse(400, 'unknown client', 'client_not_active');
     }
 
     // Soft mode admits a client that has never registered. It does NOT admit one that registered and
     // then presented the wrong redirect: that client is known, so its registration is the answer.
     const softAdmitted = !registered && enforcementFor(realm) === 'soft';
     if (!registered && !softAdmitted) {
-      return reply.status(400).send(oauthError(400, 'unknown client'));
+      return refuse(400, 'unknown client', 'unknown_client');
     }
     // A provisional client has no registered redirect, so the one presented is the one it gets, and
     // it holds the minimum scope rather than whatever it asked for.
@@ -108,11 +148,16 @@ export async function authorizeController(fastify: FastifyInstance) {
     // Exact match, never a prefix. A redirect URI compared loosely is how an authorization code ends
     // up delivered to an attacker's path on a legitimate host.
     if (!client.redirectUris.includes(body.redirect_uri)) {
-      return reply.status(400).send(oauthError(400, 'redirect_uri is not registered for this client'));
+      return refuse(400, 'redirect_uri is not registered for this client', 'redirect_uri_mismatch');
     }
 
     if (client.requirePkce && !body.code_challenge) {
-      return reply.status(400).send(oauthError(400, 'this client requires PKCE'));
+      return refuse(400, 'this client requires PKCE', 'pkce_missing');
+    }
+    // A challenge with a method this authority does not implement is worse than none: the client
+    // believes it is protected and the redemption would compare the wrong bytes.
+    if (body.code_challenge && body.code_challenge_method && body.code_challenge_method !== 'S256') {
+      return refuse(400, 'unsupported code_challenge_method', 'pkce_method_unsupported');
     }
 
     if (softAdmitted) {
@@ -132,18 +177,21 @@ export async function authorizeController(fastify: FastifyInstance) {
     const requested = softAdmitted ? permitted : asked;
     const refused = softAdmitted ? [] : asked.filter((scope) => !permitted.includes(scope));
     if (refused.length > 0) {
-      return reply.status(400).send(oauthError(400, `scope not permitted: ${refused.join(' ')}`));
+      return refuse(400, `scope not permitted: ${refused.join(' ')}`, 'scope_not_permitted');
     }
 
     const session = await fastify.db
       .collection<SessionRecord>(SESSION_COLLECTION)
       .findOne({ realmId: realm.realmId, sessionId: body.session_id }, { projection: { _id: 0 } });
     if (!session || !isLive(session)) {
-      return reply.status(401).send(oauthError(401, 'no live session'));
+      return refuse(401, 'no live session', 'no_live_session');
     }
+    // Named as soon as the session resolves, so anything refused after this point reaches the person
+    // it concerned rather than only the application.
+    context.subjectId = session.subjectId;
 
     const identity = await new DirectoryService(fastify.db).findBySubjectId(session.subjectId);
-    if (!identity) return reply.status(401).send(oauthError(401, 'no live session'));
+    if (!identity) return refuse(401, 'no live session', 'subject_no_longer_exists');
 
     const code = randomBytes(32).toString('base64url');
     const now = new Date();
@@ -178,6 +226,27 @@ export async function authorizeController(fastify: FastifyInstance) {
       { sessionId: session.sessionId },
       { $addToSet: { clientIds: client.clientId }, $set: { lastSeenAt: now.toISOString() } },
     );
+
+    // The code itself is never in the event, nor is the state: what is recorded is that this client
+    // obtained an authorization for this person, with this scope, in this flow.
+    void new SecurityEventService(fastify.db).record({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      category: 'token',
+      action: 'authorization.code_issued',
+      outcome: 'success',
+      correlationId,
+      clientId: client.clientId,
+      subjectId: identity.subjectId,
+      ...(ipHash ? { ipHash } : {}),
+      target: { type: 'session', ref: session.sessionId },
+      detail: {
+        clientName: client.clientName,
+        scope: requested,
+        pkce: Boolean(body.code_challenge),
+        softAdmitted,
+      },
+    });
 
     return reply.send({
       code,

@@ -6,7 +6,7 @@ import { CredentialsPanel } from '../../../components/CredentialsPanel';
 
 export default function ConsoleCredentialsPage() {
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
+    <main className="space-y-5">
       <SectionHeader
         icon={KeyRound}
         title="Your authenticators"

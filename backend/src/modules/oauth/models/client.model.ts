@@ -66,12 +66,18 @@ export interface ClientRecord extends Scoped {
   status: 'active' | 'suspended' | 'revoked';
 
   /**
-   * The ONLY back-reference to a consuming application's record, and it is an opaque string.
+   * Who administers this registration. A SET, because two people sharing one integration is normal.
    *
-   * The authority does not resolve it and does not know what it names. The display name is copied at
-   * registration so an audit trail can say who a token was issued to without calling anyone.
+   * Every owner holds the same authority: read, edit, rotate the secret, withdraw. There is no
+   * primary owner, because a hierarchy raises a question this authority has no answer to, namely what
+   * happens to the application when the primary leaves. A registration must never reach zero owners,
+   * or it becomes unadministrable and only an operator credential can touch it again.
+   *
+   * Each entry is the only back-reference to a consuming application's record, and it is an opaque
+   * string. The authority does not resolve it and does not know what it names. The display name is
+   * copied at registration so an audit trail can say who a token was issued to without calling anyone.
    */
-  owner?: OwnerRef;
+  owners?: OwnerRef[];
 
   /** Upstream role names this client's claims map to, for a client that federates its own users. */
   claimMappings?: Record<string, string>;

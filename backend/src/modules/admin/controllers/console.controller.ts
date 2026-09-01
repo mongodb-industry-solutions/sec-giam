@@ -34,6 +34,10 @@ interface ConsoleView {
   note?: string;
 }
 
+// Matches no realm, because every realmId is a UUID. Named rather than written inline: it was a
+// literal carrying a NUL byte, which compiled, behaved correctly and made the file read as binary.
+const NO_SUCH_REALM = 'no-such-realm';
+
 const VIEWS: Record<string, ConsoleView> = {
   realms: {
     collection: REALM_COLLECTION,
@@ -263,7 +267,7 @@ export async function consoleController(fastify: FastifyInstance) {
         .findOne({ name: realm }, { projection: { _id: 0, realmId: 1 } }) as { realmId?: string } | null;
       // A realm that does not exist narrows to nothing rather than to everything. Falling back to an
       // unfiltered listing on a typo is how an operator ends up reading another tenant's records.
-      filter.realmId = realmRecord?.realmId ?? ' none';
+      filter.realmId = realmRecord?.realmId ?? NO_SUCH_REALM;
     }
 
     if (q) {

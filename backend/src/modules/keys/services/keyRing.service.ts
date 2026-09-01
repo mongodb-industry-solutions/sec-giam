@@ -1,5 +1,7 @@
 import { createPublicKey } from 'crypto';
+import { Db } from 'mongodb';
 import type { KeyProvider } from '../../../shared/ports';
+import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { keyProviders } from '../../../shared/ports';
 import { SigningKeyRecord, JwkSet, assertNoPlaintextPrivateKey } from '../models/signingKey.model';
 import { pemToJwk } from './jwk';
@@ -11,6 +13,15 @@ import { config } from '../../../config';
  * infrastructure, no shared volume, no key-encryption key to distribute and later lose.
  */
 export interface SigningKeyStore {
+  /**
+   * The handle the trail is written through, when this store has one.
+   *
+   * Present so publishing a key can leave evidence without every caller of KeyRing being changed to
+   * pass a second dependency it does not otherwise need. A store that keeps its records somewhere
+   * else simply does not offer it, and then nothing is recorded, which is correct: an in-memory store
+   * in a test has no trail to write to.
+   */
+  readonly eventDb?: Db;
   upsert(record: SigningKeyRecord): Promise<void>;
   findByKid(kid: string): Promise<SigningKeyRecord | null>;
   listByRealm(realmId: string): Promise<SigningKeyRecord[]>;
@@ -74,6 +85,10 @@ export class KeyRing {
     const kid = await this.provider.ensureKey(realmId);
     const publicKeyPem = await this.provider.publicKeyPem(kid);
     const now = this.clock().toISOString();
+    // Read before the upsert, so "this key is new to the realm's set" can still be told from "this
+    // replica is republishing a key that was already there". Only the first is a key coming into
+    // existence, and recording the second on every republication would bury it.
+    const known = await this.store.findByKid(kid);
 
     const record: SigningKeyRecord = {
       realmId,
@@ -97,6 +112,27 @@ export class KeyRing {
     // Public material only. Enforced here as well as in validation, because this is the write path.
     assertNoPlaintextPrivateKey(record);
     await this.store.upsert(record);
+
+    // A key entering the realm's published set is the moment something new can sign tokens the whole
+    // estate will trust. Rotation and retirement were already recorded; creation was not, which left
+    // the one lifecycle step with no beginning.
+    if (!known && this.store.eventDb) {
+      void new SecurityEventService(this.store.eventDb).record({
+        realmId,
+        tenantId,
+        category: 'key',
+        action: 'key.published',
+        outcome: 'success',
+        target: { type: 'signingKey', ref: kid },
+        detail: {
+          kid,
+          algorithm: record.alg,
+          provider: record.provider,
+          externalCustody: this.provider.externalCustody,
+          ...(record.instanceId ? { instanceId: record.instanceId } : {}),
+        },
+      });
+    }
     return kid;
   }
 

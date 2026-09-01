@@ -1,0 +1,46 @@
+[
+  {
+    "realm": "leafypay",
+    "name": "role-administration-allowed",
+    "version": "1",
+    "enabled": true,
+    "statements": [
+      {
+        "effect": "allow",
+        "principals": ["*"],
+        "actions": ["view", "manage"],
+        "resources": ["roles"],
+        "reason": "Reading and editing the role catalogue is what administering a realm consists of."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "name": "role-change-denied",
+    "version": "1",
+    "enabled": true,
+    "statements": [
+      {
+        "effect": "deny",
+        "actions": ["manage"],
+        "resources": ["roles"],
+        "reason": "Editing what a role grants is withheld while this statement stands, whatever else allows it. Withdraw the statement deliberately, so widening the authority is a decision somebody made rather than one nobody noticed."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "name": "session-review-allowed-at-elevated-assurance",
+    "version": "1",
+    "enabled": true,
+    "statements": [
+      {
+        "effect": "allow",
+        "actions": ["view"],
+        "resources": ["sessions"],
+        "condition": { "assuranceAtLeast": "aal2" },
+        "reason": "Reading where an account is signed in is offered once the sign-in itself reached a second factor."
+      }
+    ]
+  }
+]

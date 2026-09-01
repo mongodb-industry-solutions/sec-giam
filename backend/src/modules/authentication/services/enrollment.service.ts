@@ -132,12 +132,21 @@ export class EnrollmentService {
    */
   async register(realm: RealmRecord, subjectId: string, input: RegisterInput): Promise<CredentialView | EnrollmentFailure> {
     if (input.algorithm !== 'RS256' && input.algorithm !== 'ES256') {
+      this.audit(realm, subjectId, 'credential.registered', 'failure', { algorithm: input.algorithm }, 'unsupported_algorithm');
       return refuse(400, 'invalid_request', 'algorithm must be RS256 or ES256');
     }
 
     const claims = readChallenge(input.challenge);
-    if (isEnrollmentFailure(claims)) return claims;
-    if (claims.sub !== subjectId) return refuse(401, 'invalid_grant', 'the challenge belongs to another principal');
+    if (isEnrollmentFailure(claims)) {
+      // A malformed, forged or expired challenge. Recorded because a stream of them against one
+      // account is somebody working on the ceremony rather than a person mistyping.
+      this.audit(realm, subjectId, 'credential.registered', 'failure', {}, 'bad_challenge');
+      return claims;
+    }
+    if (claims.sub !== subjectId) {
+      this.audit(realm, subjectId, 'credential.registered', 'failure', {}, 'challenge_belongs_to_another_principal');
+      return refuse(401, 'invalid_grant', 'the challenge belongs to another principal');
+    }
 
     let proven = false;
     try {
@@ -158,6 +167,7 @@ export class EnrollmentService {
 
     const credentialId = input.credentialId ?? randomUUID();
     if (await this.credentials.findOne({ credentialId }, { projection: { _id: 0, credentialId: 1 } })) {
+      this.audit(realm, subjectId, 'credential.registered', 'failure', { credentialId }, 'credential_id_taken');
       return refuse(409, 'invalid_request', 'that credential id is already registered');
     }
 
@@ -197,7 +207,12 @@ export class EnrollmentService {
       { credentialId, subjectId, status: 'active' },
       { $set: { status: 'revoked', 'meta.lastModified': new Date().toISOString() } },
     );
-    if (result.matchedCount === 0) return refuse(404, 'invalid_request', 'no such credential');
+    if (result.matchedCount === 0) {
+      // Owner scoped, so this is either a credential that is gone or one that belongs to somebody
+      // else. Both are worth a line against the caller who asked.
+      this.audit(realm, subjectId, 'credential.revoked', 'failure', { credentialId }, 'no_such_credential');
+      return refuse(404, 'invalid_request', 'no such credential');
+    }
     this.audit(realm, subjectId, 'credential.revoked', 'success', { credentialId });
     return true;
   }
@@ -213,7 +228,10 @@ export class EnrollmentService {
       { credentialId, subjectId, status: 'active' },
       { projection: { _id: 0, credentialId: 1 } },
     );
-    if (!existing) return refuse(404, 'invalid_request', 'no such credential');
+    if (!existing) {
+      this.audit(realm, subjectId, 'credential.rotated', 'failure', { credentialId }, 'no_such_credential');
+      return refuse(404, 'invalid_request', 'no such credential');
+    }
 
     const replacement = await this.register(realm, subjectId, input);
     if (isEnrollmentFailure(replacement)) return replacement;

@@ -170,16 +170,48 @@ export async function roleController(fastify: FastifyInstance) {
     return { access };
   }
 
-  function audit(realm: { realmId: string; tenantId: string }, action: string, subjectId: string, detail: Record<string, unknown>) {
+  /**
+   * One authorization change, recorded, whichever way it went.
+   *
+   * The outcome is a parameter rather than a constant because a REFUSED attempt to grant a role is
+   * the entry an auditor most needs: somebody trying to widen their own authority looks exactly like
+   * nothing at all in a trail that only holds what succeeded.
+   */
+  function audit(
+    realm: { realmId: string; tenantId: string },
+    action: string,
+    subjectId: string,
+    detail: Record<string, unknown>,
+    outcome: 'success' | 'failure' = 'success',
+    cause?: string,
+  ) {
     void new SecurityEventService(fastify.db).record({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       category: 'authorization',
       action,
-      outcome: 'success',
+      outcome,
       subjectId,
+      ...(cause ? { cause } : {}),
       detail,
     });
+  }
+
+  /**
+   * The refusal a gate produced, recorded and returned.
+   *
+   * Every privileged route here goes through it, so the trail cannot have a route where the refusal
+   * was left out because that one was added later.
+   */
+  function refused(
+    realm: { realmId: string; tenantId: string },
+    action: string,
+    subjectId: string,
+    reason: string | undefined,
+    detail: Record<string, unknown> = {},
+  ) {
+    audit(realm, action, subjectId, detail, 'failure', 'not_permitted');
+    return problem(403, 'Not permitted', reason);
   }
 
   fastify.get(base, {
@@ -358,7 +390,7 @@ export async function roleController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'roles', 'manage');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.role.created', caller.subjectId, gate.refused, { name: (request.body as { name?: string })?.name }));
 
     const outcome = await new RoleAdminService(fastify.db)
       .create(realm.realmId, realm.tenantId, request.body as { name: string });
@@ -410,7 +442,7 @@ export async function roleController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'roles', 'manage');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.role.updated', caller.subjectId, gate.refused, { roleId }));
 
     const outcome = await new RoleAdminService(fastify.db).update(realm.realmId, roleId, request.body as object);
     if (outcome === null) return reply.status(404).send(problem(404, 'No such role'));
@@ -454,7 +486,7 @@ export async function roleController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'roles', 'manage');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.role.removed', caller.subjectId, gate.refused, { roleId }));
 
     const outcome = await new RoleAdminService(fastify.db).remove(realm.realmId, roleId);
     if (outcome === null) return reply.status(404).send(problem(404, 'No such role'));
@@ -542,7 +574,7 @@ export async function roleController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'assignments', 'manage');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.assignment.granted', caller.subjectId, gate.refused, { roleId }));
 
     const body = request.body as { subjectId: string; expiresAt?: string; justification?: string };
     const outcome = await new RoleAdminService(fastify.db).grant(realm.realmId, realm.tenantId, {
@@ -596,7 +628,7 @@ export async function roleController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'assignments', 'manage');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.assignment.revoked', caller.subjectId, gate.refused, { assignmentId }));
 
     const revoked = await new RoleAdminService(fastify.db).revoke(realm.realmId, assignmentId);
     if (!revoked) return reply.status(404).send(problem(404, 'No such assignment'));

@@ -4,6 +4,7 @@ import { seedRealms } from './seedRealms';
 import { seedKeys } from './seedKeys';
 import { seedIdentities } from './seedIdentities';
 import { seedAuthorization } from './seedAuthorization';
+import { seedPolicies } from './seedPolicies';
 import { seedClients } from './seedClients';
 import { REALM_COLLECTION } from '../../shared/models/collections';
 import { getQEClient, closeQEClient } from '../encryption/qeClient';
@@ -34,6 +35,9 @@ export async function runSeed(): Promise<void> {
     // Roles and their assignments. After principals, since an assignment names one.
     await seedAuthorization(db);
     await seedAuthorization(db, 'bankRoles.json', 'bankIdentities.json');
+    // Policies after roles, because the pair only means anything together: a policy narrows what a
+    // role granted, and one seeded over an empty role catalogue would demonstrate nothing.
+    await seedPolicies(db);
     // Clients last: a service identity's role has to exist before it can be assigned.
     await seedClients(db);
     console.log('\nGIAM seed complete.');

@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { SessionService } from '../services/session.service';
+import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { authenticationMethods } from '../../../shared/ports';
 import { bindAuthenticationMethods } from '../services/authenticationMethods';
 import { bindCredentialStores } from '../../directory/services/credentialStores';
@@ -98,11 +99,27 @@ export async function loginController(fastify: FastifyInstance) {
       ipHash: hashIp(request.ip),
     });
 
+    const audit = new SecurityEventService(fastify.db);
+    const directory = new DirectoryService(fastify.db);
+
     if (!resolution) {
+      // Resolved here and nowhere in the answer. The caller still learns nothing, and the person
+      // whose account was attempted can see the attempt in their own trail, which is the point.
+      const attempted = await directory.findByLogin(realm.realmId, login);
+      await audit.record({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        category: 'authentication',
+        action: 'authentication.password',
+        outcome: 'failure',
+        cause: 'bad_credential',
+        correlationId: request.correlationId,
+        ...(attempted ? { subjectId: attempted.subjectId } : {}),
+        ...(hashIp(request.ip) ? { ipHash: hashIp(request.ip) } : {}),
+      });
       return reply.status(401).send(problem(401, 'Authentication failed'));
     }
 
-    const directory = new DirectoryService(fastify.db);
     const identity = await directory.findBySubjectId(resolution.subjectId);
 
     // Built by the session service, so a password sign-in and a federated one produce exactly the
@@ -113,6 +130,19 @@ export async function loginController(fastify: FastifyInstance) {
       epoch: identity?.sessionEpoch ?? 0,
       ...(request.headers['user-agent'] ? { userAgentHash: hashIp(String(request.headers['user-agent'])) as string } : {}),
       ...(request.ip ? { ipHash: hashIp(request.ip) as string } : {}),
+    });
+
+    await audit.record({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      category: 'authentication',
+      action: 'authentication.password',
+      outcome: 'success',
+      subjectId: resolution.subjectId,
+      correlationId: request.correlationId,
+      ...(hashIp(request.ip) ? { ipHash: hashIp(request.ip) } : {}),
+      target: { type: 'session', ref: session.sessionId },
+      detail: { method: resolution.method, assuranceLevel: resolution.assuranceLevel },
     });
 
     return reply.send({

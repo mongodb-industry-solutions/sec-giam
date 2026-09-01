@@ -12,7 +12,7 @@ import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../comp
 import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
 import {
   ClientPage, PRIVILEGED_GRANTS, RegisteredClient, SELF_SERVICE_GRANTS, SELF_SERVICE_SCOPES,
-  firstRedirectProblem, linesToUris,
+  firstRedirectProblem, linesToUris, ownersLabel,
 } from '../../../lib/clients';
 
 /**
@@ -218,7 +218,7 @@ export default function ClientsPage() {
                         <p className="mt-2 text-xs text-gray-500">
                           Registered {when(client.created_at)}
                           {client.last_modified_at && ` · changed ${when(client.last_modified_at)}`}
-                          {client.owner?.ref && ` · owner ${client.owner.display_name || client.owner.ref}`}
+                          {(client.owners?.length ?? 0) > 0 && ` · owned by ${ownersLabel(client.owners)}`}
                         </p>
                         <div className="mt-2 flex flex-wrap items-center gap-1">
                           <span className="mr-1 text-[10px] uppercase tracking-wider text-gray-400">Redirects</span>
@@ -416,7 +416,7 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
         <label className="block">
           <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
             Owner reference
-            <Tooltip text="An opaque reference to a consuming application's own record for whoever owns this registration. The authority never resolves it. Leave it empty to own the registration yourself." />
+            <Tooltip text="An opaque reference to a consuming application's own record, added as an owner alongside you. The authority never resolves it. You stay an owner either way, so the registration is never left with nobody able to administer it." />
           </span>
           <input
             value={ownerRef}

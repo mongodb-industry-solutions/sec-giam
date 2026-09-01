@@ -58,8 +58,15 @@ export const abacEvaluator: PolicyEvaluator = {
     let allow: AuthorizationDecision | null = null;
 
     for (const policy of policies) {
-      for (const statement of policy.statements) {
+      for (const [index, statement] of policy.statements.entries()) {
         if (!appliesTo(statement, request)) continue;
+        const deciding = {
+          policyId: policy.policyId,
+          name: policy.name,
+          version: policy.version,
+          statementIndex: index,
+          effect: statement.effect,
+        };
         if (statement.effect === 'deny') {
           // Returned immediately. Nothing later can overturn it, and evaluating on would only cost
           // time to reach the same answer.
@@ -67,12 +74,14 @@ export const abacEvaluator: PolicyEvaluator = {
             effect: 'deny',
             reason: statement.reason ?? `denied by policy ${policy.name}`,
             source: `${policy.name}@${policy.version}`,
+            policy: deciding,
           };
         }
         allow ??= {
           effect: 'allow',
           reason: statement.reason ?? `allowed by policy ${policy.name}`,
           source: `${policy.name}@${policy.version}`,
+          policy: deciding,
         };
       }
     }

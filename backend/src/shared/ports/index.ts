@@ -94,6 +94,24 @@ export interface AuthorizationDecision {
   reason: string;
   /** The policy or role that decided, so an operator can find it. */
   source?: string;
+  /**
+   * The exact statement that decided, when a stored policy did.
+   *
+   * Optional because not every evaluator has one: a role decision comes from an assignment, not from
+   * a document with a version. Carried as data rather than parsed back out of `source`, so a screen
+   * can link to the record instead of guessing which one the text meant.
+   */
+  policy?: DecidingStatement;
+}
+
+/** Which document, which version, and which line of it. Enough to open the record and read it. */
+export interface DecidingStatement {
+  policyId: string;
+  name: string;
+  version: string;
+  /** Position in the policy's own statement list, which is what the editor shows. */
+  statementIndex: number;
+  effect: 'allow' | 'deny';
 }
 
 /** How a decision is reached. Deny always wins across evaluators. */

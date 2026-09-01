@@ -65,6 +65,11 @@ export class PortRegistry<T extends PortImplementation> {
     return [...this.implementations.keys()].sort();
   }
 
+  /** Every registered implementation, in name order. For the ports whose consumers use all of them. */
+  all(): T[] {
+    return this.names().map((name) => this.resolve(name));
+  }
+
   size(): number {
     return this.implementations.size;
   }

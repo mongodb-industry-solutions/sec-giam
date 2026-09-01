@@ -43,7 +43,7 @@ export default function ProfilePage() {
     setRealm(storedRealm());
   }, []);
 
-  if (!claims) return <main className="p-4 sm:p-6 lg:p-8"><LoadingState label="Reading your session…" /></main>;
+  if (!claims) return <main className="space-y-5"><LoadingState label="Reading your session…" /></main>;
 
   const who = displayName(claims);
   const username = typeof info?.preferred_username === 'string' ? info.preferred_username : claims.preferred_username;
@@ -55,7 +55,7 @@ export default function ProfilePage() {
   const audience = Array.isArray(claims.aud) ? claims.aud.join(', ') : claims.aud;
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-5 p-4 sm:p-6 lg:p-8">
+    <main className="space-y-5">
       <SectionHeader
         icon={UserRound}
         title="Your profile"

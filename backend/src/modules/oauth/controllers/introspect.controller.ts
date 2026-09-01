@@ -110,10 +110,35 @@ export async function introspectController(fastify: FastifyInstance) {
     });
     if (!claims) return reply.send(inactive);
 
+    /**
+     * Introspection is recorded only when the answer is no.
+     *
+     * A resource server introspecting a valid token does it on every request it serves, and the fact
+     * it establishes is already in the issuance record. Writing one event per call would bury the
+     * events that matter under the ones that do not. A REFUSED introspection is the opposite: a token
+     * that was revoked or whose principal was retired is still being presented by somebody, and that
+     * is worth seeing exactly once per occurrence.
+     */
+    const refused = (cause: string, subject?: unknown) => {
+      void new SecurityEventService(fastify.db).record({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        action: 'oauth.token.introspected',
+        outcome: 'failure',
+        category: 'token',
+        cause,
+        clientId: outcome.client.clientId,
+        ...(typeof subject === 'string' ? { subjectId: subject } : {}),
+        correlationId: request.correlationId,
+      });
+      return reply.send(inactive);
+    };
+
     const issuer = new TokenIssuer(fastify.db, ring());
     const record = typeof claims.jti === 'string' ? await issuer.findByJti(realm.realmId, claims.jti) : null;
     // The authoritative part: a signature says it was issued, the record says whether it still counts.
-    if (!record || record.revokedAt) return reply.send(inactive);
+    if (!record) return reply.send(inactive);
+    if (record.revokedAt) return refused('token_revoked', claims.sub);
 
     /**
      * A caller may introspect only tokens addressed to it. Otherwise introspection becomes a way for
@@ -139,21 +164,11 @@ export async function introspectController(fastify: FastifyInstance) {
     // Current status, not status at issuance. This is the whole reason to ask.
     if (claims.sub && claims.sub !== record.clientId) {
       const identity = await new DirectoryService(fastify.db).findBySubjectId(String(claims.sub));
-      if (!identity || !canAuthenticate(identity)) return reply.send(inactive);
+      if (!identity || !canAuthenticate(identity)) return refused('subject_cannot_authenticate', claims.sub);
       if (typeof claims.session_epoch === 'number' && claims.session_epoch < identity.sessionEpoch) {
-        return reply.send(inactive);
+        return refused('session_epoch_raised', claims.sub);
       }
     }
-
-    await new SecurityEventService(fastify.db).record({
-      realmId: realm.realmId,
-      tenantId: realm.tenantId,
-      action: 'oauth.token.introspected',
-      outcome: 'success',
-      category: 'token',
-      clientId: outcome.client.clientId,
-      subjectId: typeof claims.sub === 'string' ? claims.sub : undefined,
-    });
 
     return reply.send({
       active: true,
@@ -228,14 +243,19 @@ export async function introspectController(fastify: FastifyInstance) {
 
     // A refresh token is opaque and carries its identifier; an access token is a JWT and carries it
     // as a claim. Both are accepted, because a client should not have to know which it holds.
+    // Carried out so the event names the person the token was for, not only the client that asked.
+    let subjectId: string | undefined;
+
     const asRefresh = await issuer.findRefreshToken(realm.realmId, presented);
     if (asRefresh && asRefresh.clientId === outcome.client.clientId) {
+      subjectId = asRefresh.subjectId;
       revoked = await issuer.revoke(realm.realmId, asRefresh.jti, 'client_requested');
     } else {
       const claims = await new JwtTokenFormat(ring(), realm.realmId).inspect(presented);
       if (claims && typeof claims.jti === 'string') {
         const record = await issuer.findByJti(realm.realmId, claims.jti);
         if (record && record.clientId === outcome.client.clientId) {
+          subjectId = record.subjectId;
           revoked = await issuer.revoke(realm.realmId, record.jti, 'client_requested');
         }
       }
@@ -249,6 +269,8 @@ export async function introspectController(fastify: FastifyInstance) {
         outcome: 'success',
         category: 'token',
         clientId: outcome.client.clientId,
+        ...(subjectId ? { subjectId } : {}),
+        correlationId: request.correlationId,
       });
     }
 

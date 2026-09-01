@@ -1,7 +1,7 @@
 'use client';
 
 import { apiUrl } from './env';
-import { PROFILE_KEY, storedRealm, storedToken } from './session';
+import { PROFILE_KEY, storedHomeRealm, storedRealm, storedToken } from './session';
 
 /**
  * What the console knows about the signed-in principal, and how it talks to the authority.
@@ -101,13 +101,23 @@ export async function loadUserInfo(): Promise<UserInfo | null> {
   const cached = cachedUserInfo();
   if (cached && cached.sub === claims.sub) return cached;
 
-  profileInFlight ??= callApi<UserInfo>('/protocol/openid-connect/userinfo', { subject: 'your profile' })
+  // Always the HOME realm, never the acting one: the profile belongs to the realm that issued the
+  // token, so asking a realm being administered would present a token it does not accept.
+  profileInFlight ??= callApi<UserInfo>('/protocol/openid-connect/userinfo', {
+    subject: 'your profile',
+    realm: storedHomeRealm(),
+  })
     .then((info) => {
       profileCache = info;
       try { window.sessionStorage.setItem(PROFILE_KEY, JSON.stringify(info)); } catch {}
       return info;
     })
-    .catch(() => null)
+    .catch((err) => {
+      // Degrading to the subject id is deliberate, but degrading silently is not: without this the
+      // screen shows an identifier and nothing says why.
+      console.warn('[console] profile unavailable, showing the subject id instead:', err);
+      return null;
+    })
     .finally(() => { profileInFlight = null; });
 
   return profileInFlight;

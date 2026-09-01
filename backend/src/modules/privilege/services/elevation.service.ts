@@ -54,6 +54,7 @@ export class ElevationService {
     cause?: string;
     detail?: Record<string, unknown>;
     target?: { type: string; ref: string };
+    stakeholderSubjectIds?: string[];
   }): void {
     void new SecurityEventService(this.db).record({
       realmId: realm.realmId,
@@ -80,6 +81,13 @@ export class ElevationService {
     requiresApproval: boolean;
   }): Promise<RoleAssignmentRecord | ElevationRefusal> {
     if (!input.justification?.trim()) {
+      this.audit(realm, {
+        action: input.requiresApproval ? 'privilege.requested' : 'privilege.granted',
+        outcome: 'failure',
+        subjectId: input.requestedBy,
+        cause: 'no_justification',
+        detail: { role: input.roleName, holder: input.subjectId },
+      });
       // Asked for at the moment of granting because that is the only time anybody actually knows it.
       // An elevation with no stated reason cannot be reviewed later, and "it is in the logs" is not
       // a reason.
@@ -88,7 +96,18 @@ export class ElevationService {
 
     const role = await this.db.collection<RoleRecord>(ROLE_COLLECTION)
       .findOne({ realmId: realm.realmId, name: input.roleName }, { projection: { _id: 0, roleId: 1 } });
-    if (!role) return { status: 404, title: 'No such role' };
+    if (!role) {
+      // Naming a role that does not exist is how somebody finds out which ones do, so the attempt is
+      // recorded even though nothing was granted.
+      this.audit(realm, {
+        action: input.requiresApproval ? 'privilege.requested' : 'privilege.granted',
+        outcome: 'failure',
+        subjectId: input.requestedBy,
+        cause: 'unknown_role',
+        detail: { role: input.roleName, holder: input.subjectId },
+      });
+      return { status: 404, title: 'No such role' };
+    }
 
     const duration = Math.min(input.durationSeconds ?? DEFAULT_DURATION_SECONDS, MAX_DURATION_SECONDS);
     const now = new Date();
@@ -134,8 +153,26 @@ export class ElevationService {
       { realmId: realm.realmId, assignmentId, ephemeral: true },
       { projection: { _id: 0 } },
     );
-    if (!assignment) return { status: 404, title: 'No such elevation' };
-    if (isInForce(assignment)) return { status: 409, title: 'That elevation is already in force' };
+    if (!assignment) {
+      this.audit(realm, {
+        action: 'privilege.approved',
+        outcome: 'failure',
+        subjectId: approver,
+        cause: 'no_such_elevation',
+        detail: { assignmentId },
+      });
+      return { status: 404, title: 'No such elevation' };
+    }
+    if (isInForce(assignment)) {
+      this.audit(realm, {
+        action: 'privilege.approved',
+        outcome: 'failure',
+        subjectId: approver,
+        cause: 'already_in_force',
+        detail: { assignmentId },
+      });
+      return { status: 409, title: 'That elevation is already in force' };
+    }
 
     /**
      * The rule that makes approval mean anything at all.
@@ -174,6 +211,9 @@ export class ElevationService {
       action: 'privilege.approved',
       outcome: 'success',
       subjectId: assignment.subjectId,
+      // The person who asked for it. Their request became authority the moment somebody approved it,
+      // and it is the only event that says so.
+      ...(assignment.grantedBy ? { stakeholderSubjectIds: [assignment.grantedBy] } : {}),
       detail: { assignmentId, approvedBy: approver },
     });
     return { ...assignment, approvalRef: approver, notBefore: undefined };
@@ -212,7 +252,16 @@ export class ElevationService {
    */
   async revoke(realm: RealmRecord, assignmentId: string, revokedBy: string, reason: string): Promise<boolean> {
     const result = await this.assignments.deleteOne({ realmId: realm.realmId, assignmentId, ephemeral: true });
-    if (result.deletedCount === 0) return false;
+    if (result.deletedCount === 0) {
+      this.audit(realm, {
+        action: 'privilege.revoked',
+        outcome: 'failure',
+        subjectId: revokedBy,
+        cause: 'no_such_elevation',
+        detail: { assignmentId, reason },
+      });
+      return false;
+    }
 
     this.audit(realm, {
       action: 'privilege.revoked',

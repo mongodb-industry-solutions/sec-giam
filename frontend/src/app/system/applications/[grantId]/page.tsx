@@ -70,7 +70,7 @@ export default function GrantDetailPage() {
   useEffect(() => { void load(); }, [load]);
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
+    <main className="space-y-5">
       <Link
         href="/system/applications"
         className="inline-flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-[#001E2B] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"

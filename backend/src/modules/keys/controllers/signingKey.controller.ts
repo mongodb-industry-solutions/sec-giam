@@ -86,14 +86,29 @@ export async function signingKeyController(fastify: FastifyInstance) {
     return { access };
   }
 
-  function audit(realm: { realmId: string; tenantId: string }, action: string, subjectId: string, detail: Record<string, unknown>) {
+  /**
+   * One key lifecycle operation, recorded either way.
+   *
+   * The outcome is a parameter rather than a constant: an attempt to retire a realm's signing key by
+   * somebody whose roles do not permit it is the entry worth having, and a helper hardcoded to
+   * success is a helper that can only ever describe the days nothing went wrong.
+   */
+  function audit(
+    realm: { realmId: string; tenantId: string },
+    action: string,
+    subjectId: string,
+    detail: Record<string, unknown>,
+    outcome: 'success' | 'failure' = 'success',
+    cause?: string,
+  ) {
     void new SecurityEventService(fastify.db).record({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       category: 'key',
       action,
-      outcome: 'success',
+      outcome,
       subjectId,
+      ...(cause ? { cause } : {}),
       detail,
     });
   }
@@ -195,10 +210,16 @@ export async function signingKeyController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'rotate');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    if ('refused' in gate) {
+      audit(realm, 'key.rotated', caller.subjectId, {}, 'failure', 'not_permitted');
+      return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    }
 
     const outcome = await new KeyAdminService(fastify.db).rotate(realm.realmId, realm.tenantId);
-    if (isKeyRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
+    if (isKeyRefusal(outcome)) {
+      audit(realm, 'key.rotated', caller.subjectId, { title: outcome.title }, 'failure', 'external_custody');
+      return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
+    }
 
     audit(realm, 'key.rotated', caller.subjectId, outcome as unknown as Record<string, unknown>);
     return reply.send(outcome);
@@ -258,13 +279,24 @@ export async function signingKeyController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'retire');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    if ('refused' in gate) {
+      audit(realm, 'key.retired', caller.subjectId, { kid }, 'failure', 'not_permitted');
+      return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+    }
 
     const { acknowledgeTokenBreakage } = (request.body ?? {}) as { acknowledgeTokenBreakage?: boolean };
     const outcome = await new KeyAdminService(fastify.db)
       .retire(realm.realmId, kid, { acknowledged: Boolean(acknowledgeTokenBreakage) });
-    if (outcome === null) return reply.status(404).send(problem(404, 'No such key'));
-    if (isKeyRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
+    if (outcome === null) {
+      audit(realm, 'key.retired', caller.subjectId, { kid }, 'failure', 'no_such_key');
+      return reply.status(404).send(problem(404, 'No such key'));
+    }
+    if (isKeyRefusal(outcome)) {
+      // Refused because live tokens still depend on it and nobody acknowledged the breakage. Worth
+      // recording: it is an operator being stopped from signing everybody out unintentionally.
+      audit(realm, 'key.retired', caller.subjectId, { kid, title: outcome.title }, 'failure', 'breakage_not_acknowledged');
+      return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
+    }
 
     audit(realm, 'key.retired', caller.subjectId, { kid });
     return reply.send({ retired: true, kid, ...(outcome.warning ? { warning: outcome.warning } : {}) });

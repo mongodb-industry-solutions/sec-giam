@@ -83,6 +83,16 @@ export interface RecordEventInput {
   ipHash?: string;
 
   /**
+   * Who else is entitled to see this event.
+   *
+   * For the case the actor is not the only person the act concerns: one owner of an application adding
+   * or removing another changed who may administer something the remaining owners own, and a trail
+   * they cannot read is a trail that does not tell them. Passed by the recording call site, because
+   * only it knows who held that standing at that moment.
+   */
+  stakeholderSubjectIds?: string[];
+
+  /**
    * The accountability chain.
    *
    * The trail has to answer, for any action: which human authorised it, which logical agent performed
@@ -113,6 +123,11 @@ export class SecurityEventService {
    */
   async record(input: RecordEventInput): Promise<void> {
     try {
+      // Deduplicated, and the actor is dropped: they already see the event through their own subject,
+      // and listing them twice would make an empty list and a self-only list look different.
+      const stakeholders = [...new Set(input.stakeholderSubjectIds ?? [])]
+        .filter((subject) => Boolean(subject) && subject !== input.subjectId);
+
       const event: SecurityEventRecord = {
         ts: new Date(),
         realmId: input.realmId,
@@ -130,6 +145,7 @@ export class SecurityEventService {
         ...(input.correlationId ? { correlationId: input.correlationId } : {}),
         ...(input.detail ? { detail: redactSecrets(input.detail) as Record<string, unknown> } : {}),
         ...(input.target ? { target: input.target } : {}),
+        ...(stakeholders.length > 0 ? { stakeholderSubjectIds: stakeholders } : {}),
         // Written only when present, so an event that has nothing to say about the chain does not
         // carry a row of empty fields implying it was checked and found absent.
         ...(input.principalSubjectId ? { principalSubjectId: input.principalSubjectId } : {}),
@@ -166,6 +182,13 @@ export class SecurityEventService {
     from?: Date;
     to?: Date;
     subjectId?: string;
+    /**
+     * Narrows to what one person is entitled to: their own events, plus the ones recorded naming them
+     * as a stakeholder. Distinct from `subjectId`, which asks for one person's events and is what an
+     * oversight caller uses; this one is the self-scoped narrowing and it is never widened by a query
+     * parameter the caller controls.
+     */
+    subjectIdOrStakeholder?: string;
     clientId?: string;
     action?: string;
     outcome?: 'success' | 'failure';
@@ -180,6 +203,12 @@ export class SecurityEventService {
       };
     }
     if (filter.subjectId) query['meta.subjectId'] = filter.subjectId;
+    if (filter.subjectIdOrStakeholder) {
+      query.$or = [
+        { 'meta.subjectId': filter.subjectIdOrStakeholder },
+        { stakeholderSubjectIds: filter.subjectIdOrStakeholder },
+      ];
+    }
     if (filter.clientId) query['meta.clientId'] = filter.clientId;
     if (filter.action) query.action = filter.action;
     if (filter.outcome) query.outcome = filter.outcome;

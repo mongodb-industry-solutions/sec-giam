@@ -4,6 +4,7 @@ import { createVerify, createPublicKey } from 'crypto';
 import type { CredentialStore } from '../../../shared/ports';
 import { CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
 import { CredentialRecord, isUsable } from '../models/credential.model';
+import { SecurityEventService } from '../../audit/services/securityEvent.service';
 
 /**
  * Where credential material lives and how it is verified.
@@ -39,6 +40,22 @@ async function markUsed(credentialId: string, patch: Record<string, unknown> = {
     { credentialId },
     { $set: { lastUsedAt: new Date().toISOString(), ...patch } },
   );
+}
+
+/**
+ * Moves the anti-clone counter forward, and says whether it moved.
+ *
+ * The update is CONDITIONAL on the counter still holding the value this verification read. When it
+ * does not, another proof over the same key advanced it in between, which means two holders produced
+ * a valid signature from the same counter state: the shape of an authenticator that exists twice.
+ * A blind increment cannot tell that apart from ordinary use, which is why it produced no signal.
+ */
+async function advanceSignCount(credentialId: string, from: number): Promise<boolean> {
+  const result = await collection().updateOne(
+    { credentialId, $or: [{ signCount: from }, { signCount: { $exists: false } }] },
+    { $set: { lastUsedAt: new Date().toISOString(), signCount: from + 1 } },
+  );
+  return result.matchedCount > 0;
 }
 
 export const bcryptPasswordStore: CredentialStore = {
@@ -89,9 +106,28 @@ export const publicKeyStore: CredentialStore = {
         Buffer.from(signature, 'base64url'),
       );
       if (ok) {
-        // The anti-clone counter moves forward on every use. A signature arriving with a counter at
-        // or below the stored one means the authenticator appears to exist twice.
-        markUsed(credentialId, { signCount: (credential.signCount ?? 0) + 1 }).catch(() => {});
+        // The anti-clone counter moves forward on every use, and a counter that did not move is a
+        // credential-cloning indicator. Not awaited: bookkeeping must never turn a successful
+        // authentication into an error, and the signal is recorded rather than raised at the caller,
+        // which asked whether this proof holds and got a truthful answer.
+        void advanceSignCount(credentialId, credential.signCount ?? 0)
+          .then((advanced) => {
+            if (advanced) return;
+            // The realm and the tenant come off the credential itself, so nothing had to be threaded
+            // down here from the request: a stored credential already knows where it belongs.
+            return new SecurityEventService(boundDb as Db).record({
+              realmId: credential.realmId,
+              tenantId: credential.tenantId,
+              category: 'credential',
+              action: 'credential.clone_suspected',
+              outcome: 'failure',
+              cause: 'sign_count_did_not_advance',
+              subjectId: credential.subjectId,
+              target: { type: 'credential', ref: credentialId },
+              detail: { expected: (credential.signCount ?? 0) + 1 },
+            });
+          })
+          .catch(() => {});
       }
       return ok;
     } catch {

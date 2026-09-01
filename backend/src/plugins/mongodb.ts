@@ -5,6 +5,7 @@ import * as dotenv from 'dotenv';
 import { resolve } from 'path';
 import { getQEClient, closeQEClient } from '../vendors/encryption/qeClient';
 import { initEventBus, getEventBus } from '../vendors/eventbus';
+import { bindPolicyEvaluators } from '../modules/authorization/services/policyEvaluators';
 import { config, keyVaultNamespace } from '../config';
 
 declare module 'fastify' {
@@ -31,6 +32,9 @@ async function connectAndWire(fastify: FastifyInstance): Promise<void> {
   const db = client.db(config.mongodb.dbName);
   fastify.db = db;
   fastify.dbError = null;
+  // Here rather than at registration, so a reload re-binds too: the policy evaluator reads the
+  // collection directly, and leaving it bound to a torn-down client would fail every decision.
+  bindPolicyEvaluators(db);
   await initEventBus(db).start();
 }
 

@@ -7,7 +7,7 @@ import {
   SIGNING_KEY_COLLECTION, RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
   ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION, RELATIONSHIP_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
-  COUNTERS_COLLECTION, IDEMPOTENCY_COLLECTION,
+  SECURITY_EVENT_COLLECTION, COUNTERS_COLLECTION, IDEMPOTENCY_COLLECTION,
 } from '../../shared/models/collections';
 
 export interface IndexPlan {
@@ -83,8 +83,9 @@ export function plannedIndexes(): IndexPlan[] {
     // OAuth.
     { collection: CLIENT_COLLECTION, keys: { realmId: 1, clientId: 1 }, options: { name: 'realm_clientId_unique', unique: true } },
     { collection: CLIENT_COLLECTION, keys: { realmId: 1, tenantId: 1, status: 1 }, options: { name: 'realm_tenant_status' } },
-    // Resolving a client from the record that owns it, in the consuming application.
-    { collection: CLIENT_COLLECTION, keys: { realmId: 1, 'owner.kind': 1, 'owner.ref': 1 }, options: { name: 'realm_owner', sparse: true } },
+    // Resolving a client from a record that owns it. Multikey, because ownership is a set: this is
+    // the membership test every read on the registry narrows by, so it is not an optional index.
+    { collection: CLIENT_COLLECTION, keys: { realmId: 1, 'owners.kind': 1, 'owners.ref': 1 }, options: { name: 'realm_owners', sparse: true } },
     // RFC 8705: locating the client bound to a presented certificate.
     { collection: CLIENT_COLLECTION, keys: { 'mtls.certificateThumbprint': 1 }, options: { name: 'mtls_thumbprint', sparse: true } },
 
@@ -144,6 +145,9 @@ export function plannedIndexes(): IndexPlan[] {
     },
 
     { collection: POLICY_COLLECTION, keys: { policyId: 1 }, options: { name: 'policyId_unique', unique: true } },
+    // A decision names the policy that decided it as `name@version`, so two policies sharing a name
+    // in one realm would make that record ambiguous exactly when it is being read as evidence.
+    { collection: POLICY_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
     { collection: POLICY_COLLECTION, keys: { realmId: 1, tenantId: 1, enabled: 1 }, options: { name: 'realm_tenant_enabled' } },
     { collection: POLICY_COLLECTION, keys: { realmId: 1, attachedTo: 1 }, options: { name: 'realm_attachedTo' } },
 
@@ -170,6 +174,18 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: DELEGATION_COLLECTION, keys: { delegationId: 1 }, options: { name: 'delegationId_unique', unique: true } },
     { collection: DELEGATION_COLLECTION, keys: { realmId: 1, principalSubjectId: 1, agentId: 1, expiresAt: 1 }, options: { name: 'realm_principal_agent_expiresAt' } },
     { collection: DELEGATION_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0, sparse: true } },
+
+    // Audit. The trail is a time series, so the time field and the meta field are already organised
+    // by the storage engine; this is the one query neither of them answers, namely "events that named
+    // this person as a stakeholder". Without it the self-scoped narrowing degrades into a scan.
+    // Realm first like every other compound index here, and neither sparse nor partial: a time series
+    // index does not take those options, and the realm key would defeat sparseness anyway because
+    // every event has one.
+    {
+      collection: SECURITY_EVENT_COLLECTION,
+      keys: { realmId: 1, stakeholderSubjectIds: 1, ts: -1 },
+      options: { name: 'realm_stakeholders_ts' },
+    },
 
     // Infrastructure.
     { collection: COUNTERS_COLLECTION, keys: { _id: 1 }, options: { name: '_id_' } },

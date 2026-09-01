@@ -305,6 +305,9 @@ export async function crossRealmController(fastify: FastifyInstance) {
         outcome: 'success',
         subjectId: body.subjectId,
         principalSubjectId: caller.subjectId,
+        // The principal who gained authority over another realm. The event is about them and they
+        // did not perform it, so without this it would reach the granter and nobody else.
+        stakeholderSubjectIds: [body.subjectId, caller.subjectId],
         detail: {
           homeRealm: holder.name,
           homeRealmId: holder.realmId,
@@ -380,6 +383,8 @@ export async function crossRealmController(fastify: FastifyInstance) {
         outcome: 'success',
         subjectId: held.subjectId,
         principalSubjectId: caller.subjectId,
+        // The principal whose authority was taken back, and the caller who took it.
+        stakeholderSubjectIds: [held.subjectId, caller.subjectId],
         detail: {
           homeRealm: holder?.name,
           homeRealmId: caller.realmId,

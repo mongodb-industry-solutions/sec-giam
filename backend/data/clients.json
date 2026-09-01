@@ -23,11 +23,23 @@
     "tokenEndpointAuthMethod": "client_secret_basic",
     "applicationType": "web",
     "status": "active",
-    "owner": {
-      "kind": "merchant",
-      "ref": "m0000001-0000-4000-8000-000000000001",
-      "displayName": "Espresso Works"
-    },
+    "owners": [
+      {
+        "kind": "merchant",
+        "ref": "m0000001-0000-4000-8000-000000000001",
+        "displayName": "Espresso Works"
+      },
+      {
+        "kind": "principal",
+        "ref": "a1000102-0000-4000-8000-000000000102",
+        "displayName": "Nina Berg"
+      },
+      {
+        "kind": "principal",
+        "ref": "a1000070-0000-4000-8000-000000000070",
+        "displayName": "Alex Rivera"
+      }
+    ],
     "demoRoster": [
       "customer"
     ]
@@ -55,11 +67,18 @@
     "backchannel": {
       "deliveryMode": "poll"
     },
-    "owner": {
-      "kind": "merchant",
-      "ref": "m0000002-0000-4000-8000-000000000002",
-      "displayName": "Leafy Wallet"
-    },
+    "owners": [
+      {
+        "kind": "merchant",
+        "ref": "m0000002-0000-4000-8000-000000000002",
+        "displayName": "Leafy Wallet"
+      },
+      {
+        "kind": "principal",
+        "ref": "a1000102-0000-4000-8000-000000000102",
+        "displayName": "Nina Berg"
+      }
+    ],
     "demoRoster": [
       "customer"
     ]

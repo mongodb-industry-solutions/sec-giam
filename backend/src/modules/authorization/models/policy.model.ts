@@ -20,6 +20,23 @@ export interface PolicyCondition {
   attestationRequired?: boolean;
 }
 
+/**
+ * The whole condition vocabulary, as data.
+ *
+ * Declared once so the request schema, the administrative service and the console editor cannot
+ * disagree about what a policy may say. Adding an entry here is the only way to widen the language,
+ * which makes widening it a visible act rather than a field somebody let through.
+ */
+export const POLICY_CONDITION_KEYS = [
+  'assuranceAtLeast',
+  'ipInRange',
+  'timeOfDayUtc',
+  'tenantIs',
+  'attestationRequired',
+] as const;
+
+export type PolicyConditionKey = (typeof POLICY_CONDITION_KEYS)[number];
+
 export interface PolicyStatement {
   effect: 'allow' | 'deny';
   principals?: string[];

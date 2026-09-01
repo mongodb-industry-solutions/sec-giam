@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, AppWindow, KeyRound, LayoutGrid, ShieldCheck, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, AppWindow, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
 import { can, type Claims } from './console';
 
 /**
@@ -94,6 +94,45 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     description: 'People, services and workloads this authority knows about, and their lifecycle.',
     // Listing the directory is never a self-scoped act, so this one is absent without the permission.
     visible: (claims) => can(claims, 'identities', 'view'),
+  },
+  {
+    key: 'sessions',
+    label: 'Sessions',
+    path: '/system/sessions',
+    icon: MonitorSmartphone,
+    description: 'Where this account is signed in, and ending a session everywhere at once.',
+    // Never hidden: seeing where your own account is signed in and being able to end it is account
+    // security, not administration. The permission decides how much of the realm is listed, and the
+    // authority narrows the answer either way.
+    visible: () => true,
+  },
+  {
+    key: 'roles',
+    label: 'Roles',
+    path: '/system/roles',
+    icon: ShieldHalf,
+    description: 'Named permission sets, what each grants once composed, and who holds them.',
+    // Administering a realm. Absent rather than refused for anyone else, because a link that answers
+    // 403 teaches the reader only that the console does not know what it is showing them.
+    visible: (claims) => can(claims, 'roles', 'view'),
+  },
+  {
+    key: 'policies',
+    label: 'Policies',
+    path: '/system/policies',
+    icon: Scale,
+    description: 'Conditional statements evaluated after roles, and a simulator that shows which one decides.',
+    // Administrative, like roles. Absent rather than refused for anyone else, because a link that
+    // answers 403 teaches the reader only that the console does not know what it is showing them.
+    visible: (claims) => can(claims, 'policies', 'view'),
+  },
+  {
+    key: 'keys',
+    label: 'Signing keys',
+    path: '/system/keys',
+    icon: KeySquare,
+    description: 'What this realm signs with, what still verifies, and which replica holds each key.',
+    visible: (claims) => can(claims, 'keys', 'view'),
   },
 ];
 

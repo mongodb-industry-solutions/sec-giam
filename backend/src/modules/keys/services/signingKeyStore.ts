@@ -13,6 +13,11 @@ import { SigningKeyStore } from './keyRing.service';
 export class MongoSigningKeyStore implements SigningKeyStore {
   constructor(private readonly db: Db) {}
 
+  /** The same handle, offered to the ring so publishing a key can leave evidence. */
+  get eventDb(): Db {
+    return this.db;
+  }
+
   private get collection() {
     return this.db.collection<SigningKeyRecord>(SIGNING_KEY_COLLECTION);
   }

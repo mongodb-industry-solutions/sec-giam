@@ -8,6 +8,20 @@
  * before the round trip, never to be the thing that enforces it.
  */
 
+/**
+ * One owner of a registration.
+ *
+ * Ownership is a set and every owner holds the same authority: read, edit, rotate, withdraw. There is
+ * no primary owner, so nothing here ranks them.
+ */
+export interface ClientOwner {
+  kind: string;
+  ref: string;
+  display_name?: string;
+  /** Whether this owner is the person reading the screen. Decided by the authority, not here. */
+  is_caller?: boolean;
+}
+
 export interface RegisteredClient {
   client_id: string;
   client_name: string;
@@ -22,7 +36,7 @@ export interface RegisteredClient {
   token_endpoint_auth_method?: string;
   require_pkce?: boolean;
   status?: string;
-  owner?: { kind?: string; ref?: string; display_name?: string };
+  owners?: ClientOwner[];
   owned_by_caller?: boolean;
   created_at?: string;
   last_modified_at?: string;
@@ -79,6 +93,12 @@ export function redirectUriProblem(uri: string): string | null {
 /** Splits a textarea of addresses into a list, ignoring blank lines. */
 export function linesToUris(value: string): string[] {
   return value.split(/[\n,]/).map((line) => line.trim()).filter(Boolean);
+}
+
+/** How a set of owners reads in one line, with the reader named as themselves. */
+export function ownersLabel(owners: ClientOwner[] | undefined): string {
+  if (!owners || owners.length === 0) return 'nobody';
+  return owners.map((owner) => (owner.is_caller ? 'you' : owner.display_name || owner.ref)).join(', ');
 }
 
 /** The first problem in a list of addresses, so a form can explain one thing at a time. */

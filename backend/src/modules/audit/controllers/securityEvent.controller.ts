@@ -13,6 +13,11 @@ import { problem } from '../../../shared/models/problem';
  * renders what comes back, and must not filter the result: a filter applied by a client after the
  * fact is a presentation choice, not an access control, and it fails open the moment somebody calls
  * the API directly.
+ *
+ * A person's own slice is their own events plus the ones that named them as a stakeholder when they
+ * were recorded. That list is written at the time by the code that knows who held the standing; it is
+ * never a match on the target reference, which would let any caller read events about any record whose
+ * identifier they could guess.
  */
 export async function securityEventController(fastify: FastifyInstance) {
   fastify.get('/realms/:realm/security-events', {
@@ -66,6 +71,28 @@ export async function securityEventController(fastify: FastifyInstance) {
                   subjectId: { type: 'string' },
                   clientId: { type: 'string' },
                   correlationId: { type: 'string' },
+                  principalSubjectId: {
+                    type: 'string',
+                    description: 'Present when an application acted FOR this principal rather than the principal acting themselves.',
+                  },
+                  agentId: { type: 'string', description: 'The application that acted, when one did.' },
+                  stakeholder: {
+                    type: 'boolean',
+                    description:
+                      'Present when the reader did not cause this event but is entitled to see it, '
+                      + 'because it changed something they hold: who administers an application they '
+                      + 'own, an authorisation of theirs, or authority granted over them.',
+                  },
+                  target: {
+                    type: 'object',
+                    additionalProperties: true,
+                    properties: { type: { type: 'string' }, ref: { type: 'string' } },
+                  },
+                  detail: {
+                    type: 'object',
+                    additionalProperties: true,
+                    description: 'What the event was about: the grant type, the application\'s name, the scopes. Credential material is removed before it is written.',
+                  },
                 },
               },
             },
@@ -102,11 +129,15 @@ export async function securityEventController(fastify: FastifyInstance) {
     // is always entitled to their own.
     const wantsOthers = !query.subjectId || query.subjectId !== caller.subjectId;
     let subjectId: string | undefined = caller.subjectId;
+    // Set when the narrowing is the self-scoped one, which also admits the events that name the
+    // caller as a stakeholder. An oversight read is not widened this way: it already sees everything.
+    let selfScoped = true;
     if (wantsOthers) {
       const decision = await new DecisionService(fastify.db)
         .check(realm.realmId, caller.subjectId, caller.clientId, 'auditEvents', 'view');
       if (decision.effect === 'allow') {
         subjectId = query.subjectId;
+        selfScoped = false;
       } else if (query.subjectId) {
         return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
       }
@@ -114,7 +145,7 @@ export async function securityEventController(fastify: FastifyInstance) {
 
     const events = await new SecurityEventService(fastify.db).query({
       realmId: realm.realmId,
-      ...(subjectId ? { subjectId } : {}),
+      ...(selfScoped ? { subjectIdOrStakeholder: caller.subjectId } : subjectId ? { subjectId } : {}),
       ...(query.clientId ? { clientId: query.clientId } : {}),
       ...(query.action ? { action: query.action } : {}),
       ...(query.outcome ? { outcome: query.outcome } : {}),
@@ -134,6 +165,17 @@ export async function securityEventController(fastify: FastifyInstance) {
         ...(event.meta.subjectId ? { subjectId: event.meta.subjectId } : {}),
         ...(event.meta.clientId ? { clientId: event.meta.clientId } : {}),
         ...(event.correlationId ? { correlationId: event.correlationId } : {}),
+        // Carried out so a reader can tell "I did this" from "an application did this for me".
+        ...(event.principalSubjectId ? { principalSubjectId: event.principalSubjectId } : {}),
+        ...(event.agentId ? { agentId: event.agentId } : {}),
+        ...(event.target ? { target: event.target } : {}),
+        ...(event.detail ? { detail: event.detail } : {}),
+        // Why the reader is seeing an event they did not cause. Computed against the caller rather
+        // than returning the list, because who else may see it is nobody else's business.
+        ...((event.stakeholderSubjectIds ?? []).includes(caller.subjectId)
+          && event.meta.subjectId !== caller.subjectId
+          ? { stakeholder: true }
+          : {}),
       })),
     });
   });

@@ -25,15 +25,53 @@ interface SecurityEvent {
   subjectId?: string;
   clientId?: string;
   correlationId?: string;
+  principalSubjectId?: string;
+  agentId?: string;
+  stakeholder?: boolean;
+  target?: { type: string; ref: string };
+  detail?: { grantType?: string; clientName?: string; scope?: string[]; actedFor?: string };
 }
 
 type Scope = 'mine' | 'realm';
+type Actor = '' | 'self' | 'application' | 'stakeholder';
+
+/**
+ * Who actually acted.
+ *
+ * `principalSubjectId` is written only when an application obtained authority FOR somebody, so its
+ * presence is the distinction rather than a guess made from the action name.
+ */
+function actedByApplication(event: SecurityEvent): boolean {
+  return Boolean(event.principalSubjectId) || event.detail?.actedFor === 'the principal';
+}
+
+/**
+ * Why an event the reader did not cause is in their trail.
+ *
+ * The authority sets `stakeholder` when the reader is entitled to an event somebody else performed,
+ * because it changed something of theirs. Without a word for it a reader sees a stranger's action in
+ * their own activity and has no way to tell that from a mistake.
+ */
+function stakeholderReason(event: SecurityEvent): string {
+  if (event.action.startsWith('client.owner')) return 'It changed who administers an application you own.';
+  if (event.action.startsWith('client.')) return 'It changed an application you own.';
+  if (event.action.startsWith('grant.')) return 'It changed an authorisation of yours.';
+  if (event.action.startsWith('privilege.')) return 'It settled an elevation you asked for.';
+  if (event.action.startsWith('authorization.cross_realm')) return 'It changed what you may administer.';
+  return 'It changed something you hold.';
+}
+
+/** What to show in the application column: the registered name where there is one. */
+function applicationOf(event: SecurityEvent): string | undefined {
+  return event.detail?.clientName ?? event.agentId ?? event.clientId;
+}
 
 export default function ActivityPage() {
   const [claims, setClaims] = useState<Claims | null>(null);
   const [scope, setScope] = useState<Scope>('mine');
   const [outcome, setOutcome] = useState('');
   const [action, setAction] = useState('');
+  const [actor, setActor] = useState<Actor>('');
   const [query, setQuery] = useState({ outcome: '', action: '' });
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,16 +108,24 @@ export default function ActivityPage() {
 
   useEffect(() => { setPage(1); void load(); }, [load]);
 
-  const totalPages = Math.max(1, Math.ceil(events.length / limit));
-  const visible = events.slice((page - 1) * limit, page * limit);
+  // Narrowed here rather than at the authority: this is a presentation choice over events the caller
+  // is already entitled to, not an access control. Whose events they are was decided server side.
+  const shown = actor === ''
+    ? events
+    : actor === 'stakeholder'
+      ? events.filter((event) => Boolean(event.stakeholder))
+      : events.filter((event) => !event.stakeholder && actedByApplication(event) === (actor === 'application'));
+
+  const totalPages = Math.max(1, Math.ceil(shown.length / limit));
+  const visible = shown.slice((page - 1) * limit, page * limit);
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-5 p-4 sm:p-6 lg:p-8">
+    <main className="space-y-5">
       <SectionHeader
         icon={Activity}
         title="Activity"
         description="Sign-ins, tokens, consent and lifecycle changes, newest first."
-        info="Every entry says who did what, to what, when, and with what outcome. Failed attempts are recorded as carefully as successful ones, because a trail that only holds successes cannot show an attack that did not work."
+        info="Every entry says who did what, to what, when, and with what outcome. Failed attempts are recorded as carefully as successful ones, because a trail that only holds successes cannot show an attack that did not work. Some entries are somebody else's action: they appear here because they changed something you hold, such as who administers an application you own."
       />
 
       <form
@@ -122,6 +168,25 @@ export default function ActivityPage() {
         </div>
 
         <div>
+          <span className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500">
+            Who acted
+            <Tooltip text="Whether you performed the action yourself, an application obtained authority to act for you, or somebody else did something that changed what you hold. All three are recorded; this only chooses which to show." />
+          </span>
+          <select
+            id="actor"
+            aria-label="Who acted"
+            value={actor}
+            onChange={(event) => { setActor(event.target.value as Actor); setPage(1); }}
+            className="h-9 rounded-lg border border-gray-200 px-2.5 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          >
+            <option value="">Anyone</option>
+            <option value="self">The person</option>
+            <option value="application">An application, on their behalf</option>
+            <option value="stakeholder">Somebody else, affecting you</option>
+          </select>
+        </div>
+
+        <div>
           <label htmlFor="outcome" className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Outcome</label>
           <select
             id="outcome"
@@ -148,7 +213,7 @@ export default function ActivityPage() {
 
       {loading
         ? <LoadingState label="Reading the trail…" />
-        : events.length === 0
+        : shown.length === 0
           ? <EmptyState
               icon={Activity}
               title="No matching events"
@@ -164,6 +229,7 @@ export default function ActivityPage() {
                       <th scope="col" className="px-4 py-2.5 font-semibold">When</th>
                       <th scope="col" className="px-4 py-2.5 font-semibold">Action</th>
                       <th scope="col" className="px-4 py-2.5 font-semibold">Outcome</th>
+                      <th scope="col" className="px-4 py-2.5 font-semibold">Who acted</th>
                       <th scope="col" className="px-4 py-2.5 font-semibold">Subject</th>
                       <th scope="col" className="px-4 py-2.5 font-semibold">Application</th>
                     </tr>
@@ -174,14 +240,32 @@ export default function ActivityPage() {
                         <td className="whitespace-nowrap px-4 py-2.5 text-xs text-gray-500">{when(event.ts)}</td>
                         <td className="px-4 py-2.5">
                           <span className="font-mono text-xs text-[#001E2B]">{event.action}</span>
+                          {event.detail?.grantType && <span className="ml-2 text-xs text-gray-400">{event.detail.grantType}</span>}
                           {event.cause && <span className="ml-2 text-xs text-gray-400">{event.cause}</span>}
                         </td>
                         <td className="px-4 py-2.5"><StatusBadge status={event.outcome} /></td>
-                        <td className="max-w-40 truncate px-4 py-2.5 font-mono text-[11px] text-gray-500" title={event.subjectId}>
-                          {event.subjectId ?? 'not stated'}
+                        <td className="whitespace-nowrap px-4 py-2.5 text-xs">
+                          {actedByApplication(event)
+                            ? <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">On their behalf</span>
+                            : <span className="text-gray-500">The person</span>}
+                          {/* Only ever set for somebody else's action, so it never marks your own. */}
+                          {event.stakeholder && (
+                            <>
+                              <span className="ml-1.5 rounded-md bg-sky-50 px-1.5 py-0.5 font-medium text-sky-700">Someone else</span>
+                              <span className="mt-0.5 block whitespace-normal text-[10px] text-gray-500">{stakeholderReason(event)}</span>
+                            </>
+                          )}
                         </td>
-                        <td className="max-w-40 truncate px-4 py-2.5 font-mono text-[11px] text-gray-500" title={event.clientId}>
-                          {event.clientId ?? 'not stated'}
+                        <td className="max-w-40 truncate px-4 py-2.5 font-mono text-[11px] text-gray-500" title={event.subjectId}>
+                          {event.principalSubjectId ?? event.subjectId ?? 'not stated'}
+                        </td>
+                        <td className="max-w-40 truncate px-4 py-2.5 text-[11px] text-gray-500" title={event.clientId}>
+                          {applicationOf(event) ?? 'not stated'}
+                          {event.detail?.scope?.length ? (
+                            <span className="block truncate font-mono text-[10px] text-gray-400" title={event.detail.scope.join(' ')}>
+                              {event.detail.scope.join(' ')}
+                            </span>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
@@ -192,7 +276,7 @@ export default function ActivityPage() {
               <Pagination
                 page={page}
                 totalPages={totalPages}
-                total={events.length}
+                total={shown.length}
                 limit={limit}
                 noun="events"
                 onPageChange={setPage}

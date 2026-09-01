@@ -34,6 +34,18 @@ export interface SecurityEventRecord extends Scoped {
     ipHash?: string;
   };
 
+  /**
+   * Who else may read this event, besides the actor it is recorded against.
+   *
+   * Written by the code that records the event, never derived when it is read. A read-time derivation
+   * would have to re-resolve ownership as it stood at the time, and ownership changes: the person who
+   * owned an application yesterday is exactly the person a later read would leave out.
+   *
+   * This field GRANTS sight, so an entry that does not belong is a disclosure. Only a subject whose
+   * own standing the event changed goes in it.
+   */
+  stakeholderSubjectIds?: string[];
+
   // The accountability chain, for the phase that delivers delegation. Declared now because a time
   // series cannot be converted in place, so a field added later means rebuilding the collection.
   principalSubjectId?: string;

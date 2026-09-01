@@ -356,8 +356,8 @@ export async function grantController(fastify: FastifyInstance) {
 
       const service = new GrantService(fastify.db);
       const changed = revoking
-        ? await service.revoke(realm, owner, grantId)
-        : await service.reactivate(realm, owner, grantId);
+        ? await service.revoke(realm, owner, grantId, typed.principal.subjectId)
+        : await service.reactivate(realm, owner, grantId, typed.principal.subjectId);
       if (!changed) return answer.status(404).send(problem(404, 'No such grant in that state'));
 
       return answer.send(await service.byId(realm.realmId, owner, grantId));

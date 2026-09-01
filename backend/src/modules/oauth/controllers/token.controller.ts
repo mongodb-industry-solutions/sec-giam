@@ -8,12 +8,15 @@ import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { AUTHORIZATION_REQUEST_COLLECTION } from '../../../shared/models/collections';
 import { AuthorizationRequestRecord, isRedeemable } from '../models/authorizationRequest.model';
-import { scopesOf } from '../models/client.model';
+import { scopesOf, ClientRecord } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { BackchannelService, isFailure, BACKCHANNEL_GRANT } from '../../authentication/services/backchannel.service';
 import { TokenExchangeService, isRefusal, TOKEN_EXCHANGE_GRANT } from '../services/tokenExchange.service';
 import { DelegationExchangeService, isDelegationRefusal } from '../services/delegationExchange.service';
 import { JwtTokenFormat } from '../services/jwtTokenFormat';
+import { SecurityEventService, classifyFailure, hashIp, hashState } from '../../audit/services/securityEvent.service';
+import { GrantService } from '../../consent/services/grant.service';
+import { RealmRecord } from '../../realm/models/realm.model';
 
 /**
  * The token endpoint, RFC 6749.
@@ -21,12 +24,61 @@ import { JwtTokenFormat } from '../services/jwtTokenFormat';
  * Form encoded, the specification's own error object, and every refusal is `invalid_grant` or
  * `invalid_client` rather than something descriptive: a token endpoint that explains precisely why a
  * grant failed is an oracle, and the caller cannot act on the difference anyway.
+ *
+ * Every issuance and every refusal is recorded against the subject the token is FOR, never against
+ * the client that asked. That field choice is what lets a person read their own trail and answer
+ * "what has this application been doing with my account", which an administrator-only record cannot.
  */
 export async function tokenController(fastify: FastifyInstance) {
   const ring = () => new KeyRing(new MongoSigningKeyStore(fastify.db));
 
   function fail(reply: never | { status: (code: number) => { send: (body: unknown) => unknown } }, status: number, error: string, description?: string) {
     return reply.status(status).send({ error, ...(description ? { error_description: description } : {}) });
+  }
+
+  /**
+   * One issuance, recorded.
+   *
+   * `onBehalf` separates the two cases a reader has to tell apart: the person drove the flow
+   * themselves, or an application obtained a token for them. When an application acted, the principal
+   * and the acting agent are named in their own fields rather than collapsed into one subject.
+   */
+  function recordIssued(
+    realm: RealmRecord,
+    input: {
+      grantType: string;
+      client: ClientRecord;
+      subjectId?: string;
+      scope: string[];
+      onBehalf?: boolean;
+      correlationId: string;
+      ipHash?: string;
+      transactionId?: string;
+      delegationId?: string;
+    },
+  ) {
+    const forPerson = Boolean(input.subjectId) && input.subjectId !== input.client.clientId;
+    void new SecurityEventService(fastify.db).record({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      category: 'token',
+      action: 'token.issued',
+      outcome: 'success',
+      clientId: input.client.clientId,
+      ...(input.subjectId ? { subjectId: input.subjectId } : {}),
+      correlationId: input.correlationId,
+      ...(input.ipHash ? { ipHash: input.ipHash } : {}),
+      ...(input.onBehalf && forPerson ? { principalSubjectId: input.subjectId, agentId: input.client.clientId } : {}),
+      ...(input.transactionId ? { transactionId: input.transactionId } : {}),
+      ...(input.delegationId ? { delegationId: input.delegationId } : {}),
+      detail: {
+        grantType: input.grantType,
+        clientName: input.client.clientName,
+        scope: input.scope,
+        // The plain-language distinction the trail exists to answer.
+        actedFor: !forPerson ? 'itself' : input.onBehalf ? 'the principal' : 'the signed-in person',
+      },
+    });
   }
 
   fastify.post('/realms/:realm/protocol/openid-connect/token', {
@@ -95,11 +147,44 @@ export async function tokenController(fastify: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>;
     const grantType = String(body.grant_type ?? '');
 
+    // The request's own correlator until a redemption can be tied to the authorization that produced
+    // it, at which point it becomes the flow's. Reassignable for exactly that reason.
+    let correlationId = request.correlationId;
+    const ipHash = hashIp(request.ip);
+
     const realm = await new RealmService(fastify.db).byName(realmName);
+    // Not recorded: with no realm there is no trail to record it in, and no subject it concerns.
     if (!realm || !realm.enabled) return fail(reply as never, 400, 'invalid_request', 'unknown realm');
+
+    // What is known about the request so far, so a refusal names the client and the subject it was
+    // about. A failure recorded against nobody is a failure the person concerned cannot see.
+    const context: { clientId?: string; clientName?: string; subjectId?: string } = {};
+
+    /** Refuses and records. Repeated refusals for one account are themselves worth seeing. */
+    const refuse = (status: number, error: string, description?: string) => {
+      void new SecurityEventService(fastify.db).record({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        category: 'token',
+        action: 'token.issued',
+        outcome: 'failure',
+        cause: classifyFailure(error, description),
+        correlationId,
+        ...(ipHash ? { ipHash } : {}),
+        ...(context.clientId ? { clientId: context.clientId } : {}),
+        ...(context.subjectId ? { subjectId: context.subjectId } : {}),
+        detail: {
+          grantType,
+          ...(context.clientName ? { clientName: context.clientName } : {}),
+        },
+      });
+      return fail(reply as never, status, error, description);
+    };
 
     const clientAuth = new ClientAuthService(fastify.db);
     const presented = readClientCredentials(request.headers.authorization, body);
+    // Named from what was presented, so a client that fails to authenticate is still identified.
+    context.clientId = presented.clientId;
 
     // Every grant except the authorization code with a public client requires the client to
     // authenticate. The code grant is handled below, where PKCE stands in for the secret.
@@ -109,11 +194,13 @@ export async function tokenController(fastify: FastifyInstance) {
       // consumer that has not registered yet, not a consumer that failed to authenticate.
       allowSoftAdmission: true,
     });
-    if ('error' in outcome) return fail(reply as never, 401, outcome.error, outcome.description);
+    if ('error' in outcome) return refuse(401, outcome.error, outcome.description);
     const { client, softAdmitted } = outcome;
+    context.clientId = client.clientId;
+    context.clientName = client.clientName;
 
     if (!clientAuth.allowsGrant(client, grantType)) {
-      return fail(reply as never, 400, 'unauthorized_client', 'this client is not registered for that grant');
+      return refuse(400, 'unauthorized_client', 'this client is not registered for that grant');
     }
 
     if (softAdmitted) {
@@ -133,7 +220,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const requested = String(body.scope ?? '').split(' ').filter(Boolean);
       const allowed = scopesOf(client);
       const invalid = requested.filter((scope) => !allowed.includes(scope));
-      if (invalid.length > 0) return fail(reply as never, 400, 'invalid_scope', `not permitted: ${invalid.join(' ')}`);
+      if (invalid.length > 0) return refuse(400, 'invalid_scope', `not permitted: ${invalid.join(' ')}`);
 
       // A machine principal's permissions are resolved exactly as a person's are, from the roles
       // assigned to it. That is the one-pipeline rule at the authorization step: a service identity
@@ -141,24 +228,29 @@ export async function tokenController(fastify: FastifyInstance) {
       const machine = await new DecisionService(fastify.db)
         .effectivePermissions(realm.realmId, client.clientId, client.clientId);
 
-      return reply.send(await issuer.issue({
+      const scope = requested.length > 0 ? requested : allowed;
+      const tokens = await issuer.issue({
         realm,
         client,
         subjectId: client.clientId,
-        scope: requested.length > 0 ? requested : allowed,
+        scope,
         permissions: machine.permissions,
         roles: machine.roles,
-      }));
+      });
+      recordIssued(realm, { grantType, client, subjectId: client.clientId, scope, correlationId, ipHash });
+      return reply.send(tokens);
     }
 
     if (grantType === 'refresh_token') {
       const presentedToken = String(body.refresh_token ?? '');
       const record = await issuer.findRefreshToken(realm.realmId, presentedToken);
       if (!record || record.clientId !== client.clientId) {
-        return fail(reply as never, 400, 'invalid_grant', 'unknown refresh token');
+        return refuse(400, 'invalid_grant', 'unknown refresh token');
       }
+      // Named before the validity checks, so a refusal is recorded against the account it concerns.
+      context.subjectId = record.subjectId;
       if (record.revokedAt || Date.parse(record.expiresAt) < Date.now()) {
-        return fail(reply as never, 400, 'invalid_grant', 'refresh token is no longer valid');
+        return refuse(400, 'invalid_grant', 'refresh token is no longer valid');
       }
 
       // Rotation: the presented token is retired as it is redeemed, so a stolen copy is usable at
@@ -168,31 +260,38 @@ export async function tokenController(fastify: FastifyInstance) {
       const directory = new DirectoryService(fastify.db);
       const identity = record.subjectId ? await directory.findBySubjectId(record.subjectId) : null;
       if (record.subjectId && !identity) {
-        return fail(reply as never, 400, 'invalid_grant', 'subject no longer exists');
+        return refuse(400, 'invalid_grant', 'subject no longer exists');
       }
 
-      return reply.send(await issuer.issue({
+      const scope = record.scope.split(' ').filter(Boolean);
+      const tokens = await issuer.issue({
         realm,
         client,
         subjectId: record.subjectId,
-        scope: record.scope.split(' ').filter(Boolean),
+        scope,
         sessionId: record.sessionId,
         sessionEpoch: identity?.sessionEpoch,
         includeRefreshToken: true,
-      }));
+      });
+      recordIssued(realm, { grantType, client, subjectId: record.subjectId, scope, correlationId, ipHash });
+      return reply.send(tokens);
     }
 
     if (grantType === 'authorization_code') {
       const code = String(body.code ?? '');
-      if (!code) return fail(reply as never, 400, 'invalid_grant', 'code is required');
+      if (!code) return refuse(400, 'invalid_grant', 'code is required');
 
       const codeHash = createHash('sha256').update(code).digest('hex');
       const requests = fastify.db.collection<AuthorizationRequestRecord>(AUTHORIZATION_REQUEST_COLLECTION);
       const pending = await requests.findOne({ realmId: realm.realmId, codeHash }, { projection: { _id: 0 } });
 
       if (!pending || pending.clientId !== client.clientId) {
-        return fail(reply as never, 400, 'invalid_grant', 'unknown code');
+        return refuse(400, 'invalid_grant', 'unknown code');
       }
+      context.subjectId = pending.subjectId;
+      // From here the redemption belongs to the authorization that produced the code, so it carries
+      // that flow's correlator rather than this request's. Derived, never the state itself.
+      if (pending.state) correlationId = hashState(pending.state);
       if (pending.status === 'consumed') {
         // A replay, and it is DETECTED rather than merely absent. Everything issued from the
         // original redemption is revoked, because a code arriving twice means one of the two
@@ -200,34 +299,34 @@ export async function tokenController(fastify: FastifyInstance) {
         if (pending.subjectId) {
           await issuer.revokeSession(realm.realmId, pending.requestId, 'code_replayed');
         }
-        return fail(reply as never, 400, 'invalid_grant', 'code has already been used');
+        return refuse(400, 'invalid_grant', 'code has already been used');
       }
-      if (!isRedeemable(pending)) return fail(reply as never, 400, 'invalid_grant', 'code is expired');
+      if (!isRedeemable(pending)) return refuse(400, 'invalid_grant', 'code is expired');
 
       if (pending.redirectUri && pending.redirectUri !== String(body.redirect_uri ?? '')) {
-        return fail(reply as never, 400, 'invalid_grant', 'redirect_uri does not match');
+        return refuse(400, 'invalid_grant', 'redirect_uri does not match');
       }
 
       if (pending.pkce) {
         const verifier = String(body.code_verifier ?? '');
-        if (!verifier) return fail(reply as never, 400, 'invalid_grant', 'code_verifier is required');
+        if (!verifier) return refuse(400, 'invalid_grant', 'code_verifier is required');
         const computed = pending.pkce.method === 'S256'
           ? createHash('sha256').update(verifier).digest('base64url')
           : verifier;
         const a = Buffer.from(computed);
         const b = Buffer.from(pending.pkce.challenge);
         if (a.length !== b.length || !timingSafeEqual(a, b)) {
-          return fail(reply as never, 400, 'invalid_grant', 'code_verifier does not match');
+          return refuse(400, 'invalid_grant', 'code_verifier does not match');
         }
       } else if (client.requirePkce) {
-        return fail(reply as never, 400, 'invalid_grant', 'this client requires PKCE');
+        return refuse(400, 'invalid_grant', 'this client requires PKCE');
       }
 
       await requests.updateOne({ requestId: pending.requestId }, { $set: { status: 'consumed' } });
 
       const directory = new DirectoryService(fastify.db);
       const identity = pending.subjectId ? await directory.findBySubjectId(pending.subjectId) : null;
-      if (!identity) return fail(reply as never, 400, 'invalid_grant', 'subject no longer exists');
+      if (!identity) return refuse(400, 'invalid_grant', 'subject no longer exists');
 
       const scope = pending.scope.split(' ').filter(Boolean);
       // Resolved at issuance and carried in the token, so a resource server reads a claim rather
@@ -235,7 +334,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const decision = await new DecisionService(fastify.db)
         .effectivePermissions(realm.realmId, identity.subjectId, client.clientId);
 
-      return reply.send(await issuer.issue({
+      const tokens = await issuer.issue({
         realm,
         client,
         subjectId: identity.subjectId,
@@ -252,7 +351,12 @@ export async function tokenController(fastify: FastifyInstance) {
           preferred_username: identity.userName,
           ...(scope.includes('email') && identity.primaryEmail ? { email: identity.primaryEmail } : {}),
         },
-      }));
+      });
+
+      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash });
+      // Redeeming a code is the moment the person's approval becomes an ongoing authorisation.
+      await new GrantService(fastify.db).consent(realm, identity.subjectId, client, scope);
+      return reply.send(tokens);
     }
 
     if (grantType === BACKCHANNEL_GRANT) {
@@ -260,11 +364,11 @@ export async function tokenController(fastify: FastifyInstance) {
       // mint, through exactly the same issuer the redirect flow uses.
       const backchannel = new BackchannelService(fastify.db);
       const claimed = await backchannel.claimApproved(realm, client.clientId, String(body.auth_req_id ?? ''));
-      if (isFailure(claimed)) return fail(reply as never, claimed.status, claimed.error, claimed.description);
+      if (isFailure(claimed)) return refuse(claimed.status, claimed.error, claimed.description);
 
       const directory = new DirectoryService(fastify.db);
       const identity = claimed.subjectId ? await directory.findBySubjectId(claimed.subjectId) : null;
-      if (!identity) return fail(reply as never, 400, 'invalid_grant', 'subject no longer exists');
+      if (!identity) return refuse(400, 'invalid_grant', 'subject no longer exists');
 
       const scope = claimed.scope.split(' ').filter(Boolean);
       const decision = await new DecisionService(fastify.db)
@@ -290,6 +394,11 @@ export async function tokenController(fastify: FastifyInstance) {
 
       // push delivery carries the tokens to the client's endpoint as well. The poll that got here
       // already claimed the request, so this cannot produce a second set.
+      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash });
+      // The person approved on their own device, so this is consent in exactly the sense the code
+      // grant records it.
+      await new GrantService(fastify.db).consent(realm, identity.subjectId, client, scope);
+
       if (client.backchannel?.deliveryMode === 'push') {
         void backchannel.notify(client, claimed.authReqId as string, tokens as unknown as Record<string, unknown>);
       }
@@ -317,7 +426,7 @@ export async function tokenController(fastify: FastifyInstance) {
         // The inbound token is VERIFIED, not merely parsed. A hop that trusted a decoded token would
         // let any caller assert the subject and chain it wanted to continue.
         if (!inbound || typeof inbound.sub !== 'string') {
-          return fail(reply as never, 400, 'invalid_grant', 'the subject token did not verify');
+          return refuse(400, 'invalid_grant', 'the subject token did not verify');
         }
 
         const hop = await new DelegationExchangeService(fastify.db).authorizeHop(realm, client, {
@@ -328,12 +437,12 @@ export async function tokenController(fastify: FastifyInstance) {
           scope: String(body.scope ?? '').split(' ').filter(Boolean),
           ...(body.transaction_id ? { transactionId: String(body.transaction_id) } : {}),
         });
-        if (isDelegationRefusal(hop)) return fail(reply as never, hop.status, hop.error, hop.description);
+        if (isDelegationRefusal(hop)) return refuse(hop.status, hop.error, hop.description);
 
         const delegated = await new DecisionService(fastify.db)
           .effectivePermissions(realm.realmId, hop.subjectId, client.clientId);
 
-        return reply.send(await issuer.issue({
+        const tokens = await issuer.issue({
           realm,
           client,
           subjectId: hop.subjectId,
@@ -343,7 +452,20 @@ export async function tokenController(fastify: FastifyInstance) {
           actor: hop.actor,
           // A delegated token that can renew itself outlives the delegation that produced it.
           includeRefreshToken: false,
-        }));
+        });
+        recordIssued(realm, {
+          grantType,
+          client,
+          subjectId: hop.subjectId,
+          scope: hop.scope,
+          // The person did not drive this: an application obtained a token to act for them.
+          onBehalf: true,
+          correlationId,
+          ipHash,
+          delegationId: hop.delegation.delegationId,
+          ...(body.transaction_id ? { transactionId: String(body.transaction_id) } : {}),
+        });
+        return reply.send(tokens);
       }
 
       const exchange = await new TokenExchangeService(fastify.db).resolve(realm, client, {
@@ -351,7 +473,7 @@ export async function tokenController(fastify: FastifyInstance) {
         subjectTokenType: body.subject_token_type ? String(body.subject_token_type) : undefined,
         subject: String(body.requested_subject ?? body.audience ?? ''),
       });
-      if (isRefusal(exchange)) return fail(reply as never, exchange.status, exchange.error, exchange.description);
+      if (isRefusal(exchange)) return refuse(exchange.status, exchange.error, exchange.description);
 
       const { identity, actor } = exchange;
       // The permissions are the SUBJECT's, not the caller's. An exchange lets a client act as
@@ -360,11 +482,12 @@ export async function tokenController(fastify: FastifyInstance) {
         .effectivePermissions(realm.realmId, identity.subjectId, client.clientId);
       const scope = String(body.scope ?? '').split(' ').filter(Boolean);
 
-      return reply.send(await issuer.issue({
+      const effective = scope.length > 0 ? scope : scopesOf(client);
+      const tokens = await issuer.issue({
         realm,
         client,
         subjectId: identity.subjectId,
-        scope: scope.length > 0 ? scope : scopesOf(client),
+        scope: effective,
         permissions: decision.permissions,
         roles: decision.roles,
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
@@ -373,9 +496,19 @@ export async function tokenController(fastify: FastifyInstance) {
         // No refresh token. A delegated token that can renew itself outlives the reason it was
         // granted, and this one exists for the length of one demonstration.
         includeRefreshToken: false,
-      }));
+      });
+      recordIssued(realm, {
+        grantType,
+        client,
+        subjectId: identity.subjectId,
+        scope: effective,
+        onBehalf: true,
+        correlationId,
+        ipHash,
+      });
+      return reply.send(tokens);
     }
 
-    return fail(reply as never, 400, 'unsupported_grant_type', `grant_type ${grantType} is not supported`);
+    return refuse(400, 'unsupported_grant_type', `grant_type ${grantType} is not supported`);
   });
 }

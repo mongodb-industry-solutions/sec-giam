@@ -1,9 +1,11 @@
 import { Db } from 'mongodb';
+import { v4 as uuidv4 } from 'uuid';
 import { GRANT_COLLECTION, CLIENT_COLLECTION } from '../../../shared/models/collections';
 import { GrantRecord, grantedScopes } from '../models/grant.model';
 import { ClientRecord } from '../../oauth/models/client.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { RealmRecord } from '../../realm/models/realm.model';
+import { newMeta } from '../../../shared/models/base.model';
 
 /**
  * What a principal has authorised a client to do, and the ability to take it back.
@@ -86,12 +88,92 @@ export class GrantService {
     return (await this.decorate(realmId, [record]))[0];
   }
 
-  async revoke(realm: RealmRecord, subjectId: string, grantId: string): Promise<boolean> {
-    const result = await this.grants.updateOne(
-      { realmId: realm.realmId, subjectId, grantId, status: 'active' },
-      { $set: { status: 'revoked', revokedAt: new Date().toISOString(), 'meta.lastModified': new Date().toISOString() } },
+  /**
+   * Records the authorisation a completed flow establishes.
+   *
+   * Emitted when the grant is first created and again when its scopes widen, because "this
+   * application may now also move your money" is a new fact. A repeat of the same scopes is not an
+   * event: it is the same authorisation being exercised, and recording it every time would bury the
+   * moment consent actually changed.
+   *
+   * A withdrawn grant is left withdrawn. Restoring one gives access back without the person
+   * approving anything, so it stays their own explicit act and never a side effect of a sign-in.
+   */
+  async consent(
+    realm: RealmRecord,
+    subjectId: string,
+    client: Pick<ClientRecord, 'clientId' | 'clientName'>,
+    scopes: string[],
+  ): Promise<void> {
+    if (scopes.length === 0) return;
+    const now = new Date().toISOString();
+    const existing = await this.grants.findOne(
+      { realmId: realm.realmId, subjectId, clientId: client.clientId },
+      { projection: { _id: 0 } },
     );
-    if (result.matchedCount === 0) return false;
+    if (existing?.status === 'revoked') return;
+
+    const held = existing ? grantedScopes(existing) : [];
+    const merged = [...new Set([...held, ...scopes])];
+    const grantId = existing?.grantId ?? uuidv4();
+
+    if (existing) {
+      await this.grants.updateOne(
+        { grantId: existing.grantId },
+        { $set: { scope: merged.join(' '), lastUsedAt: now, 'meta.lastModified': now } },
+      );
+      if (merged.length === held.length) return;
+    } else {
+      await this.grants.insertOne({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        grantId,
+        subjectId,
+        clientId: client.clientId,
+        scope: merged.join(' '),
+        status: 'active',
+        grantedAt: now,
+        lastUsedAt: now,
+        meta: newMeta('Grant'),
+      } as GrantRecord);
+    }
+
+    // No stakeholder list: creating a grant is always the person's own approval, recorded against
+    // them, so they already read it through their own subject.
+    void new SecurityEventService(this.db).record({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      category: 'consent',
+      action: 'grant.created',
+      outcome: 'success',
+      subjectId,
+      clientId: client.clientId,
+      target: { type: 'grant', ref: grantId },
+      detail: { clientName: client.clientName, scope: merged, added: merged.filter((scope) => !held.includes(scope)) },
+    });
+  }
+
+  /**
+   * Who the event is recorded against, and who else may read it.
+   *
+   * Withdrawal is the one consent operation somebody other than the owner may perform. When they do,
+   * the act belongs in the ACTOR's trail, and the owner is named as a stakeholder so it also reaches
+   * the person whose authorisation it was. When the owner did it themselves, which is the ordinary
+   * case, this collapses to exactly what it was before.
+   */
+  private attribution(subjectId: string, actorSubjectId?: string) {
+    if (!actorSubjectId || actorSubjectId === subjectId) return { subjectId };
+    return { subjectId: actorSubjectId, principalSubjectId: subjectId, stakeholderSubjectIds: [subjectId] };
+  }
+
+  async revoke(realm: RealmRecord, subjectId: string, grantId: string, actorSubjectId?: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    // Returned rather than counted, so the event can name the application the person withdrew from.
+    const record = await this.grants.findOneAndUpdate(
+      { realmId: realm.realmId, subjectId, grantId, status: 'active' },
+      { $set: { status: 'revoked', revokedAt: now, 'meta.lastModified': now } },
+    );
+    if (!record) return false;
 
     void new SecurityEventService(this.db).record({
       realmId: realm.realmId,
@@ -99,18 +181,20 @@ export class GrantService {
       category: 'consent',
       action: 'grant.revoked',
       outcome: 'success',
-      subjectId,
+      ...this.attribution(subjectId, actorSubjectId),
+      clientId: record.clientId,
       target: { type: 'grant', ref: grantId },
+      detail: { scope: grantedScopes(record) },
     });
     return true;
   }
 
-  async reactivate(realm: RealmRecord, subjectId: string, grantId: string): Promise<boolean> {
-    const result = await this.grants.updateOne(
+  async reactivate(realm: RealmRecord, subjectId: string, grantId: string, actorSubjectId?: string): Promise<boolean> {
+    const record = await this.grants.findOneAndUpdate(
       { realmId: realm.realmId, subjectId, grantId, status: 'revoked' },
       { $set: { status: 'active', 'meta.lastModified': new Date().toISOString() }, $unset: { revokedAt: '' } },
     );
-    if (result.matchedCount === 0) return false;
+    if (!record) return false;
 
     void new SecurityEventService(this.db).record({
       realmId: realm.realmId,
@@ -118,8 +202,10 @@ export class GrantService {
       category: 'consent',
       action: 'grant.reactivated',
       outcome: 'success',
-      subjectId,
+      ...this.attribution(subjectId, actorSubjectId),
+      clientId: record.clientId,
       target: { type: 'grant', ref: grantId },
+      detail: { scope: grantedScopes(record) },
     });
     return true;
   }

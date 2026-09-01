@@ -1296,24 +1296,35 @@
                           "status": {
                             "type": "string"
                           },
-                          "owner": {
-                            "type": "object",
-                            "additionalProperties": true,
-                            "properties": {
-                              "kind": {
-                                "type": "string"
-                              },
-                              "ref": {
-                                "type": "string"
-                              },
-                              "display_name": {
-                                "type": "string"
+                          "owners": {
+                            "type": "array",
+                            "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": true,
+                              "required": [
+                                "kind",
+                                "ref"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "display_name": {
+                                  "type": "string"
+                                },
+                                "is_caller": {
+                                  "type": "boolean"
+                                }
                               }
                             }
                           },
                           "owned_by_caller": {
                             "type": "boolean",
-                            "description": "Whether the caller is the owner of this registration."
+                            "description": "Whether the caller is one of the owners."
                           },
                           "created_at": {
                             "type": "string"
@@ -1335,6 +1346,14 @@
                           ],
                           "scope": "openid profile",
                           "status": "active",
+                          "owners": [
+                            {
+                              "kind": "principal",
+                              "ref": "sub-9f21",
+                              "display_name": "Ada Lovelace",
+                              "is_caller": true
+                            }
+                          ],
                           "owned_by_caller": true
                         }
                       }
@@ -1373,6 +1392,14 @@
                       ],
                       "scope": "openid profile",
                       "status": "active",
+                      "owners": [
+                        {
+                          "kind": "principal",
+                          "ref": "sub-9f21",
+                          "display_name": "Ada Lovelace",
+                          "is_caller": true
+                        }
+                      ],
                       "owned_by_caller": true
                     }
                   ],
@@ -1542,24 +1569,35 @@
                     "status": {
                       "type": "string"
                     },
-                    "owner": {
-                      "type": "object",
-                      "additionalProperties": true,
-                      "properties": {
-                        "kind": {
-                          "type": "string"
-                        },
-                        "ref": {
-                          "type": "string"
-                        },
-                        "display_name": {
-                          "type": "string"
+                    "owners": {
+                      "type": "array",
+                      "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "kind",
+                          "ref"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "is_caller": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
                     "owned_by_caller": {
                       "type": "boolean",
-                      "description": "Whether the caller is the owner of this registration."
+                      "description": "Whether the caller is one of the owners."
                     },
                     "created_at": {
                       "type": "string"
@@ -1583,6 +1621,14 @@
                   ],
                   "scope": "openid profile",
                   "status": "active",
+                  "owners": [
+                    {
+                      "kind": "principal",
+                      "ref": "sub-9f21",
+                      "display_name": "Ada Lovelace",
+                      "is_caller": true
+                    }
+                  ],
                   "owned_by_caller": true
                 }
               }
@@ -1738,24 +1784,35 @@
                     "status": {
                       "type": "string"
                     },
-                    "owner": {
-                      "type": "object",
-                      "additionalProperties": true,
-                      "properties": {
-                        "kind": {
-                          "type": "string"
-                        },
-                        "ref": {
-                          "type": "string"
-                        },
-                        "display_name": {
-                          "type": "string"
+                    "owners": {
+                      "type": "array",
+                      "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "kind",
+                          "ref"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "is_caller": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
                     "owned_by_caller": {
                       "type": "boolean",
-                      "description": "Whether the caller is the owner of this registration."
+                      "description": "Whether the caller is one of the owners."
                     },
                     "created_at": {
                       "type": "string"
@@ -1779,6 +1836,14 @@
                   ],
                   "scope": "openid profile",
                   "status": "active",
+                  "owners": [
+                    {
+                      "kind": "principal",
+                      "ref": "sub-9f21",
+                      "display_name": "Ada Lovelace",
+                      "is_caller": true
+                    }
+                  ],
                   "owned_by_caller": true
                 }
               }
@@ -1937,24 +2002,35 @@
                     "status": {
                       "type": "string"
                     },
-                    "owner": {
-                      "type": "object",
-                      "additionalProperties": true,
-                      "properties": {
-                        "kind": {
-                          "type": "string"
-                        },
-                        "ref": {
-                          "type": "string"
-                        },
-                        "display_name": {
-                          "type": "string"
+                    "owners": {
+                      "type": "array",
+                      "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "kind",
+                          "ref"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "is_caller": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
                     "owned_by_caller": {
                       "type": "boolean",
-                      "description": "Whether the caller is the owner of this registration."
+                      "description": "Whether the caller is one of the owners."
                     },
                     "created_at": {
                       "type": "string"
@@ -1978,6 +2054,14 @@
                   ],
                   "scope": "openid profile",
                   "status": "active",
+                  "owners": [
+                    {
+                      "kind": "principal",
+                      "ref": "sub-9f21",
+                      "display_name": "Ada Lovelace",
+                      "is_caller": true
+                    }
+                  ],
                   "owned_by_caller": true
                 }
               }
@@ -2111,24 +2195,35 @@
                     "status": {
                       "type": "string"
                     },
-                    "owner": {
-                      "type": "object",
-                      "additionalProperties": true,
-                      "properties": {
-                        "kind": {
-                          "type": "string"
-                        },
-                        "ref": {
-                          "type": "string"
-                        },
-                        "display_name": {
-                          "type": "string"
+                    "owners": {
+                      "type": "array",
+                      "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "kind",
+                          "ref"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "is_caller": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
                     "owned_by_caller": {
                       "type": "boolean",
-                      "description": "Whether the caller is the owner of this registration."
+                      "description": "Whether the caller is one of the owners."
                     },
                     "created_at": {
                       "type": "string"
@@ -2152,6 +2247,14 @@
                   ],
                   "scope": "openid profile",
                   "status": "active",
+                  "owners": [
+                    {
+                      "kind": "principal",
+                      "ref": "sub-9f21",
+                      "display_name": "Ada Lovelace",
+                      "is_caller": true
+                    }
+                  ],
                   "owned_by_caller": true
                 }
               }
@@ -2277,24 +2380,35 @@
                     "status": {
                       "type": "string"
                     },
-                    "owner": {
-                      "type": "object",
-                      "additionalProperties": true,
-                      "properties": {
-                        "kind": {
-                          "type": "string"
-                        },
-                        "ref": {
-                          "type": "string"
-                        },
-                        "display_name": {
-                          "type": "string"
+                    "owners": {
+                      "type": "array",
+                      "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "kind",
+                          "ref"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "is_caller": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
                     "owned_by_caller": {
                       "type": "boolean",
-                      "description": "Whether the caller is the owner of this registration."
+                      "description": "Whether the caller is one of the owners."
                     },
                     "created_at": {
                       "type": "string"
@@ -2318,6 +2432,14 @@
                   ],
                   "scope": "openid profile",
                   "status": "active",
+                  "owners": [
+                    {
+                      "kind": "principal",
+                      "ref": "sub-9f21",
+                      "display_name": "Ada Lovelace",
+                      "is_caller": true
+                    }
+                  ],
                   "owned_by_caller": true
                 }
               }
@@ -2345,6 +2467,436 @@
           },
           "409": {
             "description": "That registration is withdrawn, so it has no credential to rotate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/clients/{clientId}/owners": {
+      "post": {
+        "operationId": "addClientOwner",
+        "summary": "Give somebody else authority over an application",
+        "tags": [
+          "oauth"
+        ],
+        "description": "No applicable standard; RFC 7591 registers a client but says nothing about who administers one afterwards. The principal named here gains exactly the authority the caller already has over this registration: read it, change it, rotate its secret, withdraw it. There is no primary owner, because a hierarchy raises a question this authority cannot answer, namely what happens to the application when the primary leaves.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "subject_id": {
+                    "type": "string",
+                    "description": "The principal, by subject identifier."
+                  },
+                  "user_name": {
+                    "type": "string",
+                    "description": "The same principal, by the exact user name the directory holds."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "clientId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registration, with its owners as they now stand.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "client_id",
+                    "client_name"
+                  ],
+                  "properties": {
+                    "client_id": {
+                      "type": "string"
+                    },
+                    "client_name": {
+                      "type": "string"
+                    },
+                    "client_secret": {
+                      "type": "string",
+                      "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
+                    },
+                    "client_type": {
+                      "type": "string",
+                      "enum": [
+                        "confidential",
+                        "public"
+                      ]
+                    },
+                    "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "post_logout_redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "grant_types": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "logo_uri": {
+                      "type": "string"
+                    },
+                    "application_type": {
+                      "type": "string"
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string"
+                    },
+                    "require_pkce": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "owners": {
+                      "type": "array",
+                      "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "kind",
+                          "ref"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "is_caller": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "owned_by_caller": {
+                      "type": "boolean",
+                      "description": "Whether the caller is one of the owners."
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "last_modified_at": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "The registration, with its owners as they now stand."
+                },
+                "example": {
+                  "client_id": "acme-portal",
+                  "client_name": "Acme Portal",
+                  "client_type": "confidential",
+                  "redirect_uris": [
+                    "https://acme.example/callback"
+                  ],
+                  "grant_types": [
+                    "authorization_code",
+                    "refresh_token"
+                  ],
+                  "scope": "openid profile",
+                  "status": "active",
+                  "owners": [
+                    {
+                      "kind": "principal",
+                      "ref": "sub-9f21",
+                      "display_name": "Ada Lovelace",
+                      "is_caller": true
+                    }
+                  ],
+                  "owned_by_caller": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither a subject identifier nor a user name was given.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token and no operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such client within reach, or no such principal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That principal already owns this registration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/clients/{clientId}/owners/{ownerRef}": {
+      "delete": {
+        "operationId": "removeClientOwner",
+        "summary": "Take authority over an application away",
+        "tags": [
+          "oauth"
+        ],
+        "description": "No applicable standard; the other half of client ownership, which RFC 7591 does not model. Removing yourself is allowed while somebody else remains. Removing the LAST owner is refused: a registration nobody administers can only be reached again with an operator credential, which is a break-glass path and not a way to run a registry.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "clientId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "ownerRef",
+            "required": true,
+            "description": "The reference of the owner to remove, as listed on the registration."
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registration, with its owners as they now stand.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "client_id",
+                    "client_name"
+                  ],
+                  "properties": {
+                    "client_id": {
+                      "type": "string"
+                    },
+                    "client_name": {
+                      "type": "string"
+                    },
+                    "client_secret": {
+                      "type": "string",
+                      "description": "Returned ONCE, at registration or rotation, and never retrievable afterwards."
+                    },
+                    "client_type": {
+                      "type": "string",
+                      "enum": [
+                        "confidential",
+                        "public"
+                      ]
+                    },
+                    "redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "post_logout_redirect_uris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "grant_types": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "logo_uri": {
+                      "type": "string"
+                    },
+                    "application_type": {
+                      "type": "string"
+                    },
+                    "token_endpoint_auth_method": {
+                      "type": "string"
+                    },
+                    "require_pkce": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "owners": {
+                      "type": "array",
+                      "description": "Everyone who administers this registration. Every owner holds the same authority.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                          "kind",
+                          "ref"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "is_caller": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "owned_by_caller": {
+                      "type": "boolean",
+                      "description": "Whether the caller is one of the owners."
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "last_modified_at": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "The registration, with its owners as they now stand."
+                },
+                "example": {
+                  "client_id": "acme-portal",
+                  "client_name": "Acme Portal",
+                  "client_type": "confidential",
+                  "redirect_uris": [
+                    "https://acme.example/callback"
+                  ],
+                  "grant_types": [
+                    "authorization_code",
+                    "refresh_token"
+                  ],
+                  "scope": "openid profile",
+                  "status": "active",
+                  "owners": [
+                    {
+                      "kind": "principal",
+                      "ref": "sub-9f21",
+                      "display_name": "Ada Lovelace",
+                      "is_caller": true
+                    }
+                  ],
+                  "owned_by_caller": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token and no operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such client within reach, or no such owner on it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That is the last owner, and a registration cannot have none.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9262,6 +9814,1617 @@
         }
       }
     },
+    "/realms/{realm}/policies": {
+      "get": {
+        "operationId": "listPolicies",
+        "summary": "The conditional statements this realm applies",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Evaluated AFTER roles and combined deny-wins, so a policy can only ever narrow what a role granted. Each row carries how many of its statements prohibit rather than permit, because a policy that denies and one that only permits are different objects and a single count hides which is which.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Case-insensitive match on name or version."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "in": "query",
+            "name": "skip",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The policies defined in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The policies defined in this realm.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "policies",
+                    "total"
+                  ],
+                  "properties": {
+                    "policies": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "policyId",
+                          "name",
+                          "version",
+                          "enabled",
+                          "statementCount",
+                          "denyCount",
+                          "conditionCount",
+                          "attachedTo"
+                        ],
+                        "properties": {
+                          "policyId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "statementCount": {
+                            "type": "integer"
+                          },
+                          "denyCount": {
+                            "type": "integer",
+                            "description": "How many statements prohibit. The first thing a reviewer wants to know."
+                          },
+                          "conditionCount": {
+                            "type": "integer"
+                          },
+                          "attachedTo": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "created": {
+                            "type": "string"
+                          },
+                          "lastModified": {
+                            "type": "string"
+                          }
+                        },
+                        "example": {
+                          "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                          "name": "administration-requires-strong-authentication",
+                          "version": "1",
+                          "enabled": true,
+                          "statementCount": 1,
+                          "denyCount": 1,
+                          "conditionCount": 1,
+                          "attachedTo": []
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "policies": [
+                    {
+                      "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                      "name": "administration-requires-strong-authentication",
+                      "version": "1",
+                      "enabled": true,
+                      "statementCount": 1,
+                      "denyCount": 1,
+                      "conditionCount": 1,
+                      "attachedTo": []
+                    }
+                  ],
+                  "total": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPolicy",
+        "summary": "State a policy",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. A condition outside the identity vocabulary is refused rather than stored: assurance, network, time of day, tenant and attestation are what an identity authority can observe, and a threshold expressing business materiality is a judgement for the system that can see the inputs. Test the result on the decision endpoint before trusting it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "statements"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[a-zA-Z0-9._-]+$"
+                  },
+                  "version": {
+                    "type": "string",
+                    "default": "1"
+                  },
+                  "statements": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "effect"
+                      ],
+                      "properties": {
+                        "effect": {
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "deny"
+                          ],
+                          "description": "Deny wins over every allow, absolutely."
+                        },
+                        "principals": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                        },
+                        "actions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "resources": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "condition": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                          "properties": {
+                            "assuranceAtLeast": {
+                              "type": "string",
+                              "enum": [
+                                "aal1",
+                                "aal2",
+                                "aal3"
+                              ],
+                              "description": "The floor the authentication must have reached."
+                            },
+                            "ipInRange": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Address prefixes, matched literally rather than as an expression."
+                            },
+                            "timeOfDayUtc": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "from",
+                                "to"
+                              ],
+                              "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                              "properties": {
+                                "from": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                },
+                                "to": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                }
+                              }
+                            },
+                            "tenantIs": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The data boundary the request must be acting inside."
+                            },
+                            "attestationRequired": {
+                              "type": "boolean",
+                              "description": "The caller must arrive already attested."
+                            }
+                          }
+                        },
+                        "reason": {
+                          "type": "string",
+                          "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                        }
+                      }
+                    }
+                  },
+                  "attachedTo": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The policy as stated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "policyId",
+                    "name",
+                    "version",
+                    "enabled",
+                    "statementCount",
+                    "denyCount",
+                    "conditionCount",
+                    "attachedTo",
+                    "statements"
+                  ],
+                  "properties": {
+                    "policyId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "statementCount": {
+                      "type": "integer"
+                    },
+                    "denyCount": {
+                      "type": "integer",
+                      "description": "How many statements prohibit. The first thing a reviewer wants to know."
+                    },
+                    "conditionCount": {
+                      "type": "integer"
+                    },
+                    "attachedTo": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "created": {
+                      "type": "string"
+                    },
+                    "lastModified": {
+                      "type": "string"
+                    },
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "effect"
+                        ],
+                        "properties": {
+                          "effect": {
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "deny"
+                            ],
+                            "description": "Deny wins over every allow, absolutely."
+                          },
+                          "principals": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "condition": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                            "properties": {
+                              "assuranceAtLeast": {
+                                "type": "string",
+                                "enum": [
+                                  "aal1",
+                                  "aal2",
+                                  "aal3"
+                                ],
+                                "description": "The floor the authentication must have reached."
+                              },
+                              "ipInRange": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Address prefixes, matched literally rather than as an expression."
+                              },
+                              "timeOfDayUtc": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "from",
+                                  "to"
+                                ],
+                                "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                                "properties": {
+                                  "from": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 23
+                                  },
+                                  "to": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 23
+                                  }
+                                }
+                              },
+                              "tenantIs": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "The data boundary the request must be acting inside."
+                              },
+                              "attestationRequired": {
+                                "type": "boolean",
+                                "description": "The caller must arrive already attested."
+                              }
+                            }
+                          },
+                          "reason": {
+                            "type": "string",
+                            "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "description": "The policy as stated."
+                },
+                "example": {
+                  "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                  "name": "administration-requires-strong-authentication",
+                  "version": "1",
+                  "enabled": true,
+                  "statementCount": 1,
+                  "denyCount": 1,
+                  "conditionCount": 1,
+                  "attachedTo": [],
+                  "statements": [
+                    {
+                      "effect": "deny",
+                      "actions": [
+                        "manage"
+                      ],
+                      "resources": [
+                        "roles"
+                      ],
+                      "condition": {
+                        "assuranceAtLeast": "aal2"
+                      },
+                      "reason": "Changing what a role grants requires a second factor."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A statement names a condition this authority cannot evaluate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That name is taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/policies/{policyId}": {
+      "get": {
+        "operationId": "getPolicy",
+        "summary": "One policy, statement by statement",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Returns the statements in the order the evaluator reads them, with the reason each carries. The order does not change the outcome, since deny wins wherever it appears, but it is the order the editor and the decision trace both refer to.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "policyId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The policy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "policyId",
+                    "name",
+                    "version",
+                    "enabled",
+                    "statementCount",
+                    "denyCount",
+                    "conditionCount",
+                    "attachedTo",
+                    "statements"
+                  ],
+                  "properties": {
+                    "policyId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "statementCount": {
+                      "type": "integer"
+                    },
+                    "denyCount": {
+                      "type": "integer",
+                      "description": "How many statements prohibit. The first thing a reviewer wants to know."
+                    },
+                    "conditionCount": {
+                      "type": "integer"
+                    },
+                    "attachedTo": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "created": {
+                      "type": "string"
+                    },
+                    "lastModified": {
+                      "type": "string"
+                    },
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "effect"
+                        ],
+                        "properties": {
+                          "effect": {
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "deny"
+                            ],
+                            "description": "Deny wins over every allow, absolutely."
+                          },
+                          "principals": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "condition": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                            "properties": {
+                              "assuranceAtLeast": {
+                                "type": "string",
+                                "enum": [
+                                  "aal1",
+                                  "aal2",
+                                  "aal3"
+                                ],
+                                "description": "The floor the authentication must have reached."
+                              },
+                              "ipInRange": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Address prefixes, matched literally rather than as an expression."
+                              },
+                              "timeOfDayUtc": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "from",
+                                  "to"
+                                ],
+                                "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                                "properties": {
+                                  "from": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 23
+                                  },
+                                  "to": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 23
+                                  }
+                                }
+                              },
+                              "tenantIs": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "The data boundary the request must be acting inside."
+                              },
+                              "attestationRequired": {
+                                "type": "boolean",
+                                "description": "The caller must arrive already attested."
+                              }
+                            }
+                          },
+                          "reason": {
+                            "type": "string",
+                            "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "description": "The policy."
+                },
+                "example": {
+                  "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                  "name": "administration-requires-strong-authentication",
+                  "version": "1",
+                  "enabled": true,
+                  "statementCount": 1,
+                  "denyCount": 1,
+                  "conditionCount": 1,
+                  "attachedTo": [],
+                  "statements": [
+                    {
+                      "effect": "deny",
+                      "actions": [
+                        "manage"
+                      ],
+                      "resources": [
+                        "roles"
+                      ],
+                      "condition": {
+                        "assuranceAtLeast": "aal2"
+                      },
+                      "reason": "Changing what a role grants requires a second factor."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such policy in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updatePolicy",
+        "summary": "Change what a policy states",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Partial: only the fields present change. The statement list is replaced rather than merged, because a policy is a statement of what it says and merging would make removing a statement impossible from here. Switching `enabled` off is the reversible way to stop a policy deciding, and is preferable to removing it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  },
+                  "statements": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "effect"
+                      ],
+                      "properties": {
+                        "effect": {
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "deny"
+                          ],
+                          "description": "Deny wins over every allow, absolutely."
+                        },
+                        "principals": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                        },
+                        "actions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "resources": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "condition": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                          "properties": {
+                            "assuranceAtLeast": {
+                              "type": "string",
+                              "enum": [
+                                "aal1",
+                                "aal2",
+                                "aal3"
+                              ],
+                              "description": "The floor the authentication must have reached."
+                            },
+                            "ipInRange": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Address prefixes, matched literally rather than as an expression."
+                            },
+                            "timeOfDayUtc": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "from",
+                                "to"
+                              ],
+                              "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                              "properties": {
+                                "from": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                },
+                                "to": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                }
+                              }
+                            },
+                            "tenantIs": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The data boundary the request must be acting inside."
+                            },
+                            "attestationRequired": {
+                              "type": "boolean",
+                              "description": "The caller must arrive already attested."
+                            }
+                          }
+                        },
+                        "reason": {
+                          "type": "string",
+                          "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                        }
+                      }
+                    }
+                  },
+                  "attachedTo": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "policyId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The policy, as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "policyId",
+                    "name",
+                    "version",
+                    "enabled",
+                    "statementCount",
+                    "denyCount",
+                    "conditionCount",
+                    "attachedTo",
+                    "statements"
+                  ],
+                  "properties": {
+                    "policyId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "statementCount": {
+                      "type": "integer"
+                    },
+                    "denyCount": {
+                      "type": "integer",
+                      "description": "How many statements prohibit. The first thing a reviewer wants to know."
+                    },
+                    "conditionCount": {
+                      "type": "integer"
+                    },
+                    "attachedTo": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "created": {
+                      "type": "string"
+                    },
+                    "lastModified": {
+                      "type": "string"
+                    },
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "effect"
+                        ],
+                        "properties": {
+                          "effect": {
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "deny"
+                            ],
+                            "description": "Deny wins over every allow, absolutely."
+                          },
+                          "principals": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "condition": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                            "properties": {
+                              "assuranceAtLeast": {
+                                "type": "string",
+                                "enum": [
+                                  "aal1",
+                                  "aal2",
+                                  "aal3"
+                                ],
+                                "description": "The floor the authentication must have reached."
+                              },
+                              "ipInRange": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Address prefixes, matched literally rather than as an expression."
+                              },
+                              "timeOfDayUtc": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "from",
+                                  "to"
+                                ],
+                                "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                                "properties": {
+                                  "from": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 23
+                                  },
+                                  "to": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 23
+                                  }
+                                }
+                              },
+                              "tenantIs": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "The data boundary the request must be acting inside."
+                              },
+                              "attestationRequired": {
+                                "type": "boolean",
+                                "description": "The caller must arrive already attested."
+                              }
+                            }
+                          },
+                          "reason": {
+                            "type": "string",
+                            "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "description": "The policy, as it now stands."
+                },
+                "example": {
+                  "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                  "name": "administration-requires-strong-authentication",
+                  "version": "1",
+                  "enabled": true,
+                  "statementCount": 1,
+                  "denyCount": 1,
+                  "conditionCount": 1,
+                  "attachedTo": [],
+                  "statements": [
+                    {
+                      "effect": "deny",
+                      "actions": [
+                        "manage"
+                      ],
+                      "resources": [
+                        "roles"
+                      ],
+                      "condition": {
+                        "assuranceAtLeast": "aal2"
+                      },
+                      "reason": "Changing what a role grants requires a second factor."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A statement names a condition this authority cannot evaluate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such policy in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePolicy",
+        "summary": "Remove a policy",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Nothing else in the model references a policy, so there is no dependant to orphan and no refusal to make. Removing one that DENIES widens access immediately, which is why disabling it is offered alongside: that is reversible and this is not.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "policyId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Removed.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "removed",
+                    "policyId"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "policyId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "removed": true,
+                  "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such policy in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/decision": {
+      "post": {
+        "operationId": "evaluateDecision",
+        "summary": "Evaluate one authorization decision",
+        "tags": [
+          "authorization"
+        ],
+        "description": "Shaped after the OpenID AuthZEN Authorization API 1.0 evaluation request and response: a subject, a resource, an action and a context, answered with a boolean `decision`. Two deviations, both stated rather than discovered. First, the path is realm scoped instead of a single global evaluation path, because a realm is this authority's trust boundary and a decision has no meaning outside one. Second, the response `context` carries the effect, the reason, the deciding policy with its version and statement position, and what each evaluator said on its own, which the specification permits as an extension and this authority requires: a decision a log cannot explain is not auditable, and a rule nobody can test is a rule that gets written wrong and stays wrong.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "resource",
+                  "action"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subject": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "resource": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The enforcement point's resource name, such as `roles`."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                      }
+                    }
+                  },
+                  "action": {
+                    "type": "object",
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "view"
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                    "properties": {
+                      "audience": {
+                        "type": "string",
+                        "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                      },
+                      "assuranceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "aal1",
+                          "aal2",
+                          "aal3"
+                        ]
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "tenantId": {
+                        "type": "string"
+                      },
+                      "attestationState": {
+                        "type": "string",
+                        "enum": [
+                          "attested",
+                          "unattested"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "subject": {
+                  "type": "identity",
+                  "id": "a1000070-0000-4000-8000-000000000070"
+                },
+                "resource": {
+                  "type": "roles"
+                },
+                "action": {
+                  "name": "manage"
+                },
+                "context": {
+                  "assuranceLevel": "aal1"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The decision, and how it was reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The decision, and how it was reached.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "decision",
+                    "context"
+                  ],
+                  "properties": {
+                    "decision": {
+                      "type": "boolean",
+                      "description": "AuthZEN: true is permit, false is deny. Absence of a permit is a deny."
+                    },
+                    "context": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "effect",
+                        "reason",
+                        "evaluators"
+                      ],
+                      "properties": {
+                        "effect": {
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "deny"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "description": "Why, in the words the deciding statement or role carries."
+                        },
+                        "source": {
+                          "type": "string",
+                          "description": "What decided: a policy as `name@version`, or `default-deny`."
+                        },
+                        "policy": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Present when a stored policy decided. Absent when a role or the default did.",
+                          "required": [
+                            "policyId",
+                            "name",
+                            "version",
+                            "statementIndex",
+                            "effect"
+                          ],
+                          "properties": {
+                            "policyId": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "string"
+                            },
+                            "statementIndex": {
+                              "type": "integer",
+                              "description": "Position in that policy's statement list, from zero."
+                            },
+                            "effect": {
+                              "type": "string",
+                              "enum": [
+                                "allow",
+                                "deny"
+                              ]
+                            }
+                          }
+                        },
+                        "evaluators": {
+                          "type": "array",
+                          "description": "What each evaluator said alone. A null effect is no opinion, which is not a denial.",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "name",
+                              "effect"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "effect": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ],
+                                "enum": [
+                                  "allow",
+                                  "deny",
+                                  null
+                                ]
+                              },
+                              "reason": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "subjectId": {
+                          "type": "string",
+                          "description": "Who the decision was about, echoed so a trace is unambiguous."
+                        },
+                        "evaluatedAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "decision": false,
+                  "context": {
+                    "effect": "deny",
+                    "reason": "Changing what a role grants requires a second factor.",
+                    "source": "administration-requires-strong-authentication@1",
+                    "policy": {
+                      "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                      "name": "administration-requires-strong-authentication",
+                      "version": "1",
+                      "statementIndex": 0,
+                      "effect": "deny"
+                    },
+                    "evaluators": [
+                      {
+                        "name": "abac",
+                        "effect": "deny",
+                        "reason": "Changing what a role grants requires a second factor."
+                      },
+                      {
+                        "name": "rbac",
+                        "effect": "allow",
+                        "reason": "granted by realm_administrator"
+                      }
+                    ],
+                    "subjectId": "a1000070-0000-4000-8000-000000000070",
+                    "evaluatedAt": "2026-08-31T09:12:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Asking about another subject without the tier that reads policies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/elevations": {
       "post": {
         "operationId": "requestElevation",
@@ -10007,6 +12170,35 @@
                           },
                           "correlationId": {
                             "type": "string"
+                          },
+                          "principalSubjectId": {
+                            "type": "string",
+                            "description": "Present when an application acted FOR this principal rather than the principal acting themselves."
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "description": "The application that acted, when one did."
+                          },
+                          "stakeholder": {
+                            "type": "boolean",
+                            "description": "Present when the reader did not cause this event but is entitled to see it, because it changed something they hold: who administers an application they own, an authorisation of theirs, or authority granted over them."
+                          },
+                          "target": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "ref": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "detail": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "description": "What the event was about: the grant type, the application's name, the scopes. Credential material is removed before it is written."
                           }
                         }
                       }

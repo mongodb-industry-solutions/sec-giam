@@ -7,6 +7,7 @@ import { DirectoryService } from '../../directory/services/directory.service';
 import { TokenIssuer } from '../../oauth/services/tokenIssuer.service';
 import { ClientRecord } from '../../oauth/models/client.model';
 import { CLIENT_COLLECTION } from '../../../shared/models/collections';
+import { SecurityEventService } from '../../audit/services/securityEvent.service';
 
 /**
  * Sessions, and ending them.
@@ -58,6 +59,20 @@ export class SessionService {
       meta: newMeta('Session'),
     };
     await this.sessions.insertOne(session);
+
+    // Recorded here rather than in each controller, for the same reason the record is built here: a
+    // federated sign-in and a password one must leave the same evidence, not two that drift.
+    void new SecurityEventService(this.db).record({
+      realmId: session.realmId,
+      tenantId: session.tenantId,
+      category: 'session',
+      action: 'authentication.session.created',
+      outcome: 'success',
+      subjectId: session.subjectId,
+      target: { type: 'session', ref: session.sessionId },
+      ...(input.ipHash ? { ipHash: input.ipHash } : {}),
+      detail: { expiresAt: session.expiresAt },
+    });
     return session;
   }
 
@@ -143,7 +158,23 @@ export class SessionService {
 
     // The epoch retires a whole generation at once, which covers anything issued under this session
     // that was never recorded here.
-    await new DirectoryService(this.db).bumpSessionEpoch(session.subjectId);
+    const epoch = await new DirectoryService(this.db).bumpSessionEpoch(session.subjectId);
+
+    // Recorded HERE rather than inside the directory, which is where the realm and the tenant are
+    // known. Raising the epoch invalidates every outstanding token this principal holds, including
+    // ones from other sessions and ones this authority never wrote down, so it is a mass revocation
+    // and the widest-reaching thing ending a session does. Leaving it unrecorded meant the trail
+    // could show a single sign-out and nothing about the tokens it silently retired.
+    void new SecurityEventService(this.db).record({
+      realmId: session.realmId,
+      tenantId: session.tenantId,
+      category: 'session',
+      action: 'authentication.session.epoch_raised',
+      outcome: 'success',
+      subjectId: session.subjectId,
+      target: { type: 'session', ref: sessionId },
+      detail: { epoch, reason: reason ?? 'logout', revokedTokens },
+    });
 
     const notify = session.clientIds.length > 0
       ? await this.db
