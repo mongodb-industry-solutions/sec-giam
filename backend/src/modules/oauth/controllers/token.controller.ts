@@ -264,6 +264,23 @@ export async function tokenController(fastify: FastifyInstance) {
       }
 
       const scope = record.scope.split(' ').filter(Boolean);
+      /**
+       * Resolved again, exactly as every other grant resolves it.
+       *
+       * Omitting this was a silent privilege LOSS, not a saving: the permission and role claims are
+       * conditional in the issuer, so a refreshed token simply had neither, and every resource server
+       * applied its default deny. A person signed in through an application kept working until their
+       * first refresh and was then told their role did not permit what it plainly did.
+       *
+       * Resolving rather than copying from the retired token is also the correct behaviour: a
+       * permission withdrawn while a session is live must not survive in a refresh, which is the whole
+       * reason access tokens are short.
+       */
+      const decision = record.subjectId
+        ? await new DecisionService(fastify.db)
+          .effectivePermissions(realm.realmId, record.subjectId, client.clientId)
+        : null;
+
       const tokens = await issuer.issue({
         realm,
         client,
@@ -271,6 +288,8 @@ export async function tokenController(fastify: FastifyInstance) {
         scope,
         sessionId: record.sessionId,
         sessionEpoch: identity?.sessionEpoch,
+        ...(decision ? { permissions: decision.permissions, roles: decision.roles } : {}),
+        ...(identity?.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         includeRefreshToken: true,
       });
       recordIssued(realm, { grantType, client, subjectId: record.subjectId, scope, correlationId, ipHash });

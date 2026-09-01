@@ -25,6 +25,15 @@ const ACTIVE_REALM_KEY = 'giam.realm.active';
 
 /** Fired when the acting realm changes, so every mounted screen reloads against the new one. */
 export const REALM_CHANGED_EVENT = 'giam:realm-changed';
+/**
+ * Fired when a session begins or ends.
+ *
+ * The console shell reads the session to decide whether to frame the page at all, and signing in
+ * happens on a screen INSIDE that shell without the address changing. Without this the shell keeps
+ * the answer it computed while nobody was signed in, and the header and the sidebar stay missing
+ * until the page is reloaded by hand.
+ */
+export const SESSION_CHANGED_EVENT = 'giam:session-changed';
 // Profile claims read from the UserInfo endpoint, kept beside the token they were read with.
 export const PROFILE_KEY = 'giam.userinfo';
 
@@ -85,6 +94,13 @@ export function clearSession(): void {
   window.sessionStorage.removeItem(REALM_KEY);
   window.sessionStorage.removeItem(ACTIVE_REALM_KEY);
   window.sessionStorage.removeItem(PROFILE_KEY);
+  announceSessionChange();
+}
+
+/** Announced from here, the one place a token is written or removed, so no caller can forget. */
+export function announceSessionChange(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT));
 }
 
 /**
@@ -135,7 +151,10 @@ export async function tokenFromSession(realm: string, sessionId: string): Promis
     if (!token.ok) return null;
 
     const { access_token: accessToken } = await token.json();
-    if (accessToken) window.sessionStorage.setItem(TOKEN_KEY, accessToken);
+    if (accessToken) {
+      window.sessionStorage.setItem(TOKEN_KEY, accessToken);
+      announceSessionChange();
+    }
     return accessToken ?? null;
   } catch {
     return null;

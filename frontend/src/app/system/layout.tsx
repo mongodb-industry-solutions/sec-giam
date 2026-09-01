@@ -8,6 +8,7 @@ import { UserMenu } from '../../components/UserMenu';
 import { RealmSwitcher } from '../../components/RealmSwitcher';
 import { CrossRealmBanner } from '../../components/CrossRealmBanner';
 import { currentClaims, isExpired, type Claims } from '../../lib/console';
+import { SESSION_CHANGED_EVENT } from '../../lib/session';
 import { BRAND } from '../../config/brand';
 
 /**
@@ -31,6 +32,14 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   }, []);
 
   useEffect(() => { refresh(); }, [pathname, refresh]);
+
+  // Signing in happens on the overview, which is INSIDE this shell, so the address never changes and
+  // the effect above never runs again. Listening for the session itself is what makes the header and
+  // the sidebar appear on sign-in rather than on the next reload.
+  useEffect(() => {
+    window.addEventListener(SESSION_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, refresh);
+  }, [refresh]);
 
   useEffect(() => {
     if (checked && !claims && pathname !== '/system') router.replace('/system');
