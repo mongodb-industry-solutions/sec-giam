@@ -265,7 +265,7 @@
   {
     "realm": "leafypay",
     "clientId": "giam-console",
-    "clientName": "Identity console",
+    "clientName": "IdP administration console",
     "clientType": "public",
     "redirectUris": [
       "http://localhost:8086/auth/callback",

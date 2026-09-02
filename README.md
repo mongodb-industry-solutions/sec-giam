@@ -217,6 +217,14 @@ The console reads `GIAM_API_PRIVATE_URL` at runtime (server-side, for the rewrit
 `NEXT_PUBLIC_GIAM_API_URL` selects the same-origin proxy, which is what you want everywhere but a
 laptop. `NEXT_PUBLIC_GIAM_NAME_PRIMARY` and `NEXT_PUBLIC_GIAM_NAME_SECONDARY` set the displayed name.
 
+Simulator Mode adds three optional build-time values. `NEXT_PUBLIC_GIAM_URL_RELYING_PARTY` is the
+registered application the simulator links to so the authorization code flow can be seen from the
+side that consumes it (defaults to `http://localhost:8082` in development, empty elsewhere, and the
+card then says the environment publishes none). `NEXT_PUBLIC_GIAM_URL_FRONTEND` overrides the address
+put in the QR code, which otherwise is the live browser origin and is already correct almost
+everywhere. `NEXT_PUBLIC_GIAM_REALM` names the realm whose discovery document the hub links to,
+default `leafypay`.
+
 ## Deployment
 
 Both images are built by Drone and deployed to Kubernetes through Kanopy, with per-environment

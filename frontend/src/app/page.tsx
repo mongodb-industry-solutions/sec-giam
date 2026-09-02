@@ -28,8 +28,8 @@ export default function LandingPage() {
             <div className="text-3xl mb-3">🎬</div>
             <h2 className="text-xl font-bold mb-2 text-[#00ED64]">Simulator Mode</h2>
             <p className="text-gray-400 text-sm mb-4">
-              Flow-driven. Walk a sign-in, a delegation or a token exchange step by step, with the real
-              request and the real response at each one.
+              Flow-driven. Sign in through a relying party with the authorization code flow, read the
+              discovery document, or share the demo to a phone with a QR code.
             </p>
             <span className="inline-block bg-[#00ED64] text-[#001E2B] px-4 py-1.5 rounded font-semibold text-sm group-hover:opacity-90">
               Start Demo

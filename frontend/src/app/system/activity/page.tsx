@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, Search } from 'lucide-react';
+import { Activity, Search, Download } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Tooltip } from '../../../components/Tooltip';
 import { Pagination } from '../../../components/Pagination';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when, type Claims } from '../../../lib/console';
+import { downloadFile } from '../../../lib/download';
 
 /**
  * The identity trail: who did what, when, and whether it succeeded.
@@ -119,6 +120,28 @@ export default function ActivityPage() {
   const totalPages = Math.max(1, Math.ceil(shown.length / limit));
   const visible = shown.slice((page - 1) * limit, page * limit);
 
+  /**
+   * The filtered trail as a file, exactly as the authority returned it.
+   *
+   * Every event that matches the search is written, not the page on screen: a page boundary is a
+   * display accident and an evidence file cut at one is misleading. The filters travel with the
+   * events so the file says what it is a slice of, and nothing is added that the API did not send.
+   */
+  function exportJson() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      filters: {
+        scope: scope === 'mine' ? 'the signed-in principal' : 'the whole realm',
+        action: query.action || null,
+        outcome: query.outcome || null,
+        actor: actor || 'anyone',
+      },
+      count: shown.length,
+      events: shown,
+    };
+    downloadFile(`activity-${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  }
+
   return (
     <main className="space-y-5">
       <SectionHeader
@@ -206,6 +229,18 @@ export default function ActivityPage() {
         >
           <Search size={13} aria-hidden />
           Search
+        </button>
+
+        {/* Exports what the filters select, so it is disabled while there is nothing selected. */}
+        <button
+          type="button"
+          onClick={exportJson}
+          disabled={loading || shown.length === 0}
+          title={shown.length === 0 ? 'Nothing matches this search yet' : `Download ${shown.length} events as JSON`}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-[#001E2B] transition-colors hover:border-[#001E2B] hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#001E2B]/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download size={13} aria-hidden />
+          Download JSON
         </button>
       </form>
 

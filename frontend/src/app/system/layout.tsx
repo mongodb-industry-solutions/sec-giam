@@ -80,8 +80,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         <ConsoleSidebar claims={claims} />
         <div className="min-w-0 flex-1 bg-gray-50 pb-16 md:pb-0">
           <CrossRealmBanner />
-          {/* The page gutter is defined here so sections do not drift apart as you navigate. */}
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+          {/* The page gutter is defined here so sections do not drift apart as you navigate. The
+              content takes the width the sidebar leaves it, capped only on very wide screens where a
+              table stretched edge to edge stops being readable. */}
+          <div className="mx-auto w-full max-w-[120rem] px-2 py-4 sm:px-3 sm:py-5 lg:px-4">
             {children}
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiUrl } from '../../../lib/env';
+import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
 /**
  * Self-service sign-up, where the realm offers it.
@@ -68,7 +69,7 @@ export default function RegisterPage() {
 
   if (offered === false) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-8">
+      <AuthBackdrop>
         <div className="w-full max-w-md rounded-xl border bg-white p-8 text-center shadow-sm">
           <h1 className="text-xl font-semibold text-mongodb-dark">Registration is closed</h1>
           <p className="mt-2 text-sm text-gray-600">
@@ -76,13 +77,13 @@ export default function RegisterPage() {
             directory.
           </p>
         </div>
-      </main>
+      </AuthBackdrop>
     );
   }
 
   if (outcome) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-8">
+      <AuthBackdrop>
         <div className="w-full max-w-md rounded-xl border bg-white p-8 text-center shadow-sm">
           <h1 className="text-xl font-semibold text-mongodb-dark">
             {outcome === 'active' ? 'Your account is ready' : 'Your request was received'}
@@ -94,12 +95,12 @@ export default function RegisterPage() {
           </p>
           <a href="/auth/login" className="mt-6 inline-block text-sm underline">Go to sign in</a>
         </div>
-      </main>
+      </AuthBackdrop>
     );
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-8">
+    <AuthBackdrop>
       <form onSubmit={submit} className="w-full max-w-md rounded-xl border bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-semibold text-mongodb-dark">
           {branding.displayName ? `Join ${branding.displayName}` : 'Create an account'}
@@ -142,6 +143,6 @@ export default function RegisterPage() {
           Already have an account? <a href="/auth/login" className="underline">Sign in</a>
         </p>
       </form>
-    </main>
+    </AuthBackdrop>
   );
 }

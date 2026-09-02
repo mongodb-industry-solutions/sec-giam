@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bug, Eye, EyeOff } from 'lucide-react';
+import { Bug, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { apiUrl } from '../lib/env';
 import { tokenFromSession } from '../lib/session';
 import { BRAND } from '../config/brand';
@@ -77,6 +77,9 @@ export function SignInPanel({
   onSignedIn?: (signedIn: SignedIn) => void;
 }) {
   const [context, setContext] = useState<LoginContext | null>(null);
+  // Loading and unreachable are different situations and must look different. Collapsing both into an
+  // absent context is what makes a slow answer look like an empty realm or a broken screen.
+  const [contextState, setContextState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [realm, setRealm] = useState(defaultRealm);
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
@@ -87,10 +90,20 @@ export function SignInPanel({
 
   useEffect(() => {
     let cancelled = false;
+    setContextState('loading');
+    setContext(null);
     fetch(apiUrl(`/realms/${realm}/login-context${clientId ? `?client_id=${encodeURIComponent(clientId)}` : ''}`))
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => { if (!cancelled) setContext(data); })
-      .catch(() => { if (!cancelled) setContext(null); });
+      .then((data) => {
+        if (cancelled) return;
+        setContext(data);
+        setContextState(data ? 'ready' : 'unavailable');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setContext(null);
+        setContextState('unavailable');
+      });
     return () => { cancelled = true; };
   }, [realm, clientId]);
 
@@ -167,9 +180,14 @@ export function SignInPanel({
             Authentication Domain
             <Tooltip text="The domain decides how you are signed in and who manages the accounts. Pick the one your account belongs to." />
           </label>
-          {context === null ? (
-            <div className="w-full animate-pulse rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600">
+          {contextState === 'loading' ? (
+            <div className="flex w-full items-center gap-2 rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600">
+              <Loader2 size={14} className="animate-spin text-gray-400" aria-hidden />
               Loading domains…
+            </div>
+          ) : context === null ? (
+            <div className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              The domain could not be read. You can still sign in by typing your credentials.
             </div>
           ) : (
             <select
@@ -189,12 +207,28 @@ export function SignInPanel({
           )}
         </div>
 
-        {debugMode && grouped.length > 0 && (
+        {/* Rendered while the roster is still being read too: a field that appears only once the
+            answer arrives reads as "there are no users" for as long as the request takes. */}
+        {debugMode && (
           <div>
             <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700" htmlFor="persona-picker">
               Select User
               <Tooltip text="Ready-made accounts, grouped by role, so you can see the platform through different eyes. Pick one and its credentials are filled in for you." />
             </label>
+            {contextState === 'loading' ? (
+              <div className="flex w-full items-center gap-2 rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                <Loader2 size={14} className="animate-spin text-gray-400" aria-hidden />
+                Loading users…
+              </div>
+            ) : contextState === 'unavailable' ? (
+              <div className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                The ready-made users could not be read. Type the credentials instead.
+              </div>
+            ) : grouped.length === 0 ? (
+              <div className="w-full rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                This domain offers no ready-made users. Type the credentials instead.
+              </div>
+            ) : (
             <select
               id="persona-picker"
               value={login}
@@ -215,6 +249,7 @@ export function SignInPanel({
                 </optgroup>
               ))}
             </select>
+            )}
           </div>
         )}
 
@@ -290,9 +325,11 @@ export function SignInPanel({
       )}
 
       <p className="mt-4 text-center text-xs text-gray-600">
-        {debugMode && grouped.length > 0
-          ? 'Select a user to fill in their credentials. Every preloaded account shares the same password.'
-          : 'Enter the credentials managed by the selected domain.'}
+        {contextState === 'loading'
+          ? 'Reading the domain and its ready-made users…'
+          : debugMode && grouped.length > 0
+            ? 'Select a user to fill in their credentials. Every preloaded account shares the same password.'
+            : 'Enter the credentials managed by the selected domain.'}
       </p>
 
       {context?.notice && <p className="mt-3 text-center text-xs text-gray-500">{context.notice}</p>}

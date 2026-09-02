@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiUrl } from '../../../lib/env';
 import { storedToken, storedSessionId, clearSession } from '../../../lib/session';
+import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
 /**
  * Signing out, everywhere.
@@ -55,28 +56,28 @@ function LogoutInner() {
   }, [params]);
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50">
+    <AuthBackdrop>
       <div className="text-center">
-        <p className="text-sm text-gray-500">{failed ? 'Signed out of this browser.' : 'Signing you out…'}</p>
+        <p className="text-sm text-gray-200">{failed ? 'Signed out of this browser.' : 'Signing you out…'}</p>
         {failed && (
           // Honest about what did not happen. Telling somebody they are signed out everywhere when
           // they may not be is the one thing this page must never do.
-          <p className="mx-auto mt-3 max-w-sm text-xs text-gray-500">
+          <p className="mx-auto mt-3 max-w-sm text-xs text-gray-400">
             The identity service could not be reached, so other applications may still hold a session.
             Sign out again when it is back.
           </p>
         )}
       </div>
-    </main>
+    </AuthBackdrop>
   );
 }
 
 export default function LogoutPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center bg-gray-50">
-        <p className="text-sm text-gray-500">Signing you out…</p>
-      </main>
+      <AuthBackdrop>
+        <p className="text-sm text-gray-300">Signing you out…</p>
+      </AuthBackdrop>
     }>
       <LogoutInner />
     </Suspense>

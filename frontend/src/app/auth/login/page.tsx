@@ -7,6 +7,7 @@ import {
   type AuthorizationRequest, type ConsentPrompt,
 } from '../../../lib/authorizationRequest';
 import { ConsentPanel } from '../../../components/ConsentPanel';
+import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
 /**
  * The sign-in screen every application redirects to.
@@ -75,15 +76,15 @@ export default function LoginPage() {
 
   if (returning) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4 sm:p-8 text-sm text-gray-500">
-        Returning you to the application…
-      </main>
+      <AuthBackdrop>
+        <p className="text-sm text-gray-300">Returning you to the application…</p>
+      </AuthBackdrop>
     );
   }
 
   if (signedIn) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-4 sm:p-8">
+      <AuthBackdrop>
         <div className="w-full max-w-md rounded-xl border bg-white p-8 text-center shadow-sm">
           <h1 className="text-2xl font-semibold text-mongodb-dark">Signed in</h1>
           <p className="mt-2 text-gray-600">{signedIn.userName}</p>
@@ -93,23 +94,23 @@ export default function LoginPage() {
             <a href="/auth/logout" className="underline">Sign out</a>
           </div>
         </div>
-      </main>
+      </AuthBackdrop>
     );
   }
 
   // Held until the realm is known: the panel reads its roster on mount, and starting on the wrong
   // directory would show the wrong people and then quietly correct itself.
   if (realm === null) {
-    return <main className="flex min-h-screen items-center justify-center p-4 sm:p-8 text-sm text-gray-500">Loading…</main>;
+    return <AuthBackdrop><p className="text-sm text-gray-300">Loading…</p></AuthBackdrop>;
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4 sm:p-8">
+    <AuthBackdrop>
       <SignInPanel
         defaultRealm={realm}
         {...(request?.clientId ? { clientId: request.clientId } : {})}
         onSignedIn={handleSignedIn}
       />
-    </main>
+    </AuthBackdrop>
   );
 }

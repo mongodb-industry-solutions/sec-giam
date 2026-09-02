@@ -16,6 +16,12 @@ ARG NEXT_PUBLIC_GIAM_API_PUBLIC_URL=""
 ENV NEXT_PUBLIC_GIAM_API_URL=$NEXT_PUBLIC_GIAM_API_URL
 ENV NEXT_PUBLIC_GIAM_API_PUBLIC_URL=$NEXT_PUBLIC_GIAM_API_PUBLIC_URL
 
+# The relying party the simulator links to, for the authorization code flow seen from the application
+# side. Empty is valid: the card then says the environment publishes none, rather than offering a
+# link that fails.
+ARG NEXT_PUBLIC_GIAM_URL_RELYING_PARTY=""
+ENV NEXT_PUBLIC_GIAM_URL_RELYING_PARTY=$NEXT_PUBLIC_GIAM_URL_RELYING_PARTY
+
 # Full install, not --omit=dev: `next build` needs typescript, the type packages and tailwind, all of
 # which are devDependencies.
 COPY package*.json ./

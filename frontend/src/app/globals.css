@@ -29,6 +29,17 @@ body {
   @apply bg-gray-50 text-gray-900;
 }
 
+/* Credential screens (/auth/*): the platform's dark field, with a green glow and a faint grid so it
+   reads as a surface rather than a flat block. Purely decorative, and cheap: two gradients, no image
+   to download and nothing animated behind a form somebody is typing in. */
+.auth-backdrop {
+  background:
+    radial-gradient(60rem 40rem at 15% -10%, rgb(0 237 100 / 0.16), transparent 60%),
+    radial-gradient(45rem 35rem at 100% 110%, rgb(0 237 100 / 0.10), transparent 60%),
+    linear-gradient(rgb(255 255 255 / 0.03) 1px, transparent 1px) 0 0 / 100% 3rem,
+    linear-gradient(90deg, rgb(255 255 255 / 0.03) 1px, transparent 1px) 0 0 / 3rem 100%;
+}
+
 /* About page (/about): staggered card entrance. Cards set --about-delay inline so the grid
    reveals in sequence on large screens and TVs. */
 @keyframes about-rise {

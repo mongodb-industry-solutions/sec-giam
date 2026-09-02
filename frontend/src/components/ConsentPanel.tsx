@@ -2,6 +2,7 @@
 
 import { Check, ShieldCheck, X } from 'lucide-react';
 import type { ConsentPrompt } from '../lib/authorizationRequest';
+import { AuthBackdrop } from './AuthBackdrop';
 
 /**
  * Asking the person whether an application may have their identity.
@@ -37,7 +38,7 @@ export function ConsentPanel({
   busy?: boolean;
 }) {
   return (
-    <main className="flex min-h-screen items-center justify-center p-4 sm:p-8">
+    <AuthBackdrop>
       <div className="w-full max-w-md rounded-xl border bg-white p-8 shadow-sm">
         <div className="text-center">
           {prompt.logoUri
@@ -90,6 +91,6 @@ export function ConsentPanel({
           You can withdraw this at any time from your applications list.
         </p>
       </div>
-    </main>
+    </AuthBackdrop>
   );
 }
