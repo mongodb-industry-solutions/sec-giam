@@ -3,10 +3,10 @@ import {
   ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_COLLECTION, REALM_COLLECTION,
 } from '../../../shared/models/collections';
 import {
-  RoleRecord, EffectivePermission, permissionKey,
+  RoleRecord, EffectivePermission,
   AdministrableRealm, holdingAppliesIn, REALM_SCOPE_KIND,
 } from '../models/authorization.model';
-import { ResourceRecord } from '../models/resource.model';
+import { ResourceRecord, parsePermission, permissionString } from '../models/resource.model';
 import {
   PrincipalRecord, RoleHolding, activeHoldings,
 } from '../../directory/models/principal.model';
@@ -46,6 +46,27 @@ export class DecisionService {
       .findOne({ realmId, subjectId }, { projection: { _id: 0, roles: 1 } });
     if (!principal) return [];
     return activeHoldings(principal);
+  }
+
+  /**
+   * The resource types one audience enforces, or null when nothing is registered for it.
+   *
+   * Null and empty mean different things and the difference decides whether a token carries
+   * anything: an audience with no registered resource is not narrowed at all, while a registered
+   * one that declares no child types narrows to nothing.
+   */
+  private async typesFor(realmId: string, audience: string): Promise<Set<string> | null> {
+    const resources = this.db.collection<ResourceRecord>(RESOURCE_COLLECTION);
+    const api = await resources.findOne(
+      { realmId, audience },
+      { projection: { _id: 0, resourceId: 1, name: 1 } },
+    );
+    if (!api) return null;
+    const children = await resources
+      .find({ realmId, parentResourceId: api.resourceId }, { projection: { _id: 0, name: 1 } })
+      .toArray();
+    // The api itself counts, so a permission naming the server directly still resolves.
+    return new Set([api.name, ...children.map((child) => child.name)]);
   }
 
   /**
@@ -104,9 +125,10 @@ export class DecisionService {
     audience: string,
     targetRealmId: string,
   ): Promise<{ permissions: EffectivePermission[]; roles: string[]; scopeKind: 'self' | 'all' }> {
-    const server = await this.db
-      .collection<ResourceRecord>(RESOURCE_COLLECTION)
-      .findOne({ realmId: homeRealmId, audience }, { projection: { _id: 0, resourceId: 1 } });
+    // Which resource TYPES this audience enforces, so a token carries only what its audience
+    // checks. A permission is `resource:action`, and the resource half names a resource record; the
+    // ones belonging to an audience are its children, which is what parentResourceId is for.
+    const enforced = await this.typesFor(homeRealmId, audience);
 
     const held = await this.liveHoldings(homeRealmId, subjectId);
     const assignments = held.filter((assignment) => holdingAppliesIn(assignment, homeRealmId, targetRealmId));
@@ -119,11 +141,16 @@ export class DecisionService {
       composed.push(...inherited);
     }
 
-    const unique = new Map<string, EffectivePermission>();
+    const unique = new Set<EffectivePermission>();
     for (const role of composed) {
       for (const permission of role.permissions ?? []) {
-        if (server && permission.resourceId !== server.resourceId) continue;
-        unique.set(permissionKey(permission), { resource: permission.resource, action: permission.action });
+        // No resource registered for this audience means no narrowing, which is the previous
+        // behaviour: an unregistered audience is matched by pattern and has nothing to scope by.
+        if (enforced) {
+          const parsed = parsePermission(permission);
+          if (!parsed || !enforced.has(parsed.resource)) continue;
+        }
+        unique.add(permission);
       }
     }
 
@@ -132,9 +159,7 @@ export class DecisionService {
     const scopeKind = composed.some((role) => role.scopeKind === 'all') ? 'all' : 'self';
 
     return {
-      permissions: [...unique.values()].sort(
-        (a, b) => a.resource.localeCompare(b.resource) || a.action.localeCompare(b.action),
-      ),
+      permissions: [...unique].sort(),
       roles: [...new Set(composed.map((role) => role.name))].sort(),
       scopeKind,
     };
@@ -163,9 +188,9 @@ export class DecisionService {
     const { permissions, roles } = await this.effectivePermissionsIn(
       homeRealmId, subjectId, audience, targetRealmId,
     );
-    const held = permissions.some(
-      (permission) => permission.resource === resource && permission.action === action,
-    );
+    // One string comparison, because a permission IS the string. Building it here rather than
+    // comparing two halves is what keeps every spelling of a permission identical.
+    const held = permissions.includes(permissionString(resource, action));
     // Default deny, and the reason names what was missing rather than saying no: a decision a log
     // cannot explain is not auditable.
     return held

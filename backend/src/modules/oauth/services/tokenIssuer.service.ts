@@ -21,7 +21,13 @@ export interface IssueTokensInput {
   sessionId?: string;
   sessionEpoch?: number;
   /** Permissions the resource server enforces, resolved by the decision point at issuance. */
-  permissions?: Array<{ resource: string; action: string }>;
+  /**
+   * Full permission strings, `resource:action`.
+   *
+   * One string per entry rather than an object with two keys: this claim travels in every token,
+   * and the object form spent two quoted keys of JSON on what a single string says.
+   */
+  permissions?: string[];
   /** Roles the authority resolved, for the checks a resource server still expresses in roles. */
   roles?: string[];
   /** Opaque binding to the business record a self-scoped principal owns. */

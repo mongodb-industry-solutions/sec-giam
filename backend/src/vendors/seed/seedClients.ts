@@ -4,18 +4,17 @@ import { v5 as uuidv5 } from 'uuid';
 import { clientSecretFor } from '@leafypay/platform-links';
 import {
   CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION,
-  PERMISSION_COLLECTION, RESOURCE_COLLECTION,
+  RESOURCE_COLLECTION,
 } from '../../shared/models/collections';
 import { OAuthClient } from '../../modules/oauth/models/client.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
-import {
-  RoleRecord, RolePermission, PermissionRecord, } from '../../modules/authorization/models/authorization.model';
+import { RoleRecord } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { CredentialRecord } from '../../modules/directory/models/credential.model';
+import { ResourceRecord, permissionString } from '../../modules/authorization/models/resource.model';
 import { clientMetadata } from '../../modules/oauth/models/client.model';
 import { readSeedFile } from './readSeedFile';
-import { ResourceRecord } from '../../modules/authorization/models/resource.model';
 
 /**
  * OAuth clients, and the service identities behind the machine ones.
@@ -196,19 +195,39 @@ export async function seedClients(db: Db): Promise<void> {
       'Resource',
     );
 
-    const held: RolePermission[] = [];
+    /**
+     * The machine's permissions, as strings, with each resource TYPE declared as a resource.
+     *
+     * Ordinary catalog entries, identical in shape to an application's, so the decision point
+     * resolves a service exactly as it resolves a person. That is the point of granting one at all:
+     * if a machine needed its own mechanism, the two halves would drift and one would end up wrong.
+     */
+    const held: string[] = [];
+    const actionsByType = new Map<string, Set<string>>();
     for (const [resource, actions] of Object.entries(fixture.serviceIdentity.permissions ?? {})) {
       for (const action of actions) {
-        const permissionId = uuidv5(`permission:${serverId}:${resource}:${action}`, AUTHORIZATION_NAMESPACE);
-        await upsertSeed<PermissionRecord>(
-          db.collection<PermissionRecord>(PERMISSION_COLLECTION),
-          { permissionId },
-          { resourceId: serverId, resource, action, description: `${action} on ${resource}` },
-          { permissionId, resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
-          'Permission',
-        );
-        held.push({ resourceId: serverId, resource, action });
+        const declared = actionsByType.get(resource) ?? new Set<string>();
+        declared.add(action);
+        actionsByType.set(resource, declared);
+        held.push(permissionString(resource, action));
       }
+    }
+    for (const [type, actions] of actionsByType) {
+      const childId = uuidv5(`resource:${realmId}:${serverName}:${type}`, AUTHORIZATION_NAMESPACE);
+      await upsertSeed<ResourceRecord>(
+        db.collection<ResourceRecord>(RESOURCE_COLLECTION),
+        { resourceId: childId },
+        { name: type, actions: [...actions].sort(), catalogVersion: 1, status: 'active' },
+        {
+          resourceId: childId,
+          realmId,
+          tenantId: DEFAULT_TENANT_ID,
+          kind: 'object',
+          parentResourceId: serverId,
+          registeredAt: SEED_GRANTED_AT,
+        },
+        'Resource',
+      );
     }
 
     // The role a service holds, named for what the machine does rather than for who it is.

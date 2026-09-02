@@ -1,17 +1,15 @@
 import { Db } from 'mongodb';
 import { v5 as uuidv5 } from 'uuid';
 import {
-  RESOURCE_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
+  RESOURCE_COLLECTION, ROLE_COLLECTION,
   PRINCIPAL_COLLECTION, REALM_COLLECTION,
 } from '../../shared/models/collections';
-import {
-  PermissionRecord, RoleRecord, RolePermission, DenialRationale,
-} from '../../modules/authorization/models/authorization.model';
+import { RoleRecord, DenialRationale } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
-import { ResourceRecord } from '../../modules/authorization/models/resource.model';
+import { ResourceRecord, permissionString } from '../../modules/authorization/models/resource.model';
 
 /**
  * Roles, the permissions they hold, and who holds them.
@@ -94,13 +92,11 @@ export async function seedAuthorization(
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
 
   const servers = db.collection<ResourceRecord>(RESOURCE_COLLECTION);
-  const permissions = db.collection<PermissionRecord>(PERMISSION_COLLECTION);
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
   const principals = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
 
   const now = new Date().toISOString();
   const seenServers = new Set<string>();
-  const seenPermissions = new Set<string>();
   let roleCount = 0;
 
   async function ensureServer(realmId: string, name: string, audience: string): Promise<string> {
@@ -130,27 +126,50 @@ export async function seedAuthorization(
     return id;
   }
 
-  async function ensurePermission(
-    realmId: string,
-    serverId: string,
-    resource: string,
-    action: string,
-  ): Promise<void> {
-    const id = permissionId(serverId, resource, action);
-    if (seenPermissions.has(id)) return;
-    seenPermissions.add(id);
-    await upsertSeed<PermissionRecord>(
-      permissions,
-      { permissionId: id },
-      {
-        resourceId: serverId,
-        resource,
-        action,
-        description: `${action} on ${resource}`,
-      },
-      { permissionId: id, resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
-      'Permission',
-    );
+  /**
+   * The action catalog for one resource TYPE, as a resource parented to its API.
+   *
+   * A permission is the string `type:action`, so the type has to be a resource in its own right for
+   * the audience to know which types it enforces. Declared as a BLOCK: the fixture states the whole
+   * set of verbs, and that is what the catalog becomes.
+   */
+  const actionsByType = new Map<string, { serverId: string; realmId: string; actions: Set<string> }>();
+
+  function declareAction(realmId: string, serverId: string, resource: string, action: string): void {
+    const key = `${serverId}:${resource}`;
+    const held = actionsByType.get(key) ?? { serverId, realmId, actions: new Set<string>() };
+    held.actions.add(action);
+    actionsByType.set(key, held);
+  }
+
+  async function writeCatalogs(): Promise<number> {
+    let types = 0;
+    for (const [key, entry] of actionsByType) {
+      const type = key.slice(entry.serverId.length + 1);
+      const id = uuidv5(`resource:${entry.realmId}:${entry.serverId}:${type}`, AUTHORIZATION_NAMESPACE);
+      await upsertSeed<ResourceRecord>(
+        servers,
+        { resourceId: id },
+        {
+          name: type,
+          actions: [...entry.actions].sort(),
+          catalogVersion: 1,
+          status: 'active',
+        },
+        {
+          resourceId: id,
+          realmId: entry.realmId,
+          tenantId: DEFAULT_TENANT_ID,
+          // An object the API protects, reached through it rather than by an audience of its own.
+          kind: 'object',
+          parentResourceId: entry.serverId,
+          registeredAt: SEED_GRANTED_AT,
+        },
+        'Resource',
+      );
+      types += 1;
+    }
+    return types;
   }
 
   for (const fixture of roleFixtures) {
@@ -160,17 +179,18 @@ export async function seedAuthorization(
     const applicationServer = await ensureServer(realmId, fixture.resourceServer, fixture.resourceServer);
     const authorityServer = await ensureServer(realmId, AUTHORITY_RESOURCE_SERVER, AUTHORITY_RESOURCE_SERVER);
 
-    const held: RolePermission[] = [];
+    // Permission STRINGS, the same spelling a policy uses and a token carries.
+    const held: string[] = [];
     for (const [resource, actions] of Object.entries(fixture.permissions)) {
       for (const action of actions) {
-        await ensurePermission(realmId, applicationServer, resource, action);
-        held.push({ resourceId: applicationServer, resource, action });
+        declareAction(realmId, applicationServer, resource, action);
+        held.push(permissionString(resource, action));
       }
     }
     for (const [resource, actions] of Object.entries(fixture.authorityPermissions ?? {})) {
       for (const action of actions) {
-        await ensurePermission(realmId, authorityServer, resource, action);
-        held.push({ resourceId: authorityServer, resource, action });
+        declareAction(realmId, authorityServer, resource, action);
+        held.push(permissionString(resource, action));
       }
     }
 
@@ -285,11 +305,11 @@ export async function seedAuthorization(
     if (!roleFixtures.some((fixture) => fixture.realm === realmName)) continue;
 
     const authorityServer = await ensureServer(realmId, AUTHORITY_RESOURCE_SERVER, AUTHORITY_RESOURCE_SERVER);
-    const held: RolePermission[] = [];
+    const held: string[] = [];
     for (const [resource, actions] of Object.entries(ADMINISTRATOR_PERMISSIONS)) {
       for (const action of actions) {
-        await ensurePermission(realmId, authorityServer, resource, action);
-        held.push({ resourceId: authorityServer, resource, action });
+        declareAction(realmId, authorityServer, resource, action);
+        held.push(permissionString(resource, action));
       }
     }
 
@@ -335,8 +355,10 @@ export async function seedAuthorization(
     }
   }
 
-  console.log(`  resourceServer: ${seenServers.size}`);
-  console.log(`  permission: ${seenPermissions.size}`);
+  // Written after every role, because the catalog is the union of what the fixtures declare and it
+  // is only complete once they have all been read.
+  const types = await writeCatalogs();
+  console.log(`  resource: ${seenServers.size} api, ${types} object`);
   console.log(`  role: ${roleCount}`);
   console.log(`  roleHolding: ${assigned} (+${crossRealm} naming another realm)`);
   console.log(`  realmAdministrator: ${administrators}`);

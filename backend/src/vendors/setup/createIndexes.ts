@@ -4,7 +4,7 @@ import {
   REALM_COLLECTION, DOMAIN_COLLECTION,
   PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
   AUTH_REQUEST_COLLECTION, TOKEN_COLLECTION,
-  KEY_COLLECTION, RESOURCE_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
+  KEY_COLLECTION, RESOURCE_COLLECTION, ROLE_COLLECTION,
   POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
   AUDIT_COLLECTION,
@@ -83,15 +83,7 @@ export function plannedIndexes(): IndexPlan[] {
     // RFC 8705: locating the credential bound to a presented certificate.
     { collection: CREDENTIAL_COLLECTION, keys: { 'metadata.mtls.certificateThumbprint': 1 }, options: { name: 'mtls_thumbprint', sparse: true } },
 
-
-
     // OAuth.
-    // Resolving a client from a record that owns it. Multikey, because ownership is a set: this is
-    // the membership test every read on the registry narrows by, so it is not an optional index.
-    // RFC 8705: locating the client bound to a presented certificate.
-
-    // No index on keyHash here: it is a QE equality field, and its index is the encrypted one.
-
     { collection: AUTH_REQUEST_COLLECTION, keys: { requestId: 1 }, options: { name: 'requestId_unique', unique: true } },
     // The code is stored hashed, and looked up by that hash on redemption.
     { collection: AUTH_REQUEST_COLLECTION, keys: { realmId: 1, codeHash: 1 }, options: { name: 'realm_codeHash', sparse: true } },
@@ -130,8 +122,6 @@ export function plannedIndexes(): IndexPlan[] {
     // A resource may contain resources, so a server exposing tools needs no collection of its own.
     { collection: RESOURCE_COLLECTION, keys: { realmId: 1, parentResourceId: 1 }, options: { name: 'realm_parentResourceId', sparse: true } },
 
-    { collection: PERMISSION_COLLECTION, keys: { permissionId: 1 }, options: { name: 'permissionId_unique', unique: true } },
-    { collection: PERMISSION_COLLECTION, keys: { realmId: 1, resourceId: 1, resource: 1, action: 1 }, options: { name: 'realm_server_resource_action_unique', unique: true } },
 
     { collection: ROLE_COLLECTION, keys: { roleId: 1 }, options: { name: 'roleId_unique', unique: true } },
     { collection: ROLE_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
@@ -181,7 +171,20 @@ export function plannedIndexes(): IndexPlan[] {
     },
   ];
 
-  return plans;
+  /**
+   * Only plans for collections the registry names.
+   *
+   * The registry decides what exists; this list decides how it is indexed. When a collection leaves
+   * the registry, setup stops creating it and `--reset` drops it, so a surviving plan asks for an
+   * index on a collection that is not there. That reports as a validation failure naming an index
+   * nobody declared on purpose, which is a confusing way to learn that a plan was left behind.
+   *
+   * Filtered rather than asserted, because during a consolidation a collection leaves the registry
+   * one phase before the code that wrote to it goes, and a hard failure there would block the very
+   * refactor that removes it.
+   */
+  const registered = new Set(GIAM_COLLECTIONS.map((spec) => spec.name));
+  return plans.filter((plan) => registered.has(plan.collection));
 }
 
 export async function createIndexes(db: Db): Promise<void> {

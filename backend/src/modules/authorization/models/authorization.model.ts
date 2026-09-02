@@ -16,23 +16,17 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  * The catalog is STATIC and ships with the application, so no permission exists without a guard
  * behind it. A permission the authority could invent would be one nothing checks.
  */
-export interface PermissionRecord extends Scoped {
-  permissionId: string;
-  resourceId: string;
-  resource: string;
-  action: string;
-  description: string;
-  /** Kept rather than deleted when an application retires one, so existing grants stay explicable. */
-  deprecated?: boolean;
-  meta: Meta;
-}
-
-/** A permission a role holds, named by the resource server that defined it. */
-export interface RolePermission {
-  resourceId: string;
-  resource: string;
-  action: string;
-}
+/**
+ * A permission is a STRING, `resource:action`, and not a record.
+ *
+ * P5.1 retired the collection. A permission is vocabulary: it appears on a role, on a policy and in
+ * a token, and in all three it is the same string, so there is one spelling and nothing to keep in
+ * step. The row it used to be added an identifier nobody referenced and a description nothing read.
+ *
+ * Where the vocabulary comes FROM is `resource.actions[]`: a resource declares its own verbs, and a
+ * permission naming a verb the resource never declared is refused at the point somebody wrote it
+ * rather than becoming a rule that silently never fires.
+ */
 
 /**
  * Why a role does NOT hold something.
@@ -53,7 +47,13 @@ export interface RoleRecord extends Scoped {
   name: string;
   displayName: string;
   description: string;
-  permissions: RolePermission[];
+  /**
+   * Full permission strings, `resource:action`.
+   *
+   * The same spelling a policy uses and a token carries, so nothing has to be converted between
+   * the three places a permission appears.
+   */
+  permissions: string[];
   /**
    * `self` scopes every record to the caller; `all` is global.
    *
@@ -77,15 +77,13 @@ export interface RoleRecord extends Scoped {
  * same record type expresses both, so an elevation is auditable, revocable and listable in exactly
  * the way a stateless capability token is not.
  */
-/** The claim shape a resource server reads. Deliberately small: it travels in every token. */
-export interface EffectivePermission {
-  resource: string;
-  action: string;
-}
-
-export function permissionKey(permission: { resource: string; action: string }): string {
-  return `${permission.resource}:${permission.action}`;
-}
+/**
+ * The claim shape a resource server reads: one string per permission.
+ *
+ * Deliberately small, because it travels in every token. It was `{resource, action}` per entry,
+ * which is two keys and two quoted strings of JSON for something a single string says.
+ */
+export type EffectivePermission = string;
 
 /** The scope kind that points an assignment at another realm rather than at an application object. */
 export const REALM_SCOPE_KIND = 'realm';
