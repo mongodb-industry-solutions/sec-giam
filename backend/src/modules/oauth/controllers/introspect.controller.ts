@@ -135,10 +135,23 @@ export async function introspectController(fastify: FastifyInstance) {
     };
 
     const issuer = new TokenIssuer(fastify.db, ring());
-    const record = typeof claims.jti === 'string' ? await issuer.findByJti(realm.realmId, claims.jti) : null;
-    // The authoritative part: a signature says it was issued, the record says whether it still counts.
-    if (!record) return reply.send(inactive);
-    if (record.revokedAt) return refused('token_revoked', claims.sub);
+
+    /**
+     * P6.8. The authoritative part answers from the SESSION, not from a stored token.
+     *
+     * A signature says the token was issued; the session says whether access is still live. That is
+     * the same question the old token row answered, asked of one document per session instead of one
+     * per token, and the absence of that document IS the revocation.
+     *
+     * A token with no `sid` carries no session by design: `client_credentials` creates none. Such a
+     * token is active for as long as its signature and expiry say, because there is nothing to
+     * revoke and pretending otherwise would make introspection lie.
+     */
+    const sid = typeof claims.sid === 'string' ? claims.sid : undefined;
+    if (sid) {
+      const live = await issuer.sessionIsLive(realm.realmId, sid);
+      if (!live) return refused('session_revoked', claims.sub);
+    }
 
     /**
      * A caller may introspect only tokens addressed to it. Otherwise introspection becomes a way for
@@ -162,7 +175,9 @@ export async function introspectController(fastify: FastifyInstance) {
     if (!audience.some((entry) => addressable.has(entry))) return reply.send(inactive);
 
     // Current status, not status at issuance. This is the whole reason to ask.
-    if (claims.sub && claims.sub !== record.clientId) {
+    // A machine token's `sub` is its own owning principal, so comparing against the presenting
+    // client's id is what tells a person's token apart from a service's without a stored row.
+    if (claims.sub && claims.sub !== claims.client_id) {
       const identity = await new DirectoryService(fastify.db).findBySubjectId(String(claims.sub));
       if (!identity || !canAuthenticate(identity)) return refused('subject_cannot_authenticate', claims.sub);
       if (typeof claims.session_epoch === 'number' && claims.session_epoch < identity.sessionEpoch) {
@@ -241,24 +256,28 @@ export async function introspectController(fastify: FastifyInstance) {
     const presented = String(body.token ?? '');
     let revoked = false;
 
-    // A refresh token is opaque and carries its identifier; an access token is a JWT and carries it
-    // as a claim. Both are accepted, because a client should not have to know which it holds.
-    // Carried out so the event names the person the token was for, not only the client that asked.
+    /**
+     * RFC 7009. Revoking a token means DELETING THE SESSION it belongs to.
+     *
+     * Both token kinds are JWTs now and both carry `sid`, so one path handles them and a client
+     * does not have to know which it holds. The session is what access depends on, so removing it
+     * is what "revoked" can honestly mean: there is no stored token to mark.
+     *
+     * Accepted and stated: the presented access token keeps verifying until it expires, because it
+     * is verified without touching the database. With a five minute lifetime that window is the
+     * revocation objective, and no design that verifies locally can do better.
+     *
+     * The subject is carried out so the event names the person the token was for, not only the
+     * client that asked.
+     */
     let subjectId: string | undefined;
 
-    const asRefresh = await issuer.findRefreshToken(realm.realmId, presented);
-    if (asRefresh && asRefresh.clientId === outcome.client.clientId) {
-      subjectId = asRefresh.subjectId;
-      revoked = await issuer.revoke(realm.realmId, asRefresh.jti, 'client_requested');
-    } else {
-      const claims = await new JwtTokenFormat(ring(), realm.realmId).inspect(presented);
-      if (claims && typeof claims.jti === 'string') {
-        const record = await issuer.findByJti(realm.realmId, claims.jti);
-        if (record && record.clientId === outcome.client.clientId) {
-          subjectId = record.subjectId;
-          revoked = await issuer.revoke(realm.realmId, record.jti, 'client_requested');
-        }
-      }
+    const claims = await new JwtTokenFormat(ring(), realm.realmId).inspect(presented);
+    const sid = claims && typeof claims.sid === 'string' ? claims.sid : undefined;
+    const tokenClientId = claims && typeof claims.client_id === 'string' ? claims.client_id : undefined;
+    if (sid && tokenClientId === outcome.client.clientId) {
+      subjectId = typeof claims?.sub === 'string' ? claims.sub : undefined;
+      revoked = (await issuer.revokeSession(realm.realmId, sid)) > 0;
     }
 
     if (revoked) {

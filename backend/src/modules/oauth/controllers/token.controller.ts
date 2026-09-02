@@ -268,27 +268,65 @@ export async function tokenController(fastify: FastifyInstance) {
 
     if (grantType === 'refresh_token') {
       const presentedToken = String(body.refresh_token ?? '');
-      const record = await issuer.findRefreshToken(realm.realmId, presentedToken);
-      if (!record || record.clientId !== client.clientId) {
-        return refuse(400, 'invalid_grant', 'unknown refresh token');
-      }
-      // Named before the validity checks, so a refusal is recorded against the account it concerns.
-      context.subjectId = record.subjectId;
-      if (record.revokedAt || Date.parse(record.expiresAt) < Date.now()) {
+
+      /**
+       * Rotation with reuse detection, against one integer on the session.
+       *
+       * Redemption verifies the token, compares its generation against the session's, and increments
+       * atomically. Nothing is looked up in a token collection, because no token was ever stored.
+       */
+      const redeemed = await issuer.redeemRefresh(realm.realmId, presentedToken);
+      // Named before the refusal is written, so it is recorded against the account it concerns.
+      context.subjectId = redeemed.subjectId;
+
+      if (!redeemed.ok) {
+        if (redeemed.cause === 'reuse_detected') {
+          /**
+           * A token that had already been rotated was presented again.
+           *
+           * The legitimate holder cannot do this: they hold the token they were last given. So the
+           * assumption is theft, the WHOLE SESSION has been deleted, and this is recorded as its own
+           * event rather than as an ordinary invalid_grant. Refusing only this one token would have
+           * left the next attempt equally cheap.
+           */
+          await new SecurityEventService(fastify.db).record({
+            realmId: realm.realmId,
+            tenantId: realm.tenantId,
+            category: 'token',
+            action: 'oauth.refresh.reuse_detected',
+            outcome: 'failure',
+            cause: 'refresh_token_replayed',
+            clientId: client.clientId,
+            ...(redeemed.subjectId ? { subjectId: redeemed.subjectId } : {}),
+            ...(redeemed.subjectId ? { stakeholderSubjectIds: [redeemed.subjectId] } : {}),
+            ...(redeemed.sessionId ? { target: { type: 'session', ref: redeemed.sessionId } } : {}),
+            correlationId,
+            ...(ipHash ? { ipHash } : {}),
+            detail: {
+              outcome: 'session deleted',
+              reason:
+                'a refresh token that had already been rotated was presented again, so the session '
+                + 'is assumed compromised and every access under it ends',
+            },
+          });
+          return refuse(400, 'invalid_grant', 'refresh token has already been used');
+        }
         return refuse(400, 'invalid_grant', 'refresh token is no longer valid');
       }
 
-      // Rotation: the presented token is retired as it is redeemed, so a stolen copy is usable at
-      // most once and its use is detectable afterwards.
-      await issuer.revoke(realm.realmId, record.jti, 'rotated');
+      if (redeemed.clientId !== client.clientId) {
+        return refuse(400, 'invalid_grant', 'unknown refresh token');
+      }
 
       const directory = new DirectoryService(fastify.db);
-      const identity = record.subjectId ? await directory.findBySubjectId(record.subjectId) : null;
-      if (record.subjectId && !identity) {
+      const identity = redeemed.subjectId ? await directory.findBySubjectId(redeemed.subjectId) : null;
+      if (redeemed.subjectId && !identity) {
         return refuse(400, 'invalid_grant', 'subject no longer exists');
       }
 
-      const scope = record.scope.split(' ').filter(Boolean);
+      // The scope comes from the grant that established the session rather than from a stored token
+      // row, since there is no longer one to read it back from.
+      const scope = String(body.scope ?? '').split(' ').filter(Boolean);
       /**
        * Resolved again, exactly as every other grant resolves it.
        *
@@ -301,23 +339,23 @@ export async function tokenController(fastify: FastifyInstance) {
        * permission withdrawn while a session is live must not survive in a refresh, which is the whole
        * reason access tokens are short.
        */
-      const decision = record.subjectId
+      const decision = redeemed.subjectId
         ? await new DecisionService(fastify.db)
-          .effectivePermissions(realm.realmId, record.subjectId, client.clientId)
+          .effectivePermissions(realm.realmId, redeemed.subjectId, client.clientId)
         : null;
 
       const tokens = await issuer.issue({
         realm,
         client,
-        subjectId: record.subjectId,
+        subjectId: redeemed.subjectId,
         scope,
-        sessionId: record.sessionId,
+        sessionId: redeemed.sessionId,
         sessionEpoch: identity?.sessionEpoch,
         ...(decision ? { permissions: decision.permissions, roles: decision.roles } : {}),
         ...(identity?.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         includeRefreshToken: true,
       });
-      recordIssued(realm, { grantType, client, subjectId: record.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: redeemed.subjectId, scope, correlationId, ipHash });
       return reply.send(tokens);
     }
 
@@ -341,7 +379,7 @@ export async function tokenController(fastify: FastifyInstance) {
         // original redemption is revoked, because a code arriving twice means one of the two
         // presenters is not the client.
         if (pending.subjectId) {
-          await issuer.revokeSession(realm.realmId, pending.requestId, 'code_replayed');
+          await issuer.revokeSession(realm.realmId, pending.requestId);
         }
         return refuse(400, 'invalid_grant', 'code has already been used');
       }

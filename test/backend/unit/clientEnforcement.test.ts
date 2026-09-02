@@ -250,10 +250,16 @@ describe('client enforcement: a soft-admitted token genuinely carries less autho
     collection: () => ({
       insertOne: async () => ({}),
       find: () => ({ toArray: async () => [{ name: 'orders', audience: 'orders' }] }),
-      // Role holdings live on the principal now, so issuance reads the subject rather than a
-      // separate assignment collection. No holdings here: this suite is about what registration
-      // buys, not about what a role grants.
-      findOne: async () => null,
+      /**
+       * Serves two reads issuance makes, and returns the least interesting valid answer to each.
+       *
+       * The principal, because role holdings live on the subject now; and the session, because a
+       * refresh token is minted against its generation. Neither is what this suite is about, which
+       * is what registration buys, so both answer plainly rather than being asserted on.
+       */
+      findOne: async (filter: Record<string, unknown>) => (
+        filter.sessionId ? { sessionId: filter.sessionId, refreshGen: 0 } : null
+      ),
     }),
   } as unknown as Db);
 
@@ -262,16 +268,20 @@ describe('client enforcement: a soft-admitted token genuinely carries less autho
     client: await registeredClient(),
     subjectId: 'subject-1',
     scope: ['openid', 'read:orders', 'write:orders'],
-    permissions: [{ resource: 'orders', action: 'view' }],
+    // Permission STRINGS: the same spelling a role holds and a policy governs.
+    permissions: ['orders:view'],
     roles: ['operator'],
     accountHolderRef: 'holder-1',
+    // A refresh token rotates against a SESSION, so one has to exist for there to be anything to
+    // rotate. Without it a refresh token would be a long-lived bearer credential with extra steps.
+    sessionId: 'sess-1',
     includeRefreshToken: true,
   });
 
   it('issues the full authority when the client is registered', async () => {
     const full = await new TokenIssuer(issuingDb(), ring).issue(await input());
     const claims = claimsOf(full.access_token);
-    expect(claims.permissions).toEqual([{ resource: 'orders', action: 'view' }]);
+    expect(claims.permissions).toEqual(['orders:view']);
     expect(claims.roles).toEqual(['operator']);
     expect(full.scope).toBe('openid read:orders write:orders');
     expect(full.refresh_token).toBeTruthy();

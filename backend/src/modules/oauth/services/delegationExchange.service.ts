@@ -5,7 +5,7 @@ import { RealmRecord } from '../../realm/models/realm.model';
 import { OAuthClient } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { ActorClaim } from '../models/token.model';
+import { ActorClaim } from '../models/actor.model';
 
 /**
  * Delegation at the token endpoint: acting FOR somebody, with your own identity intact.

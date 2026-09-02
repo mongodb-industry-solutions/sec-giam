@@ -246,7 +246,8 @@ export async function sessionController(fastify: FastifyInstance) {
 
     const sessions = new SessionService(fastify.db);
     const session = await sessions.find(realm.realmId, sessionId);
-    if (!session || session.terminatedAt) return reply.status(404).send(problem(404, 'No such session'));
+    // Absence IS the answer now: a terminated session is a deleted one.
+    if (!session) return reply.status(404).send(problem(404, 'No such session'));
 
     if (session.subjectId !== caller.subjectId) {
       const access = await authorityAccess(fastify.db, realm.realmId, caller.subjectId);

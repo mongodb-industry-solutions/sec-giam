@@ -5,7 +5,7 @@ import { DirectoryService } from '../../directory/services/directory.service';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { PrincipalRecord, canAuthenticate } from '../../directory/models/principal.model';
-import { ActorClaim } from '../models/token.model';
+import { ActorClaim } from '../models/actor.model';
 
 /**
  * Token exchange: acting as somebody else, on the record.

@@ -3,7 +3,7 @@ import {
   GIAM_COLLECTIONS, collectionSpec,
   REALM_COLLECTION, DOMAIN_COLLECTION,
   PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
-  AUTH_REQUEST_COLLECTION, TOKEN_COLLECTION,
+  AUTH_REQUEST_COLLECTION,
   KEY_COLLECTION, RESOURCE_COLLECTION, ROLE_COLLECTION,
   POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
@@ -92,18 +92,9 @@ export function plannedIndexes(): IndexPlan[] {
     // Expiry is the database's job: a cleanup job is a thing that fails silently.
     { collection: AUTH_REQUEST_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0 } },
 
-    { collection: TOKEN_COLLECTION, keys: { jti: 1 }, options: { name: 'jti_unique', unique: true } },
-    { collection: TOKEN_COLLECTION, keys: { realmId: 1, subjectId: 1, type: 1 }, options: { name: 'realm_subject_type' } },
-    { collection: TOKEN_COLLECTION, keys: { sessionId: 1 }, options: { name: 'sessionId', sparse: true } },
-    // Revocation propagation reads the recently revoked, so it is indexed rather than scanned.
-    { collection: TOKEN_COLLECTION, keys: { realmId: 1, revokedAt: -1 }, options: { name: 'realm_revokedAt', sparse: true } },
-    {
-      collection: TOKEN_COLLECTION,
-      keys: { expiresAt: 1 },
-      // A grace beyond expiry, so a replay of an expired token is still detectable rather than simply
-      // absent. Detecting a replay is the point of keeping the record at all.
-      options: { name: 'expiresAt_ttl', expireAfterSeconds: 86400 },
-    },
+    // No index for a revoked-token list, and no TTL with a grace beyond expiry to keep one
+    // detectable. Both existed to serve the token collection, and nothing redeemable is stored now:
+    // a replay is detected by the refresh generation on the session, not by a retained copy.
 
     { collection: KEY_COLLECTION, keys: { kid: 1 }, options: { name: 'kid_unique', unique: true } },
     // The JWKS read: every key a realm still publishes, on every verification cold start.
@@ -142,6 +133,15 @@ export function plannedIndexes(): IndexPlan[] {
 
     // Sessions and consent.
     { collection: SESSION_COLLECTION, keys: { sessionId: 1 }, options: { name: 'sessionId_unique', unique: true } },
+    /**
+     * Revocation, all four shapes, and every one of them is a delete against one of these.
+     *
+     * `{realmId, subjectId}` is a leaver or a compromised account. `{realmId, clientId}` is a
+     * retired application. `{realmId}` alone is single logout across a realm. The subject index
+     * also serves the concurrent-session limit, which counts per subject within the realm.
+     */
+    { collection: SESSION_COLLECTION, keys: { realmId: 1, clientId: 1 }, options: { name: 'realm_clientId', sparse: true } },
+    { collection: SESSION_COLLECTION, keys: { realmId: 1, domainId: 1 }, options: { name: 'realm_domainId', sparse: true } },
     { collection: SESSION_COLLECTION, keys: { realmId: 1, subjectId: 1, terminatedAt: 1 }, options: { name: 'realm_subject_terminated' } },
     { collection: SESSION_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0 } },
 
