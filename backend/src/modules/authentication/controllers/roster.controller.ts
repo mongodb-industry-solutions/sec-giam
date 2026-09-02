@@ -109,10 +109,13 @@ export async function rosterController(fastify: FastifyInstance) {
 
     // The role a persona holds, resolved so the screen can offer one ready-made user per role. This
     // is the "one click per role" affordance the demonstration is built around.
-    const { ROLE_ASSIGNMENT_COLLECTION, ROLE_COLLECTION } = await import('../../../shared/models/collections');
-    const assignments = await fastify.db.collection(ROLE_ASSIGNMENT_COLLECTION)
-      .find({ realmId: realm.realmId }, { projection: { _id: 0, subjectId: 1, roleId: 1 } })
-      .toArray() as unknown as Array<{ subjectId: string; roleId: string }>;
+    const { PRINCIPAL_COLLECTION, ROLE_COLLECTION } = await import('../../../shared/models/collections');
+    const holders = await fastify.db.collection(PRINCIPAL_COLLECTION)
+      .find({ realmId: realm.realmId }, { projection: { _id: 0, subjectId: 1, roles: 1 } })
+      .toArray() as unknown as Array<{ subjectId: string; roles?: Array<{ roleId: string }> }>;
+    const assignments = holders.flatMap(
+      (holder) => (holder.roles ?? []).map((holding) => ({ subjectId: holder.subjectId, roleId: holding.roleId })),
+    );
     const roles = await fastify.db.collection(ROLE_COLLECTION)
       .find({ realmId: realm.realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
       .toArray() as unknown as Array<{ roleId: string; name: string }>;

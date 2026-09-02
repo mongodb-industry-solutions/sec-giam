@@ -218,6 +218,10 @@ describe('client enforcement: a soft-admitted token genuinely carries less autho
     collection: () => ({
       insertOne: async () => ({}),
       find: () => ({ toArray: async () => [{ name: 'orders', audience: 'orders' }] }),
+      // Role holdings live on the principal now, so issuance reads the subject rather than a
+      // separate assignment collection. No holdings here: this suite is about what registration
+      // buys, not about what a role grants.
+      findOne: async () => null,
     }),
   } as unknown as Db);
 
