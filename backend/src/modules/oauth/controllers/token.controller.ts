@@ -118,6 +118,7 @@ export async function tokenController(fastify: FastifyInstance) {
           code_verifier: { type: 'string' },
           refresh_token: { type: 'string' },
           scope: { type: 'string' },
+          permissions: { type: 'string', description: 'Space delimited resource:action strings, to obtain a NARROWER token than the roles alone would give. Intersected with what the roles grant, never unioned.' },
           client_id: { type: 'string' },
           client_secret: { type: 'string' },
         },
@@ -146,6 +147,15 @@ export async function tokenController(fastify: FastifyInstance) {
     const { realm: realmName } = request.params as { realm: string };
     const body = (request.body ?? {}) as Record<string, unknown>;
     const grantType = String(body.grant_type ?? '');
+
+    /**
+     * P9.3. Permissions the client asked for, to obtain a NARROWER token than its roles would give.
+     *
+     * Space delimited, like , because it is the same kind of list and a client should not
+     * have to encode two list formats in one request. Intersected with what the roles grant by the
+     * issuer, never unioned, so asking cannot widen.
+     */
+    const requestedPermissions = String(body.permissions ?? '').split(' ').filter(Boolean);
 
     // The request's own correlator until a redemption can be tied to the authorization that produced
     // it, at which point it becomes the flow's. Reassignable for exactly that reason.
@@ -352,6 +362,7 @@ export async function tokenController(fastify: FastifyInstance) {
         sessionId: redeemed.sessionId,
         sessionEpoch: identity?.sessionEpoch,
         ...(decision ? { permissions: decision.permissions, roles: decision.roles } : {}),
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity?.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         includeRefreshToken: true,
       });
@@ -423,6 +434,7 @@ export async function tokenController(fastify: FastifyInstance) {
         scope,
         permissions: decision.permissions,
         roles: decision.roles,
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
         nonce: pending.nonce,
@@ -463,6 +475,7 @@ export async function tokenController(fastify: FastifyInstance) {
         scope,
         permissions: decision.permissions,
         roles: decision.roles,
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
         includeRefreshToken: true,
@@ -572,6 +585,7 @@ export async function tokenController(fastify: FastifyInstance) {
         scope: effective,
         permissions: decision.permissions,
         roles: decision.roles,
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
         actor,
