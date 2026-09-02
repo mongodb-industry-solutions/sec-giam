@@ -37,24 +37,68 @@ export const POLICY_CONDITION_KEYS = [
 
 export type PolicyConditionKey = (typeof POLICY_CONDITION_KEYS)[number];
 
-export interface PolicyStatement {
-  effect: 'allow' | 'deny';
-  principals?: string[];
-  actions?: string[];
-  resources?: string[];
-  condition?: PolicyCondition;
-  /** Carried into the decision, because a decision a log cannot explain is not auditable. */
-  reason?: string;
+/**
+ * What a policy obliges the enforcing side to DO when it allows something.
+ *
+ * Carried rather than acted on here: this authority decides, and the resource server is what can
+ * actually raise an alert or demand a second signature. Recording the obligation is what makes the
+ * decision auditable without this service pretending to enforce it.
+ */
+export interface PolicyObligation {
+  type: string;
+  severity?: 'low' | 'medium' | 'high';
 }
 
+/**
+ * One policy: one effect, over one resource pattern, under conditions.
+ *
+ * FLAT, per ADR section 7, rather than a list of statements. Every policy in the seed carried
+ * exactly one statement, so the nesting bought nothing and cost the obvious question of what it
+ * means when two statements in one policy disagree. Two rules are now two policies, which is also
+ * what makes each one separately versionable and separately approvable.
+ *
+ * Three fields go BEYOND the ADR's shape, because dropping each would remove a capability rather
+ * than simplify one:
+ *
+ * - `principals`, because a policy that cannot name who it applies to can only be global, and
+ *   "this rule, for these subjects" is the ordinary case for a prohibition.
+ * - `reason`, because a decision a log cannot explain is not auditable, and the reason is the
+ *   difference between "denied" and "denied by this policy, because the assurance was too low".
+ * - `attachedTo`, which scopes a policy to named resource servers.
+ */
 export interface PolicyRecord extends Scoped {
   policyId: string;
   name: string;
-  version: string;
-  statements: PolicyStatement[];
+  /** A NUMBER, because it is compared and incremented. As a string, '10' sorts below '9'. */
+  version: number;
+  /** `active` is evaluated. Anything else is not, which is what replaces the old `enabled` flag. */
+  status: 'draft' | 'active' | 'retired';
+
+  effect: 'allow' | 'deny';
+  /** Full permission strings this policy governs, `resource:action`. */
+  permissions: string[];
+  /** What it governs: the resource type, and the pattern the object must match. */
+  resource: { type: string; pattern: string };
+
+  principals?: string[];
+  /** ALL must hold. An empty list is a policy with no conditions, which is not a policy that never applies. */
+  conditions: PolicyCondition[];
+  obligations?: PolicyObligation[];
+
+  approvedBy?: string;
+  effectiveFrom?: string;
+  /** Carried into the decision, because a decision a log cannot explain is not auditable. */
+  reason?: string;
   attachedTo?: string[];
-  enabled: boolean;
   meta: Meta;
+}
+
+/** Whether a policy is one the engine should evaluate at all, at this moment. */
+export function isInEffect(policy: Pick<PolicyRecord, 'status' | 'effectiveFrom'>, now = new Date()): boolean {
+  if (policy.status !== 'active') return false;
+  // A policy dated into the future is written down and not yet in force, which is a normal state
+  // for something that had to be approved before it applied.
+  return !policy.effectiveFrom || Date.parse(policy.effectiveFrom) <= now.getTime();
 }
 
 /**

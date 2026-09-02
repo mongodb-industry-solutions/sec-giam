@@ -101,16 +101,20 @@ export interface AuthorizationDecision {
    * a document with a version. Carried as data rather than parsed back out of `source`, so a screen
    * can link to the record instead of guessing which one the text meant.
    */
-  policy?: DecidingStatement;
+  policy?: DecidingPolicy;
 }
 
-/** Which document, which version, and which line of it. Enough to open the record and read it. */
-export interface DecidingStatement {
+/**
+ * Which policy decided, and which version of it. Enough to open the record and read it.
+ *
+ * No statement index any more: a policy states ONE effect over one resource pattern, so naming the
+ * policy names the rule. Two rules are two policies, which is also what lets each be versioned,
+ * approved and withdrawn on its own.
+ */
+export interface DecidingPolicy {
   policyId: string;
   name: string;
-  version: string;
-  /** Position in the policy's own statement list, which is what the editor shows. */
-  statementIndex: number;
+  version: number;
   effect: 'allow' | 'deny';
 }
 
