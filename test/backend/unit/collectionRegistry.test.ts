@@ -11,13 +11,13 @@ import { buildEncryptedFieldsMaps } from '../../../backend/src/vendors/encryptio
 
 /** Every collection the data model specifies, by the section that specifies it. */
 const SPECIFIED: Record<string, string[]> = {
-  'realm and federation': ['realm', 'identityProvider', 'tenant'],
+  'realm and federation': ['realm', 'identityProvider'],
   directory: ['identity', 'credential', 'agent', 'tool', 'mcpServer'],
   oauth: ['client', 'apiKey', 'authorizationRequest', 'token', 'signingKey'],
-  authorization: ['resourceServer', 'permission', 'role', 'roleAssignment', 'policy', 'relationship'],
+  authorization: ['resourceServer', 'permission', 'role', 'roleAssignment', 'policy'],
   'session and consent': ['session', 'grant', 'delegation'],
   audit: ['securityEvent'],
-  infrastructure: ['domainEvent', 'counters', 'idempotencyKey'],
+  infrastructure: ['domainEvent'],
 };
 
 /**
@@ -27,6 +27,11 @@ const SPECIFIED: Record<string, string[]> = {
  * for one finds out where it went instead of assuming it was forgotten.
  */
 const DEFERRED: Record<string, string> = {
+  // v40 P0: removed outright, nothing read or wrote them. Listed so their absence is a decision.
+  relationship: 'P0, removed: four indexes, no reader and no writer',
+  counters: 'P0, removed: one index, no caller, identifiers are randomUUID',
+  idempotencyKey: 'P0, removed: two indexes, no writer',
+  tenant: 'P0, removed: tenantId survives as a field on every scoped collection',
   group: 'P8+, SCIM Groups',
   provisioningTarget: 'P8+, outbound provisioning',
   provisioningJob: 'P8+, outbound provisioning',

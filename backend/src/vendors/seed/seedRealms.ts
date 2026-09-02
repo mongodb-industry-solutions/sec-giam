@@ -1,15 +1,14 @@
 import { Db } from 'mongodb';
-import { REALM_COLLECTION, TENANT_COLLECTION, IDENTITY_PROVIDER_COLLECTION } from '../../shared/models/collections';
+import { REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION } from '../../shared/models/collections';
 import { RealmRecord } from '../../modules/realm/models/realm.model';
 import { IdentityProviderRecord } from '../../modules/realm/models/identityProvider.model';
-import { TenantRecord } from '../../modules/directory/models/tenant.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
 import { realmIssuer } from '../../config';
 
 /**
- * The realms, their default tenants and the providers federated inside them.
+ * The realms and the providers federated inside them.
  *
  * Read from a fixture rather than written here, so adding a realm is data and this file stays
  * industry neutral: nothing in it names a consuming application. The fixture that does name one is
@@ -29,7 +28,6 @@ interface RealmFixture {
   tokenPolicy?: Partial<RealmRecord['tokenPolicy']>;
   passwordPolicy?: Partial<RealmRecord['passwordPolicy']>;
   branding?: Partial<RealmRecord['branding']>;
-  tenants?: Array<{ tenantId: string; name: string; displayName: string; parentTenantId?: string }>;
   providers?: Array<{
     providerId: string;
     name: string;
@@ -69,7 +67,6 @@ const DEFAULT_PASSWORD_POLICY: RealmRecord['passwordPolicy'] = {
 export async function seedRealms(db: Db): Promise<void> {
   const fixtures = readSeedFile<RealmFixture[]>('realms.json');
   const realms = db.collection<RealmRecord>(REALM_COLLECTION);
-  const tenants = db.collection<TenantRecord>(TENANT_COLLECTION);
   const providers = db.collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION);
 
   for (const fixture of fixtures) {
@@ -95,34 +92,12 @@ export async function seedRealms(db: Db): Promise<void> {
         // Absent in the fixture means the realm inherits the deployment default, which is strict.
         ...(fixture.clientEnforcement ? { clientEnforcement: fixture.clientEnforcement } : {}),
       },
-      // A realm is its own partition, and its own record sits in its default tenant.
+      // A realm is its own partition. tenantId survives as a field so the partition key and the
+      // option of a real second tenant are preserved; only the tenant collection is gone.
       { realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
       'Realm',
     );
     console.log(`  realm:    ${fixture.name} (${issuer}) ${realm.action}`);
-
-    // Every realm gets a tenant, so no record ever carries an empty partition and no query needs a
-    // branch for the single-tenant case.
-    const tenantFixtures = fixture.tenants ?? [{
-      tenantId: DEFAULT_TENANT_ID,
-      name: DEFAULT_TENANT_ID,
-      displayName: `${fixture.displayName} (default)`,
-    }];
-    for (const tenant of tenantFixtures) {
-      const outcome = await upsertSeed(
-        tenants,
-        { realmId: fixture.realmId, tenantId: tenant.tenantId },
-        {
-          name: tenant.name,
-          displayName: tenant.displayName,
-          ...(tenant.parentTenantId ? { parentTenantId: tenant.parentTenantId } : {}),
-          status: 'active',
-        },
-        { realmId: fixture.realmId, tenantId: tenant.tenantId },
-        'Tenant',
-      );
-      console.log(`  tenant:   ${fixture.name}/${tenant.name} ${outcome.action}`);
-    }
 
     for (const provider of fixture.providers ?? []) {
       const outcome = await upsertSeed(
