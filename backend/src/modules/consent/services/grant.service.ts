@@ -22,7 +22,7 @@ export interface GrantView {
   clientName: string;
   logoUri?: string;
   scopes: string[];
-  status: 'active' | 'revoked';
+  status: 'active' | 'revoked' | 'expired';
   grantedAt: string;
   revokedAt?: string;
   lastUsedAt?: string;

@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { SessionService } from '../services/session.service';
+import { SessionService, isSessionLimitRefusal } from '../services/session.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { authenticationMethods } from '../../../shared/ports';
 import { bindAuthenticationMethods } from '../services/authenticationMethods';
@@ -79,6 +79,7 @@ export async function loginController(fastify: FastifyInstance) {
           }],
         },
         401: { $ref: 'Problem#', description: 'The attempt failed. Deliberately no further detail.' },
+        429: { $ref: 'Problem#', description: 'The concurrent-session limit on this path refuses a further session.' },
         404: { $ref: 'Problem#', description: 'No such realm.' },
       },
     },
@@ -124,13 +125,47 @@ export async function loginController(fastify: FastifyInstance) {
 
     // Built by the session service, so a password sign-in and a federated one produce exactly the
     // same session rather than two records that agree today and drift later.
-    const session = await new SessionService(fastify.db).start({
+    /**
+     * P8.3. A password sign-in resolves through the realm's LOCAL DOMAIN, like any other path.
+     *
+     * Naming the domain is what makes the concurrent-session limit and the password rules come from
+     * the path that did the authenticating, rather than from a branch that only the local case
+     * takes. Every realm has one, seeded, so this never resolves to nothing.
+     */
+    const localDomain = await new RealmService(fastify.db).localDomain(realm.realmId);
+
+    const started = await new SessionService(fastify.db).start({
       realm,
       subjectId: resolution.subjectId,
       epoch: identity?.sessionEpoch ?? 0,
+      ...(localDomain ? { domainId: localDomain.providerId } : {}),
+      ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
       ...(request.headers['user-agent'] ? { userAgentHash: hashIp(String(request.headers['user-agent'])) as string } : {}),
       ...(request.ip ? { ipHash: hashIp(request.ip) as string } : {}),
     });
+
+    // The limit was already reached and this path refuses rather than evicting. Recorded as a
+    // refusal, because a sign-in that did not happen is exactly what a trail has to show.
+    if (isSessionLimitRefusal(started)) {
+      await audit.record({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        category: 'authentication',
+        action: 'authentication.password',
+        outcome: 'failure',
+        cause: 'concurrent_session_limit',
+        subjectId: resolution.subjectId,
+        correlationId: request.correlationId,
+        ...(hashIp(request.ip) ? { ipHash: hashIp(request.ip) } : {}),
+        detail: { limit: started.limit, held: started.held },
+      });
+      return reply.status(429).send(problem(
+        429,
+        'Too many sessions',
+        `${started.reason}. Sign out elsewhere, then try again.`,
+      ));
+    }
+    const session = started;
 
     await audit.record({
       realmId: realm.realmId,

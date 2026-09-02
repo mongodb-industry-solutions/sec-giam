@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { RealmService } from '../services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { SessionService } from '../../authentication/services/session.service';
+import { SessionService, isSessionLimitRefusal } from '../../authentication/services/session.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { identityProviders } from '../../../shared/ports';
 import { bindIdentityProviders } from '../services/oidcProvider';
@@ -121,6 +121,7 @@ export async function federationController(fastify: FastifyInstance) {
           examples: [{ subjectId: 'sub-9f21', sessionId: 'ses-4c1f', userName: 'ada', provisioned: false }],
         },
         401: { $ref: 'Problem#', description: 'The upstream response did not verify.' },
+        429: { $ref: 'Problem#', description: 'The concurrent-session limit on this path refuses a further session.' },
         404: { $ref: 'Problem#', description: 'No such realm or provider.' },
       },
     },
@@ -190,11 +191,22 @@ export async function federationController(fastify: FastifyInstance) {
     // would let whoever administers it grant themselves anything here.
     await applyRoleMapping(realm.realmId, realm.tenantId, identity.subjectId, provider, claims);
 
-    const session = await new SessionService(fastify.db).start({
+    const started = await new SessionService(fastify.db).start({
       realm,
       subjectId: identity.subjectId,
+      // The upstream that authenticated is the domain, so its own limit applies to its own
+      // sessions and not to the ones the local directory opened.
+      domainId: provider.providerId,
       // The assurance the upstream actually achieved, not the one we would like it to have.
     });
+    if (isSessionLimitRefusal(started)) {
+      return reply.status(429).send(problem(
+        429,
+        'Too many sessions',
+        `${started.reason}. Sign out elsewhere, then try again.`,
+      ));
+    }
+    const session = started;
 
     void audit.record({
       realmId: realm.realmId,

@@ -6,7 +6,7 @@ import {
   AUTH_REQUEST_COLLECTION,
   KEY_COLLECTION, RESOURCE_COLLECTION, ROLE_COLLECTION,
   POLICY_COLLECTION,
-  SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
+  SESSION_COLLECTION, GRANT_COLLECTION,
   AUDIT_COLLECTION,
 } from '../../shared/models/collections';
 
@@ -154,9 +154,6 @@ export function plannedIndexes(): IndexPlan[] {
     },
     { collection: GRANT_COLLECTION, keys: { realmId: 1, clientId: 1 }, options: { name: 'realm_clientId' } },
 
-    { collection: DELEGATION_COLLECTION, keys: { delegationId: 1 }, options: { name: 'delegationId_unique', unique: true } },
-    { collection: DELEGATION_COLLECTION, keys: { realmId: 1, principalSubjectId: 1, agentId: 1, expiresAt: 1 }, options: { name: 'realm_principal_agent_expiresAt' } },
-    { collection: DELEGATION_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0, sparse: true } },
 
     // Audit. The trail is a time series, so the time field and the meta field are already organised
     // by the storage engine; this is the one query neither of them answers, namely "events that named
