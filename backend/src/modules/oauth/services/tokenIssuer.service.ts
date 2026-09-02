@@ -10,6 +10,8 @@ import { JwtTokenFormat } from './jwtTokenFormat';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { newMeta } from '../../../shared/models/base.model';
 import { SOFT_ADMISSION_SCOPE } from './clientAuth.service';
+import { SecurityEventService } from '../../audit/services/securityEvent.service';
+import { attenuate } from './attenuate';
 
 /** The name the authority registers its OWN permissions under. Never an audience for a business token. */
 const AUTHORITY_RESOURCE_SERVER = 'authority';
@@ -31,6 +33,13 @@ export interface IssueTokensInput {
   permissions?: string[];
   /** Roles the authority resolved, for the checks a resource server still expresses in roles. */
   roles?: string[];
+  /**
+   * Permissions the CLIENT asked for, to obtain a narrower token than its roles would give.
+   *
+   * Intersected with what the roles grant, never unioned. Absent means the default, which is roles
+   * only.
+   */
+  requestedPermissions?: string[];
   /** Opaque binding to the business record a self-scoped principal owns. */
   accountHolderRef?: string;
   /** Delegation chain, when the token was obtained by exchange rather than issued directly. */
@@ -133,6 +142,7 @@ export class TokenIssuer {
         ...request,
         scope: [SOFT_ADMISSION_SCOPE],
         permissions: undefined,
+        requestedPermissions: undefined,
         roles: undefined,
         accountHolderRef: undefined,
         includeRefreshToken: false,
@@ -152,6 +162,43 @@ export class TokenIssuer {
     const administrable = this.options.reducedAuthority || !input.subjectId
       ? []
       : await this.administrableRealmClaim(realm, input.subjectId);
+
+    /**
+     * What the token will actually carry, after attenuation.
+     *
+     * Computed here rather than inside the claim literal, because a dropped permission has to be
+     * RECORDED and a claim literal is no place to emit an audit event from.
+     */
+    const narrowed = attenuate({
+      held: input.permissions ?? [],
+      requested: input.requestedPermissions,
+      roles: input.roles ?? [],
+    });
+
+    if (narrowed.dropped.length > 0) {
+      /**
+       * A client asked for something its subject does not hold.
+       *
+       * Recorded rather than refused. Refusing would make a client that asks for a superset fail
+       * entirely, which pushes clients towards asking for nothing and taking the widest token
+       * available. Dropping and recording keeps the narrow request worth making, and leaves
+       * evidence when an application's idea of its own authority has drifted from the truth.
+       */
+      void new SecurityEventService(this.db).record({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        category: 'token',
+        action: 'token.permissions_narrowed',
+        outcome: 'success',
+        clientId: client.clientId,
+        ...(input.subjectId ? { subjectId: input.subjectId } : {}),
+        detail: {
+          dropped: narrowed.dropped,
+          granted: narrowed.permissions,
+          reason: 'a token may only narrow what the roles grant, never widen it',
+        },
+      });
+    }
 
     const accessJti = uuidv4();
     const accessClaims: Record<string, unknown> = {
@@ -178,8 +225,21 @@ export class TokenIssuer {
       // The epoch travels in the token so a resource server can refuse a whole generation at once,
       // without listing outstanding tokens.
       ...(input.sessionEpoch !== undefined ? { session_epoch: input.sessionEpoch } : {}),
-      ...(input.permissions?.length ? { permissions: input.permissions } : {}),
-      ...(input.roles?.length ? { roles: input.roles } : {}),
+      /**
+       * P9. ROLES BY DEFAULT, permissions only to narrow.
+       *
+       * A JWT travels in an HTTP header and proxies commonly cut around 8 KB. A token carrying three
+       * hundred expanded permissions is a token that fails intermittently in production and is very
+       * hard to diagnose, because the failure depends on which proxy the request happened to cross.
+       * Three roles, expanded at the decision point, is the only form that scales.
+       *
+       * A client may ask for specific permissions instead, to shrink its own blast radius, and the
+       * INVARIANT is that asking can only narrow: `narrowed` intersects the request with what the
+       * roles actually grant, so a permission the subject does not hold is dropped rather than
+       * granted. That is what makes it safe for a client to ask at all.
+       */
+      ...(narrowed.permissions.length ? { permissions: narrowed.permissions } : {}),
+      ...(narrowed.roles.length ? { roles: narrowed.roles } : {}),
       // Absent, not empty, when there is no cross-realm grant: the token of everybody who administers
       // one realm is byte-for-byte what it was before this existed.
       ...(administrable.length ? { admin_realms: administrable } : {}),

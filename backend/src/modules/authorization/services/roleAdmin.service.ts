@@ -643,6 +643,58 @@ export class RoleAdminService {
   }
 
   /**
+   * The catalog a resource server caches: permissions, roles expanded, and one version.
+   *
+   * P9.5. Expansion happens HERE, at the decision point, which is the whole reason a token can
+   * carry three roles instead of three hundred permissions. A resource server either calls the
+   * decision endpoint per request or reads this once and expands locally; the version is what lets
+   * it know when its copy went stale.
+   *
+   * The version is DERIVED as the highest catalogVersion any resource declares, rather than stored
+   * separately. A second number would be one more thing to forget to bump.
+   */
+  async publishedCatalog(realmId: string): Promise<{
+    catalogVersion: number;
+    roles: Array<{ name: string; permissions: string[] }>;
+    permissions: Awaited<ReturnType<RoleAdminService['catalog']>>;
+  }> {
+    const [permissions, resources, roles] = await Promise.all([
+      this.catalog(realmId),
+      this.db
+        .collection<ResourceRecord>(RESOURCE_COLLECTION)
+        .find({ realmId }, { projection: { _id: 0, catalogVersion: 1 } })
+        .toArray(),
+      this.roles
+        .find({ realmId }, { projection: { _id: 0, roleId: 1, name: 1, permissions: 1, parentRoleIds: 1 } })
+        .toArray(),
+    ]);
+
+    const byId = new Map(roles.map((role) => [role.roleId, role]));
+    const expand = (roleId: string): string[] => {
+      const seen = new Set<string>();
+      const held = new Set<string>();
+      const walk = (id: string, depth: number) => {
+        if (depth > MAX_COMPOSITION_DEPTH || seen.has(id)) return;
+        seen.add(id);
+        const role = byId.get(id);
+        if (!role) return;
+        for (const permission of role.permissions ?? []) held.add(permission);
+        for (const parent of role.parentRoleIds ?? []) walk(parent, depth + 1);
+      };
+      walk(roleId, 0);
+      return [...held].sort();
+    };
+
+    return {
+      catalogVersion: resources.reduce((highest, resource) => Math.max(highest, resource.catalogVersion ?? 0), 0),
+      roles: roles
+        .map((role) => ({ name: role.name, permissions: expand(role.roleId) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      permissions,
+    };
+  }
+
+  /**
    * Every permission any resource in this realm declares, for building a role.
    *
    * Read from the resources themselves. A permission has no record of its own to carry a

@@ -277,25 +277,50 @@ export async function roleController(fastify: FastifyInstance) {
           description: 'The declared enforcement points.',
           type: 'object',
           additionalProperties: false,
-          required: ['permissions'],
+          required: ['permissions', 'roles', 'catalogVersion'],
           properties: {
+            /**
+             * P9.5. The role catalog, with its version, so a resource server can CACHE it.
+             *
+             * A token carries roles by default, which means a resource server that enforces
+             * permissions has to expand them. It either calls the decision endpoint per request or
+             * caches this and expands locally, and caching needs a version to know when to stop.
+             *
+             * Derived from the resources rather than stored: the version is the highest
+             * catalogVersion any resource declares, so it moves whenever a catalog does and there
+             * is no second number to keep in step.
+             */
+            catalogVersion: { type: 'integer', description: 'Bumps whenever any resource catalog changes. Cache against this.' },
+            roles: {
+              type: 'array',
+              description: 'Each role with the full permission strings it grants, parents resolved.',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['name', 'permissions'],
+                properties: {
+                  name: { type: 'string' },
+                  permissions: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
             permissions: {
               type: 'array',
               items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['resource', 'action', 'resourceServer'],
+                required: ['permission', 'resource', 'action', 'resourceServer'],
                 properties: {
+                  permission: { type: 'string', description: 'The full string, `resource:action`. The one spelling a role, a policy and a token all use.' },
                   resource: { type: 'string' },
                   action: { type: 'string' },
                   description: { type: 'string' },
                   resourceServer: { type: 'string' },
-                  deprecated: { type: 'boolean', description: 'No longer declared, kept because grants reference it.' },
                 },
               },
             },
           },
-          examples: [{ permissions: [{ resource: 'roles', action: 'manage', description: 'manage on roles', resourceServer: 'authority', deprecated: false }] }],
+          examples: [{ permissions: [{ permission: 'roles:manage', resource: 'roles', action: 'manage', description: 'the role catalogue', resourceServer: 'authority' }], roles: [{ name: 'realm_administrator', permissions: ['roles:manage'], catalogVersion: 3 }], catalogVersion: 3 }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
@@ -309,7 +334,7 @@ export async function roleController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, request.principal!.subjectId, 'permissions', 'view');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    return reply.send({ permissions: await new RoleAdminService(fastify.db).catalog(realm.realmId) });
+    return reply.send(await new RoleAdminService(fastify.db).publishedCatalog(realm.realmId));
   });
 
   fastify.get(`${base}/:roleId`, {

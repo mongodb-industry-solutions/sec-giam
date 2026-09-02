@@ -281,7 +281,9 @@ describe('client enforcement: a soft-admitted token genuinely carries less autho
   it('issues the full authority when the client is registered', async () => {
     const full = await new TokenIssuer(issuingDb(), ring).issue(await input());
     const claims = claimsOf(full.access_token);
-    expect(claims.permissions).toEqual(['orders:view']);
+    // P9.2: ROLES BY DEFAULT. The permissions claim is absent unless the client narrows, because a
+    // token full of expanded permissions is one that fails on whichever proxy cuts around 8 KB.
+    expect(claims.permissions).toBeUndefined();
     expect(claims.roles).toEqual(['operator']);
     expect(full.scope).toBe('openid read:orders write:orders');
     expect(full.refresh_token).toBeTruthy();
