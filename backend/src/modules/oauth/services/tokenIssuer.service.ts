@@ -4,6 +4,7 @@ import { RESOURCE_COLLECTION, REALM_COLLECTION, SESSION_COLLECTION } from '../..
 import { DecisionService } from '../../authorization/services/decision.service';
 import { ActorClaim } from '../models/actor.model';
 import { SessionRecord, RefreshClaims, isLive } from '../../authentication/models/session.model';
+import { getSessionWatch } from '../../../plugins/mongodb';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { OAuthClient } from '../models/client.model';
 import { JwtTokenFormat } from './jwtTokenFormat';
@@ -388,8 +389,28 @@ export class TokenIssuer {
    * The absence of the session document is the revocation signal, so there is no status to set and
    * no entry to keep alive until the last affected token expires.
    */
-  /** Whether access under this session is still live. The one read introspection needs. */
+  /**
+   * Whether access under this session is still live.
+   *
+   * The cache is consulted FIRST, and it is authoritative for ABSENCE ONLY. That asymmetry is the
+   * whole design and it is worth being explicit about:
+   *
+   * - A session id the cache does not hold exists in no realm at all, so it certainly exists in
+   *   this one. Answering false needs no read, and needs no realm check either.
+   * - A session id the cache DOES hold still has to be read, because the cache stores ids and not
+   *   expiries. Membership means "not deleted", which is weaker than "live".
+   *
+   * So the half the cache can answer for free is exactly the half worth having: after a subject or
+   * realm wide revocation every outstanding token introspects at once, and all of those are now a
+   * set membership test rather than a query.
+   *
+   * `isLive` returns null while the cache is still loading, which falls through to the read. That
+   * is deliberate, and the reason is in `SessionWatch`: treating "not loaded yet" as revoked would
+   * sign everybody out on a restart.
+   */
   async sessionIsLive(realmId: string, sessionId: string): Promise<boolean> {
+    if (getSessionWatch()?.isLive(sessionId) === false) return false;
+
     const session = await this.sessions.findOne(
       { realmId, sessionId },
       { projection: { _id: 0, expiresAt: 1, idleExpiresAt: 1 } },

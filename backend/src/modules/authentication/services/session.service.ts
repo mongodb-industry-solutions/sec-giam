@@ -5,10 +5,7 @@ import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord, isLive } from '../models/session.model';
 import { DOMAIN_COLLECTION } from '../../../shared/models/collections';
 import { DomainRecord, concurrentSessionRule } from '../../realm/models/domain.model';
-import { RealmService } from '../../realm/services/realm.service';
-import { KeyRing } from '../../keys/services/keyRing.service';
-import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
-import { SignalsService } from '../../authorization/services/signals.service';
+import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
 import { DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
 
 /**
@@ -191,16 +188,7 @@ export class SessionService {
     );
   }
 
-  /**
-   * Emits `session-revoked` to every subscribed receiver, and records that it tried.
-   *
-   * The RECORD is the part that matters when something goes wrong: a delivery nobody can prove
-   * happened is indistinguishable from one that never did, and after an incident the question is
-   * whether the receiver was told rather than whether we meant to tell it.
-   *
-   * P10.5: the elapsed time is recorded per signal, because propagation latency is the number this
-   * whole layer is judged on and an unmeasured objective is an aspiration.
-   */
+  /** Emits `session-revoked`. The ceremony and its failure policy live in the dispatcher. */
   private async emitRevoked(input: {
     realmId: string;
     tenantId: string;
@@ -208,52 +196,12 @@ export class SessionService {
     sessionId: string;
     reason: string;
   }): Promise<void> {
-    try {
-      const realm = await new RealmService(this.db).byId(input.realmId);
-      if (!realm) return;
-
-      const ring = new KeyRing(new MongoSigningKeyStore(this.db));
-      const signals = new SignalsService(this.db, ring);
-      const receivers = await signals.subscribers(input.realmId, 'session-revoked');
-      if (receivers.length === 0) return;
-
-      const startedAt = Date.now();
-      const signal = await signals.mint({
-        realmId: input.realmId,
-        tenantId: input.tenantId,
-        event: 'session-revoked',
-        subjectId: input.subjectId,
-        sessionId: input.sessionId,
-        reason: input.reason,
-      }, realm.issuer);
-      const outcomes = await signals.deliver(signal, receivers);
-
-      void new SecurityEventService(this.db).record({
-        realmId: input.realmId,
-        tenantId: input.tenantId,
-        category: 'session',
-        action: 'signal.session_revoked.delivered',
-        outcome: outcomes.every((outcome) => outcome.delivered) ? 'success' : 'failure',
-        subjectId: input.subjectId,
-        target: { type: 'session', ref: input.sessionId },
-        detail: {
-          // The number this layer is judged on.
-          propagationMs: Date.now() - startedAt,
-          receivers: outcomes.length,
-          delivered: outcomes.filter((outcome) => outcome.delivered).length,
-          outcomes,
-          fallback: 'a receiver that was not reached can still poll the signed feed',
-        },
-      });
-    } catch {
-      /**
-       * Swallowed on purpose, and this is the one place that deserves saying twice.
-       *
-       * Signalling is best effort by design. The session is already gone, the event is already in
-       * the audit trail, and the feed will serve it to any receiver that asks. Letting a signalling
-       * failure escape would turn "we could not tell a third party" into "the sign-out failed".
-       */
-    }
+    await new SignalDispatcher(this.db).dispatch({
+      ...input,
+      event: 'session-revoked',
+      category: 'session',
+      target: { type: 'session', ref: input.sessionId },
+    });
   }
 
   /**
