@@ -1,8 +1,10 @@
 import { Db } from 'mongodb';
 import { createHmac } from 'crypto';
 import type { ProvisioningTarget } from '../../../shared/ports';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
-import { ClientRecord } from '../../oauth/models/client.model';
+import { CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { CredentialRecord } from '../../directory/models/credential.model';
+import { clientFromCredential } from '../../oauth/models/client.model';
+import { OAuthClient } from '../../oauth/models/client.model';
 import { derivedSecret } from '../../../shared/services/secrets';
 import { appendLog } from '../../../shared/services/logBuffer';
 
@@ -49,15 +51,30 @@ export function signNotice(body: string): string {
   return createHmac('sha256', derivedSecret('provisioning')).update(body).digest('hex');
 }
 
-async function receivers(realmId: string): Promise<ClientRecord[]> {
+/**
+ * The clients registered to receive provisioning notices.
+ *
+ * NOTE: `provisioning.endpoint` is declared by no model, here or before this change, so this has
+ * always matched nothing and no provisioning notice has ever been delivered. Carried over
+ * faithfully rather than silently repaired, because repairing it means inventing a field and a wire
+ * contract that nobody specified. Recorded for the P11.10 obsolete-resource sweep: either the
+ * receiver registration gets a declared field, or this path and its callers go.
+ */
+async function receivers(realmId: string): Promise<OAuthClient[]> {
   if (!boundDb) return [];
-  return boundDb
-    .collection<ClientRecord>(CLIENT_COLLECTION)
+  const found = await boundDb
+    .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
     .find(
-      { realmId, status: 'active', 'provisioning.endpoint': { $exists: true } },
+      {
+        realmId,
+        type: 'oauth_client',
+        status: 'active',
+        'metadata.provisioning.endpoint': { $exists: true },
+      },
       { projection: { _id: 0 } },
     )
-    .toArray() as unknown as Promise<ClientRecord[]>;
+    .toArray();
+  return found.map(clientFromCredential);
 }
 
 export const webhookProvisioningTarget: ProvisioningTarget = {
@@ -86,7 +103,7 @@ export const webhookProvisioningTarget: ProvisioningTarget = {
     const signature = signNotice(body);
 
     await Promise.all(targets.map(async (client) => {
-      const endpoint = (client as ClientRecord & { provisioning?: { endpoint?: string } }).provisioning?.endpoint;
+      const endpoint = (client as OAuthClient & { provisioning?: { endpoint?: string } }).provisioning?.endpoint;
       if (!endpoint) return;
       try {
         const response = await fetch(endpoint, {

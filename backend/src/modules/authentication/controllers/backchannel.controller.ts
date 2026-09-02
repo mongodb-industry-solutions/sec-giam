@@ -2,8 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { ClientAuthService, readClientCredentials } from '../../oauth/services/clientAuth.service';
 import { BackchannelService, isFailure, BACKCHANNEL_GRANT } from '../services/backchannel.service';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
-import { ClientRecord } from '../../oauth/models/client.model';
+import { findOAuthClient } from '../../oauth/services/clientAuth.service';
+import { OAuthClient } from '../../oauth/models/client.model';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 
 /**
@@ -55,10 +55,12 @@ export async function backchannelController(fastify: FastifyInstance) {
     return new RealmService(fastify.db).byName(name);
   }
 
-  async function clientName(clientId: string): Promise<string> {
-    const client = await fastify.db.collection<ClientRecord>(CLIENT_COLLECTION)
-      .findOne({ clientId }, { projection: { _id: 0, clientName: 1 } });
-    return client?.clientName ?? clientId;
+  /** Resolves a client's display name within a realm, for the challenge a person is shown. */
+  function clientNameIn(realmId: string) {
+    return async (clientId: string): Promise<string> => {
+      const client = await findOAuthClient(fastify.db, realmId, clientId);
+      return client?.clientName ?? clientId;
+    };
   }
 
   // ── The client asks ─────────────────────────────────────────────────────────
@@ -204,7 +206,7 @@ export async function backchannelController(fastify: FastifyInstance) {
     const realm = await realmOf(realmName);
     if (!realm) return fail(reply as never, 404, 'invalid_request', 'unknown realm');
 
-    const view = await new BackchannelService(fastify.db).challenge(realm.realmId, authReqId, clientName);
+    const view = await new BackchannelService(fastify.db).challenge(realm.realmId, authReqId, clientNameIn(realm.realmId));
     if (isFailure(view)) return fail(reply as never, view.status, view.error, view.description);
     return reply.send(view);
   });
@@ -260,8 +262,7 @@ export async function backchannelController(fastify: FastifyInstance) {
 
     // ping tells the client to come and collect. push is handled at redemption, where the tokens
     // exist; minting them here would produce a token set before anything claimed the request.
-    const client = await fastify.db.collection<ClientRecord>(CLIENT_COLLECTION)
-      .findOne({ realmId: realm.realmId, clientId: result.clientId }, { projection: { _id: 0 } });
+    const client = await findOAuthClient(fastify.db, realm.realmId, result.clientId);
     if (client?.backchannel?.deliveryMode === 'ping') void service.notify(client, authReqId);
 
     return reply.send({ status: result.status });

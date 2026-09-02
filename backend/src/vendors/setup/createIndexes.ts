@@ -3,7 +3,7 @@ import {
   GIAM_COLLECTIONS, collectionSpec,
   REALM_COLLECTION, DOMAIN_COLLECTION,
   PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
-  CLIENT_COLLECTION, API_KEY_COLLECTION, AUTH_REQUEST_COLLECTION, TOKEN_COLLECTION,
+  AUTH_REQUEST_COLLECTION, TOKEN_COLLECTION,
   KEY_COLLECTION, RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
   POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
@@ -66,6 +66,22 @@ export function plannedIndexes(): IndexPlan[] {
     // The authentication hot path: every factor a subject holds of a given type, active ones first.
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, subjectId: 1, type: 1, status: 1 }, options: { name: 'realm_subject_type_status' } },
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, expiresAt: 1 }, options: { name: 'realm_expiresAt', sparse: true } },
+    /**
+     * The client authentication hot path. NOT unique on {realmId, clientId}, deliberately.
+     *
+     * Rotating a secret with an overlap window means two active credentials share one clientId, so a
+     * unique index there would make the overlap impossible and rotation would be back to a single
+     * field swapped instantaneously. Uniqueness lives on credentialId, which is global above, and
+     * the "at most two active" rule is enforced in the service, because an index can only express
+     * "exactly one".
+     */
+    { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, clientId: 1, status: 1 }, options: { name: 'realm_clientId_status', sparse: true } },
+    { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, type: 1 }, options: { name: 'realm_type' } },
+    // Which registrations a principal administers, for the self-service listing and its limit.
+    { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, 'administrators.kind': 1, 'administrators.ref': 1 }, options: { name: 'realm_administrators', sparse: true } },
+    { collection: CREDENTIAL_COLLECTION, keys: { ownerSubjectId: 1 }, options: { name: 'ownerSubjectId', sparse: true } },
+    // RFC 8705: locating the credential bound to a presented certificate.
+    { collection: CREDENTIAL_COLLECTION, keys: { 'metadata.mtls.certificateThumbprint': 1 }, options: { name: 'mtls_thumbprint', sparse: true } },
 
     { collection: TOOL_COLLECTION, keys: { toolId: 1 }, options: { name: 'toolId_unique', unique: true } },
     { collection: TOOL_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
@@ -74,16 +90,10 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: MCP_SERVER_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
 
     // OAuth.
-    { collection: CLIENT_COLLECTION, keys: { realmId: 1, clientId: 1 }, options: { name: 'realm_clientId_unique', unique: true } },
-    { collection: CLIENT_COLLECTION, keys: { realmId: 1, tenantId: 1, status: 1 }, options: { name: 'realm_tenant_status' } },
     // Resolving a client from a record that owns it. Multikey, because ownership is a set: this is
     // the membership test every read on the registry narrows by, so it is not an optional index.
-    { collection: CLIENT_COLLECTION, keys: { realmId: 1, 'owners.kind': 1, 'owners.ref': 1 }, options: { name: 'realm_owners', sparse: true } },
     // RFC 8705: locating the client bound to a presented certificate.
-    { collection: CLIENT_COLLECTION, keys: { 'mtls.certificateThumbprint': 1 }, options: { name: 'mtls_thumbprint', sparse: true } },
 
-    { collection: API_KEY_COLLECTION, keys: { keyId: 1 }, options: { name: 'keyId_unique', unique: true } },
-    { collection: API_KEY_COLLECTION, keys: { realmId: 1, 'owner.kind': 1, 'owner.ref': 1 }, options: { name: 'realm_owner' } },
     // No index on keyHash here: it is a QE equality field, and its index is the encrypted one.
 
     { collection: AUTH_REQUEST_COLLECTION, keys: { requestId: 1 }, options: { name: 'requestId_unique', unique: true } },

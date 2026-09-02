@@ -1,6 +1,6 @@
 import { Db } from 'mongodb';
 import { RealmRecord } from '../../realm/models/realm.model';
-import { ClientRecord } from '../models/client.model';
+import { OAuthClient } from '../models/client.model';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
@@ -58,7 +58,7 @@ export class TokenExchangeService {
    */
   async resolve(
     realm: RealmRecord,
-    client: ClientRecord,
+    client: OAuthClient,
     requested: { subjectToken?: string; subject?: string; subjectTokenType?: string },
   ): Promise<ExchangeSubject | ExchangeRefusal> {
     const refuse = (cause: string): ExchangeRefusal => {

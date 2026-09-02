@@ -6,7 +6,7 @@ import { TokenIssuer } from '../../oauth/services/tokenIssuer.service';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { ClientRecord } from '../../oauth/models/client.model';
+import { OAuthClient } from '../../oauth/models/client.model';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -22,7 +22,7 @@ export async function logoutController(fastify: FastifyInstance) {
 
   // Signing and delivering the notification is the same act wherever a session ends, so it lives in
   // one service that the administrative session routes use too.
-  const notify = (clients: ClientRecord[], realmIssuer: string, realmId: string, subjectId: string, sessionId: string) =>
+  const notify = (clients: OAuthClient[], realmIssuer: string, realmId: string, subjectId: string, sessionId: string) =>
     new LogoutNotifier(fastify.db).notify(clients, { issuer: realmIssuer, realmId }, subjectId, sessionId);
 
   fastify.post('/realms/:realm/protocol/openid-connect/logout', {

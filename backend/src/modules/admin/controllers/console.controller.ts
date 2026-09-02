@@ -4,7 +4,7 @@ import { requireAuthorityCaller } from '../../../vendors/middleware/authorityAut
 import { problem } from '../../../shared/models/problem';
 import {
   REALM_COLLECTION, DOMAIN_COLLECTION, PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
-  CLIENT_COLLECTION, ROLE_COLLECTION, POLICY_COLLECTION,
+  ROLE_COLLECTION, POLICY_COLLECTION,
   PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
   GRANT_COLLECTION,
 } from '../../../shared/models/collections';
@@ -28,6 +28,13 @@ interface ConsoleView {
   projection: Record<string, 0 | 1>;
   /** Narrows a listing to one realm when asked. Absent where a record is not realm scoped. */
   realmScoped: boolean;
+  /**
+   * Always applied, for a view over a collection that holds more than this view is about.
+   *
+   * `clients` reads the credential collection, which also holds passwords and API keys, so without
+   * this the view would list every credential in the realm under a heading that says applications.
+   */
+  filter?: Record<string, unknown>;
   sort: Record<string, 1 | -1>;
   summary: string;
   /** Why this view shows what it shows, where the answer is not obvious. */
@@ -70,12 +77,18 @@ const VIEWS: Record<string, ConsoleView> = {
     note: 'The hash and the public key are both withheld. An operator needs to know a credential EXISTS and what kind it is, never its material.',
   },
   clients: {
-    collection: CLIENT_COLLECTION,
-    projection: { _id: 0, realmId: 1, clientId: 1, clientName: 1, type: 1, status: 1, grantTypes: 1, redirectUris: 1, scope: 1, logoUri: 1, owners: 1, requirePkce: 1, backchannel: 1 },
+    // An application registration IS a credential of type oauth_client, so this reads the
+    // credential collection and shows the metadata sub document the registration lives in.
+    collection: CREDENTIAL_COLLECTION,
+    filter: { type: 'oauth_client' },
+    projection: {
+      _id: 0, realmId: 1, clientId: 1, status: 1, ownerSubjectId: 1, administrators: 1,
+      secretPrefix: 1, createdAt: 1, metadata: 1,
+    },
     realmScoped: true,
-    sort: { clientName: 1 },
+    sort: { 'metadata.clientName': 1 },
     summary: 'The applications registered against this authority',
-    note: 'The secret hash is never returned, and neither is anything that would let a reader impersonate the client.',
+    note: 'The secret hash is never returned, and neither is anything that would let a reader impersonate the client. The non-secret prefix IS shown, so two secrets can be told apart during a rotation window.',
   },
   roles: {
     collection: ROLE_COLLECTION,
@@ -262,7 +275,8 @@ export async function consoleController(fastify: FastifyInstance) {
     }
 
     const { realm, q, limit, skip } = request.query as { realm?: string; q?: string; limit?: number; skip?: number };
-    const filter: Record<string, unknown> = {};
+    // The view's own discriminator first, so nothing a caller sends can widen it.
+    const filter: Record<string, unknown> = { ...(view.filter ?? {}) };
 
     if (view.realmScoped && realm) {
       const realmRecord = await fastify.db.collection(REALM_COLLECTION)

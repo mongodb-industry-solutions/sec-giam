@@ -1,7 +1,8 @@
 import { Db } from 'mongodb';
 import * as bcrypt from 'bcryptjs';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
-import { ClientRecord, isConfidential } from '../models/client.model';
+import { CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { OAuthClient, isConfidential, clientFromCredential } from '../models/client.model';
+import { CredentialRecord, isUsable } from '../../directory/models/credential.model';
 import { RealmRecord, enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { SecurityEventService, hashIp } from '../../audit/services/securityEvent.service';
@@ -21,7 +22,7 @@ export interface PresentedClientCredentials {
 export const SOFT_ADMISSION_SCOPE = 'openid';
 
 /** The grants a soft admission may use. Never the privileged ones, which have no onboarding excuse. */
-const SOFT_ADMISSION_GRANTS: ClientRecord['grantTypes'] = ['authorization_code', 'client_credentials'];
+const SOFT_ADMISSION_GRANTS: OAuthClient['grantTypes'] = ['authorization_code', 'client_credentials'];
 
 /**
  * The stand-in record for a client that has not registered yet.
@@ -33,7 +34,7 @@ export function provisionalClient(
   realm: RealmRecord,
   clientId: string,
   redirectUris: string[] = [],
-): ClientRecord {
+): OAuthClient {
   return {
     realmId: realm.realmId,
     tenantId: realm.tenantId,
@@ -43,10 +44,11 @@ export function provisionalClient(
     redirectUris,
     grantTypes: SOFT_ADMISSION_GRANTS,
     scope: SOFT_ADMISSION_SCOPE,
-    requirePkce: false,
+    // A public client relies on PKCE, so it is required rather than optional even here.
+    requirePkce: true,
     tokenEndpointAuthMethod: 'none',
     status: 'active',
-    meta: newMeta('Client'),
+    meta: newMeta('Credential'),
   };
 }
 
@@ -110,13 +112,72 @@ export function readClientCredentials(
   };
 }
 
+/**
+ * The one read every other module uses to resolve a client.
+ *
+ * Exported as a function rather than requiring the service, because most callers want the
+ * registration and not the authentication around it, and because a single reader is what keeps the
+ * `oauth_client` filter from being restated at eight call sites where one could be forgotten.
+ * Without that filter a password credential could answer a client lookup.
+ */
+export async function findOAuthClient(
+  db: Db,
+  realmId: string,
+  clientId: string,
+): Promise<OAuthClient | null> {
+  const found = await db
+    .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
+    .find({ realmId, clientId, type: 'oauth_client' }, { projection: { _id: 0 } })
+    .toArray();
+  const usable = found
+    .filter((credential) => isUsable(credential))
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  return usable[0] ? clientFromCredential(usable[0]) : null;
+}
+
+/** Every client registered in a realm, one entry per `clientId` however many secrets it holds. */
+export async function listOAuthClients(db: Db, realmId: string): Promise<OAuthClient[]> {
+  const found = await db
+    .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
+    .find({ realmId, type: 'oauth_client' }, { projection: { _id: 0 } })
+    .toArray();
+  const newestByClientId = new Map<string, CredentialRecord>();
+  for (const credential of found) {
+    if (!credential.clientId) continue;
+    const held = newestByClientId.get(credential.clientId);
+    if (!held || (credential.createdAt ?? '') > (held.createdAt ?? '')) {
+      newestByClientId.set(credential.clientId, credential);
+    }
+  }
+  return [...newestByClientId.values()].map(clientFromCredential);
+}
+
 export class ClientAuthService {
   constructor(private readonly db: Db) {}
 
-  async find(realmId: string, clientId: string): Promise<ClientRecord | null> {
-    return this.db
-      .collection<ClientRecord>(CLIENT_COLLECTION)
-      .findOne({ realmId, clientId }, { projection: { _id: 0 } });
+  /**
+   * Every credential registered under this `clientId`, whatever its status.
+   *
+   * A LIST rather than one record, because rotating a secret with an overlap window means two are
+   * active at once. Ordered newest first, so the secret a deployment has just been given is the one
+   * tried first and the old one is only reached by a caller that has not moved yet.
+   *
+   * Returns the INACTIVE ones too, and that is not laziness. "No registration exists" and "the
+   * registration is revoked" must stay distinguishable: filtering here would make a revoked client
+   * look unregistered, and soft admission would then admit the one client an operator has
+   * explicitly turned off.
+   */
+  private async registrations(realmId: string, clientId: string): Promise<CredentialRecord[]> {
+    const found = await this.db
+      .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
+      .find({ realmId, clientId, type: 'oauth_client' }, { projection: { _id: 0 } })
+      .toArray();
+    return found.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  }
+
+  async find(realmId: string, clientId: string): Promise<OAuthClient | null> {
+    const [registration] = await this.registrations(realmId, clientId);
+    return registration ? clientFromCredential(registration) : null;
   }
 
   /**
@@ -139,19 +200,26 @@ export class ClientAuthService {
     realm: RealmRecord,
     presented: PresentedClientCredentials,
     options: { requireAuthentication: boolean; allowSoftAdmission?: boolean },
-  ): Promise<{ client: ClientRecord; softAdmitted: boolean } | { error: string; description: string }> {
+  ): Promise<{ client: OAuthClient; softAdmitted: boolean } | { error: string; description: string }> {
     if (!presented.clientId) {
       return { error: 'invalid_client', description: 'client_id is required' };
     }
 
-    const client = await this.find(realm.realmId, presented.clientId);
-    if (!client) {
+    const registrations = await this.registrations(realm.realmId, presented.clientId);
+    if (registrations.length === 0) {
       const soft = options.allowSoftAdmission && enforcementFor(realm) === 'soft';
       if (!soft) return { error: 'invalid_client', description: 'unknown client' };
       return { client: provisionalClient(realm, presented.clientId), softAdmitted: true };
     }
-    if (client.status !== 'active') return { error: 'invalid_client', description: 'client is not active' };
 
+    // Registered but turned off. Refused in BOTH modes and BEFORE soft admission is considered:
+    // being suspended or revoked is not an onboarding gap, and soft mode relaxes exactly one thing.
+    const usable = registrations.filter((credential) => isUsable(credential));
+    if (usable.length === 0) {
+      return { error: 'invalid_client', description: 'client is not active' };
+    }
+
+    const client = clientFromCredential(usable[0]);
     const confidential = isConfidential(client);
     if (options.requireAuthentication && confidential && !presented.clientSecret) {
       return { error: 'invalid_client', description: 'client authentication required' };
@@ -163,15 +231,25 @@ export class ClientAuthService {
         // intermittently otherwise, depending on which code path examines the secret.
         return { error: 'invalid_client', description: 'this client is public and holds no secret' };
       }
-      const valid = await bcrypt.compare(presented.clientSecret, client.clientSecretHash as string);
-      if (!valid) return { error: 'invalid_client', description: 'invalid client_secret' };
+
+      // EITHER active secret is accepted, which is what makes a rotation window a window. Every
+      // candidate is compared even after one matches, so the time taken does not reveal which
+      // secret was the right one.
+      let matched: CredentialRecord | null = null;
+      for (const registration of usable) {
+        if (!registration.secretHash) continue;
+        const valid = await bcrypt.compare(presented.clientSecret, registration.secretHash);
+        if (valid && !matched) matched = registration;
+      }
+      if (!matched) return { error: 'invalid_client', description: 'invalid client_secret' };
+      return { client: clientFromCredential(matched), softAdmitted: false };
     }
 
     return { client, softAdmitted: false };
   }
 
   /** Whether the client is registered for this grant. Refused rather than ignored. */
-  allowsGrant(client: ClientRecord, grantType: string): boolean {
-    return client.grantTypes.includes(grantType as ClientRecord['grantTypes'][number]);
+  allowsGrant(client: OAuthClient, grantType: string): boolean {
+    return client.grantTypes.includes(grantType as OAuthClient['grantTypes'][number]);
   }
 }

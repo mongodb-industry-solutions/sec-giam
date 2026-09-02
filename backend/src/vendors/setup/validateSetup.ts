@@ -45,7 +45,6 @@ function declaredEncryptedPaths(): Record<string, string[]> {
     identityEmail: placeholder,
     identityPhone: placeholder,
     identityName: placeholder,
-    apiKeyHash: placeholder,
   });
   const paths: Record<string, string[]> = {};
   for (const [name, map] of Object.entries(maps)) {

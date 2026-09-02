@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AUTH_REQUEST_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
 import { AuthRequestRecord } from '../../oauth/models/authRequest.model';
 import { CredentialRecord, isUsable } from '../../directory/models/credential.model';
-import { ClientRecord, scopesOf } from '../../oauth/models/client.model';
+import { OAuthClient, scopesOf } from '../../oauth/models/client.model';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
@@ -143,7 +143,7 @@ export class BackchannelService {
 
   async initiate(
     realm: RealmRecord,
-    client: ClientRecord,
+    client: OAuthClient,
     input: InitiateInput,
   ): Promise<{ auth_req_id: string; expires_in: number; interval: number } | BackchannelFailure> {
     const mode = client.backchannel?.deliveryMode ?? 'poll';
@@ -384,7 +384,7 @@ export class BackchannelService {
    * Fire and forget on purpose: a client whose endpoint is down must not turn a completed approval
    * into a failed one. The poll path remains available and is the baseline every client supports.
    */
-  async notify(client: ClientRecord, authReqId: string, tokens?: Record<string, unknown>): Promise<void> {
+  async notify(client: OAuthClient, authReqId: string, tokens?: Record<string, unknown>): Promise<void> {
     const endpoint = client.backchannel?.notificationEndpoint;
     const request = await this.requests.findOne({ authReqId }, { projection: { _id: 0 } });
     const notificationToken = request?.clientNotificationToken;

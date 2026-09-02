@@ -6,8 +6,10 @@ import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requireAuthorityCaller, AuthorityCaller } from '../../../vendors/middleware/authorityAuth';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
-import { ClientRecord } from '../models/client.model';
+import { OAuthClient, clientFromCredential, clientMetadata } from '../models/client.model';
+import { CredentialRecord } from '../../directory/models/credential.model';
+import { clientCredentials, clientFilter, clientUpdate } from '../services/clientRegistry';
+import { withinActiveSecretCap } from '../../directory/models/credential.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { problem } from '../../../shared/models/problem';
 import {
@@ -99,7 +101,13 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
   }
 
   function clients() {
-    return fastify.db.collection<ClientRecord>(CLIENT_COLLECTION);
+    return clientCredentials(fastify.db);
+  }
+
+  /** One registration, as the flat client the rest of this controller reads. */
+  async function findClient(flat: Record<string, unknown>): Promise<OAuthClient | null> {
+    const found = await clients().findOne(clientFilter(flat), { projection: { _id: 0 } });
+    return found ? clientFromCredential(found) : null;
   }
 
   /**
@@ -140,7 +148,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
    * not exist. Read from the record as it stands at the moment of the change, because that is the set
    * the change actually concerned.
    */
-  function ownerSubjects(record: ClientRecord, ...also: Array<string | undefined>): string[] {
+  function ownerSubjects(record: OAuthClient, ...also: Array<string | undefined>): string[] {
     const owners = (record.owners ?? [])
       .filter((owner) => owner.kind === OWNER_KIND)
       .map((owner) => owner.ref);
@@ -178,13 +186,13 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     caller: AuthorityCaller,
     realmId: string,
     action: 'view' | 'manage' | 'rotateSecret',
-  ): Filter<ClientRecord> {
-    if (administers(caller, action)) return { realmId } as Filter<ClientRecord>;
-    return { realmId, ...ownedBy(caller.subjectId) } as unknown as Filter<ClientRecord>;
+  ): Filter<OAuthClient> {
+    if (administers(caller, action)) return { realmId } as Filter<OAuthClient>;
+    return { realmId, ...ownedBy(caller.subjectId) } as unknown as Filter<OAuthClient>;
   }
 
   /** The same membership question in memory, for a record already read under a narrowed query. */
-  function isOwner(record: ClientRecord, subjectId: string | undefined): boolean {
+  function isOwner(record: OAuthClient, subjectId: string | undefined): boolean {
     if (!subjectId) return false;
     return (record.owners ?? []).some((owner) => owner.kind === OWNER_KIND && owner.ref === subjectId);
   }
@@ -199,7 +207,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     };
   }
 
-  function view(record: ClientRecord, caller: AuthorityCaller): Record<string, unknown> {
+  function view(record: OAuthClient, caller: AuthorityCaller): Record<string, unknown> {
     const owners = record.owners ?? [];
     return {
       client_id: record.clientId,
@@ -227,18 +235,20 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
    * Anything else means the authority can hand somebody's credential back to whoever asks next, and
    * "we can look it up for you" is indistinguishable from "anyone who reaches this can have it".
    */
-  async function mintSecret(): Promise<{ secret: string; hash: string }> {
+  async function mintSecret(): Promise<{ secret: string; hash: string; prefix: string }> {
     const secret = randomBytes(32).toString('base64url');
-    return { secret, hash: await bcrypt.hash(secret, 12) };
+    // The leading characters, kept in the clear so an operator can tell two secrets apart in a list
+    // during a rotation window without either being recoverable from what they are looking at.
+    return { secret, hash: await bcrypt.hash(secret, 12), prefix: secret.slice(0, 6) };
   }
 
   /** Hosts a self-registered client may not claim: this platform's own, and every other party's. */
   async function reservedHosts(realmId: string, subjectId: string | undefined): Promise<Set<string>> {
     const reserved = firstPartyHosts();
-    const others = await clients().find(
-      { realmId, $nor: [ownedBy(subjectId)] } as unknown as Filter<ClientRecord>,
-      { projection: { _id: 0, redirectUris: 1, postLogoutRedirectUris: 1 } },
-    ).toArray();
+    const others = (await clients().find(
+      clientFilter({ realmId, $nor: [ownedBy(subjectId)] }),
+      { projection: { _id: 0 } },
+    ).toArray()).map(clientFromCredential);
     for (const other of others) {
       for (const uri of [...(other.redirectUris ?? []), ...(other.postLogoutRedirectUris ?? [])]) {
         const host = hostOf(uri);
@@ -322,18 +332,19 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       ];
     }
 
+    const translated = clientFilter(filter);
     const [records, total] = await Promise.all([
       clients()
-        .find(filter as Filter<ClientRecord>, { projection: { _id: 0, clientSecretHash: 0 } })
-        .sort({ clientName: 1 })
+        .find(translated, { projection: { _id: 0 } })
+        .sort({ 'metadata.clientName': 1 })
         .skip(offset)
         .limit(limit)
         .toArray(),
-      clients().countDocuments(filter as Filter<ClientRecord>),
+      clients().countDocuments(translated),
     ]);
 
     return reply.send({
-      clients: records.map((record) => view(record, caller)),
+      clients: records.map((record) => view(clientFromCredential(record), caller)),
       total,
       limit,
       offset,
@@ -371,13 +382,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const record = await clients().findOne(
-      { ...reach(caller, realm.realmId, 'view'), clientId } as Filter<ClientRecord>,
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
+    const record = await findClient({ ...reach(caller, realm.realmId, 'view'), clientId });
     if (!record) return reply.status(404).send(problem(404, 'No such client'));
 
-    return reply.send(view(record as ClientRecord, caller));
+    return reply.send(view(record, caller));
   });
 
   fastify.post(base, {
@@ -444,7 +452,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       return reply.status(status as 400).send(problem(status, title, detail));
     };
 
-    if (await clients().findOne({ realmId: realm.realmId, clientName: body.client_name }, { projection: { _id: 0, clientId: 1 } })) {
+    if (await clients().findOne(clientFilter({ realmId: realm.realmId, clientName: body.client_name }), { projection: { _id: 0, clientId: 1 } })) {
       return refuse(409, 'Already registered', 'That application name is already registered in this realm.', 'name_taken');
     }
 
@@ -459,11 +467,11 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       // Counts what this principal OWNS, shared or not, rather than what they created. Ownership is
       // what carries the authority, so it is what the brake has to count: otherwise being added to
       // other people's applications would be a way around it.
-      const held = await clients().countDocuments({
+      const held = await clients().countDocuments(clientFilter({
         realmId: realm.realmId,
         ...ownedBy(caller.subjectId),
         status: { $ne: 'revoked' },
-      } as unknown as Filter<ClientRecord>);
+      }));
       if (held >= SELF_SERVICE_CLIENT_LIMIT) {
         return refuse(
           403,
@@ -490,7 +498,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     if (scopes.length === 0) scopes = ['openid'];
 
     const clientId = `cli-${randomUUID()}`;
-    const { secret, hash } = await mintSecret();
+    const { secret, hash, prefix } = await mintSecret();
     const isPublic = grantTypes.every((grant) => grant === 'authorization_code');
 
     /**
@@ -515,27 +523,45 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       );
     }
 
-    const record = {
+    /**
+     * The registration IS a credential, of type `oauth_client`.
+     *
+     * `ownerSubjectId` is the principal it acts as and answers for, which is a token subject and so
+     * is singular. `administrators` is who may manage it, which is a set. The two are separate
+     * fields because a `client_credentials` token has exactly one `sub`.
+     */
+    const credential: CredentialRecord = {
       realmId: realm.realmId,
       tenantId: realm.tenantId,
+      credentialId: randomUUID(),
+      // A credential belongs to the subject it authenticates, which for a client is the client.
+      subjectId: clientId,
+      type: 'oauth_client',
+      ownerSubjectId: caller.subjectId ?? (body.owner_ref as string),
+      administrators: owners as CredentialRecord['administrators'],
       clientId,
-      clientName: body.client_name,
-      clientType: isPublic ? 'public' : 'confidential',
-      clientSecretHash: hash,
-      redirectUris,
-      postLogoutRedirectUris: body.post_logout_redirect_uris ?? [],
-      grantTypes,
-      scope: scopes.join(' '),
-      ...(body.logo_uri ? { logoUri: body.logo_uri } : {}),
-      owners,
-      requirePkce: true,
-      tokenEndpointAuthMethod: isPublic ? 'none' : 'client_secret_basic',
-      applicationType: 'web',
+      ...(hash ? { secretHash: hash } : {}),
+      ...(prefix ? { secretPrefix: prefix } : {}),
+      metadata: clientMetadata({
+        clientName: body.client_name,
+        clientType: isPublic ? 'public' : 'confidential',
+        redirectUris,
+        postLogoutRedirectUris: body.post_logout_redirect_uris ?? [],
+        grantTypes: grantTypes as OAuthClient['grantTypes'],
+        scope: scopes.join(' '),
+        ...(body.logo_uri ? { logoUri: body.logo_uri } : {}),
+        requirePkce: true,
+        tokenEndpointAuthMethod: isPublic ? 'none' : 'client_secret_basic',
+        applicationType: 'web',
+      }),
       status: 'active',
-      meta: newMeta('Client'),
-    } as unknown as ClientRecord;
+      assurance: { level: 'aal1', method: 'client_secret' },
+      createdAt: new Date().toISOString(),
+      meta: newMeta('Credential'),
+    };
 
-    await clients().insertOne(record);
+    await clients().insertOne(credential);
+    const record = clientFromCredential(credential);
 
     audit(realm, caller, {
       action: 'client.registered',
@@ -605,10 +631,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const existing = await clients().findOne(
-      { ...reach(caller, realm.realmId, 'manage'), clientId } as Filter<ClientRecord>,
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
+    const existing = await findClient({ ...reach(caller, realm.realmId, 'manage'), clientId });
     if (!existing) return reply.status(404).send(problem(404, 'No such client'));
 
     const privileged = administers(caller, 'manage');
@@ -639,8 +662,8 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     }
 
     await clients().updateOne(
-      { realmId: realm.realmId, clientId },
-      { $set: { ...update, 'meta.lastModified': new Date().toISOString() } },
+      clientFilter({ realmId: realm.realmId, clientId }),
+      { $set: { ...clientUpdate(update), 'meta.lastModified': new Date().toISOString() } },
     );
 
     audit(realm, caller, {
@@ -648,15 +671,12 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       outcome: 'success',
       clientId,
       target: { type: 'client', ref: clientId },
-      stakeholderSubjectIds: ownerSubjects(existing as ClientRecord),
+      stakeholderSubjectIds: ownerSubjects(existing as OAuthClient),
       detail: { changed: Object.keys(update) },
     });
 
-    const updated = await clients().findOne(
-      { realmId: realm.realmId, clientId },
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
-    return reply.send(view(updated as ClientRecord, caller));
+    const updated = await findClient({ realmId: realm.realmId, clientId });
+    return reply.send(view(updated as OAuthClient, caller));
   });
 
   fastify.post(`${base}/:clientId/rotate-secret`, {
@@ -690,32 +710,69 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const existing = await clients().findOne(
-      { ...reach(caller, realm.realmId, 'rotateSecret'), clientId } as Filter<ClientRecord>,
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
+    const existing = await findClient({ ...reach(caller, realm.realmId, 'rotateSecret'), clientId });
     if (!existing) return reply.status(404).send(problem(404, 'No such client'));
     if (existing.status === 'revoked') {
       audit(realm, caller, { action: 'client.secret_rotated', outcome: 'failure', cause: 'client_withdrawn', clientId });
       return reply.status(409).send(problem(409, 'Withdrawn', 'A withdrawn registration has no credential to rotate.'));
     }
 
-    const { secret, hash } = await mintSecret();
-    await clients().updateOne(
-      { realmId: realm.realmId, clientId },
-      { $set: { clientSecretHash: hash, 'meta.lastModified': new Date().toISOString() } },
+    /**
+     * Rotation ADDS a credential rather than replacing one.
+     *
+     * Both secrets are then active, so a deployment can take the new one and roll over at its own
+     * pace instead of every instance failing between the write here and the redeploy there. That
+     * overlap is the whole reason a client registration became a credential: one field could only
+     * ever hold one secret, so rotating it was an instantaneous cutover nobody could stage.
+     *
+     * Capped at two, and the cap is enforced here because an index can express "exactly one" and
+     * not "at most two". Retiring the old one is a separate, deliberate act.
+     */
+    const active = await clients().countDocuments(
+      clientFilter({ realmId: realm.realmId, clientId, status: 'active' }),
     );
+    if (!withinActiveSecretCap(active)) {
+      audit(realm, caller, { action: 'client.secret_rotated', outcome: 'failure', cause: 'rotation_window_open', clientId });
+      return reply.status(409).send(problem(
+        409,
+        'A rotation is already in progress',
+        `That registration already has ${active} active secrets, which is the limit. Retire the `
+        + 'superseded one before minting another, so a forgotten secret cannot stay valid forever.',
+      ));
+    }
+
+    const { secret, hash, prefix } = await mintSecret();
+    await clients().insertOne({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      credentialId: randomUUID(),
+      subjectId: clientId,
+      type: 'oauth_client',
+      ownerSubjectId: caller.subjectId ?? clientId,
+      ...(existing.owners ? { administrators: existing.owners } : {}),
+      clientId,
+      secretHash: hash,
+      secretPrefix: prefix,
+      // The same registration metadata: this is a second secret for one client, not a second client.
+      metadata: clientMetadata(existing),
+      status: 'active',
+      assurance: { level: 'aal1', method: 'client_secret' },
+      createdAt: new Date().toISOString(),
+      meta: newMeta('Credential'),
+    });
 
     audit(realm, caller, {
       action: 'client.secret_rotated',
       outcome: 'success',
       clientId,
       target: { type: 'client', ref: clientId },
-      // The previous secret stopped working for every owner at once, not only for the one who asked.
-      stakeholderSubjectIds: ownerSubjects(existing as ClientRecord),
+      // Named for every owner, not only the one who asked: the rotation window is now open for all
+      // of them, and the superseded secret still works until somebody retires it.
+      stakeholderSubjectIds: ownerSubjects(existing as OAuthClient),
+      detail: { secretPrefix: prefix, activeSecrets: active + 1 },
     });
 
-    return reply.send({ ...view(existing as ClientRecord, caller), client_secret: secret });
+    return reply.send({ ...view(existing as OAuthClient, caller), client_secret: secret });
   });
 
   fastify.delete(`${base}/:clientId`, {
@@ -748,19 +805,19 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const existing = await clients().findOne(
-      { ...reach(caller, realm.realmId, 'manage'), clientId } as Filter<ClientRecord>,
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
+    const existing = await findClient({ ...reach(caller, realm.realmId, 'manage'), clientId });
     if (!existing) return reply.status(404).send(problem(404, 'No such client'));
 
-    await clients().updateOne(
-      { realmId: realm.realmId, clientId },
+    // updateMany, not updateOne: a rotation window leaves TWO active credentials for one clientId,
+    // and withdrawing a registration that revoked only the newer one would leave the superseded
+    // secret working. That is the precise failure this had no way to have before rotation existed.
+    await clients().updateMany(
+      clientFilter({ realmId: realm.realmId, clientId }),
       {
         // The hash is dropped as well as the status changed. A revoked client whose secret is still
         // stored is a credential waiting for somebody to reactivate the record.
         $set: { status: 'revoked', 'meta.lastModified': new Date().toISOString() },
-        $unset: { clientSecretHash: '' },
+        $unset: { secretHash: '' },
       },
     );
 
@@ -769,10 +826,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       outcome: 'success',
       clientId,
       target: { type: 'client', ref: clientId },
-      stakeholderSubjectIds: ownerSubjects(existing as ClientRecord),
+      stakeholderSubjectIds: ownerSubjects(existing as OAuthClient),
     });
 
-    return reply.send({ ...view(existing as ClientRecord, caller), status: 'revoked' });
+    return reply.send({ ...view(existing as OAuthClient, caller), status: 'revoked' });
   });
 
   /**
@@ -841,10 +898,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       return reply.status(status as 404).send(problem(status, title, detail));
     };
 
-    const existing = await clients().findOne(
-      { ...reach(caller, realm.realmId, 'manage'), clientId } as Filter<ClientRecord>,
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
+    const existing = await findClient({ ...reach(caller, realm.realmId, 'manage'), clientId });
     if (!existing) return refuseOwner(404, 'No such client', 'No such client', 'client_out_of_reach');
 
     // An exact lookup, never a search. Naming somebody you already know is not enumeration, and the
@@ -857,7 +911,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       return refuseOwner(404, 'No such principal', 'No such principal', 'unknown_principal');
     }
 
-    if (isOwner(existing as ClientRecord, identity.subjectId)) {
+    if (isOwner(existing as OAuthClient, identity.subjectId)) {
       return refuseOwner(409, 'Already an owner', 'That principal already administers this registration.', 'already_an_owner');
     }
 
@@ -869,8 +923,8 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       ...(displayName ? { displayName } : {}),
     };
     await clients().updateOne(
-      { realmId: realm.realmId, clientId },
-      { $addToSet: { owners: added }, $set: { 'meta.lastModified': new Date().toISOString() } },
+      clientFilter({ realmId: realm.realmId, clientId }),
+      { $addToSet: { administrators: added }, $set: { 'meta.lastModified': new Date().toISOString() } },
     );
 
     audit(realm, caller, {
@@ -880,15 +934,12 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       target: { type: 'client', ref: clientId },
       // Everyone who already administers this registration, plus the person who now does. It changed
       // who may administer something they own, so it is their event as much as the caller's.
-      stakeholderSubjectIds: ownerSubjects(existing as ClientRecord, identity.subjectId),
+      stakeholderSubjectIds: ownerSubjects(existing as OAuthClient, identity.subjectId),
       detail: { owner: identity.subjectId, ownerName: displayName },
     });
 
-    const updated = await clients().findOne(
-      { realmId: realm.realmId, clientId },
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
-    return reply.send(view(updated as ClientRecord, caller));
+    const updated = await findClient({ realmId: realm.realmId, clientId });
+    return reply.send(view(updated as OAuthClient, caller));
   });
 
   fastify.delete(ownersBase + '/:ownerRef', {
@@ -926,13 +977,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const existing = await clients().findOne(
-      { ...reach(caller, realm.realmId, 'manage'), clientId } as Filter<ClientRecord>,
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
+    const existing = await findClient({ ...reach(caller, realm.realmId, 'manage'), clientId });
     if (!existing) return reply.status(404).send(problem(404, 'No such client'));
 
-    const owners = (existing as ClientRecord).owners ?? [];
+    const owners = (existing as OAuthClient).owners ?? [];
     const target = owners.find((owner) => owner.ref === ownerRef);
     const refuseRemoval = (cause: string) => audit(realm, caller, {
       action: 'client.owner_removed',
@@ -940,7 +988,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       cause,
       clientId,
       target: { type: 'client', ref: clientId },
-      stakeholderSubjectIds: ownerSubjects(existing as ClientRecord),
+      stakeholderSubjectIds: ownerSubjects(existing as OAuthClient),
     });
 
     if (!target) {
@@ -958,8 +1006,8 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     }
 
     await clients().updateOne(
-      { realmId: realm.realmId, clientId },
-      { $pull: { owners: { ref: ownerRef } }, $set: { 'meta.lastModified': new Date().toISOString() } },
+      clientFilter({ realmId: realm.realmId, clientId }),
+      { $pull: { administrators: { ref: ownerRef } }, $set: { 'meta.lastModified': new Date().toISOString() } },
     );
 
     audit(realm, caller, {
@@ -969,7 +1017,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       target: { type: 'client', ref: clientId },
       // The owner set as it stood BEFORE the removal, so the person who lost the authority reads the
       // event that took it away. Afterwards they are no longer an owner and nothing would name them.
-      stakeholderSubjectIds: ownerSubjects(existing as ClientRecord),
+      stakeholderSubjectIds: ownerSubjects(existing as OAuthClient),
       detail: {
         owner: ownerRef,
         ownerName: target.displayName,
@@ -979,10 +1027,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       },
     });
 
-    const updated = await clients().findOne(
-      { realmId: realm.realmId, clientId },
-      { projection: { _id: 0, clientSecretHash: 0 } },
-    );
-    return reply.send(view(updated as ClientRecord, caller));
+    const updated = await findClient({ realmId: realm.realmId, clientId });
+    return reply.send(view(updated as OAuthClient, caller));
   });
 }

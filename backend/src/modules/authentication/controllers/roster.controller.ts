@@ -138,13 +138,8 @@ export async function rosterController(fastify: FastifyInstance) {
     // The roles this client's screen offers. Read from the client record rather than passed in, so a
     // caller cannot widen its own roster by asking for more.
     const { client_id: clientId } = request.query as { client_id?: string };
-    const { CLIENT_COLLECTION } = await import('../../../shared/models/collections');
-    const client = clientId
-      ? await fastify.db.collection(CLIENT_COLLECTION).findOne(
-        { realmId: realm.realmId, clientId, status: 'active' },
-        { projection: { _id: 0, demoRoster: 1 } },
-      ) as { demoRoster?: string[] } | null
-      : null;
+    const { findOAuthClient } = await import('../../oauth/services/clientAuth.service');
+    const client = clientId ? await findOAuthClient(fastify.db, realm.realmId, clientId) : null;
     const offered = client?.demoRoster;
 
     // The role this screen should show the persona under: the one it offers, when it offers any of them.

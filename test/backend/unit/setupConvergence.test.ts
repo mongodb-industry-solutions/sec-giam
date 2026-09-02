@@ -5,7 +5,7 @@ import {
 } from '../../../backend/src/vendors/setup/createIndexes';
 import { verdictOf, ValidationCheck } from '../../../backend/src/vendors/setup/validateSetup';
 import {
-  collectionsWithRetiredFields, CLIENT_COLLECTION, CREDENTIAL_COLLECTION, AUDIT_COLLECTION,
+  collectionsWithRetiredFields, CREDENTIAL_COLLECTION, AUDIT_COLLECTION,
 } from '../../../backend/src/shared/models/collections';
 import { RETIRED_CLIENT_FIELDS } from '../../../backend/src/modules/oauth/models/client.model';
 import { retireDeclaredFields } from '../../../backend/src/vendors/seed/upsertSeed';
@@ -47,7 +47,7 @@ function fakeDb(collections: Record<string, Partial<FakeCollection>>) {
 }
 
 const CLIENT_PLAN = new Set(
-  plannedIndexes().filter((plan) => plan.collection === CLIENT_COLLECTION).map((plan) => plan.options.name),
+  plannedIndexes().filter((plan) => plan.collection === CREDENTIAL_COLLECTION).map((plan) => plan.options.name),
 );
 
 describe('index reconciliation', () => {
@@ -56,13 +56,14 @@ describe('index reconciliation', () => {
 
   it('calls an index the plan no longer declares obsolete', () => {
     // The real case: the owner index was renamed when its keys changed, since reusing a name with
-    // different keys errors on a database that was never reset.
+    // different keys errors on a database that was never reset. v40 renamed it a second time, to
+    // `realm_administrators`, when the registration became a credential.
     const stale: ExistingIndex = { name: 'realm_owner', key: { realmId: 1, 'owner.kind': 1 } };
     expect(classifyIndex(stale, CLIENT_PLAN, true)).toBe('obsolete');
   });
 
   it('calls a declared index and _id_ planned', () => {
-    expect(classifyIndex({ name: 'realm_owners', key: { realmId: 1 } }, CLIENT_PLAN, true)).toBe('planned');
+    expect(classifyIndex({ name: 'realm_administrators', key: { realmId: 1 } }, CLIENT_PLAN, true)).toBe('planned');
     expect(classifyIndex({ name: '_id_', key: { _id: 1 } }, CLIENT_PLAN, true)).toBe('planned');
   });
 
@@ -76,17 +77,17 @@ describe('index reconciliation', () => {
 
   it('drops the obsolete index and leaves the unrecognised one in place', async () => {
     const { db, state } = fakeDb({
-      [CLIENT_COLLECTION]: {
+      [CREDENTIAL_COLLECTION]: {
         indexes: [
           { name: '_id_', key: { _id: 1 } },
-          { name: 'realm_owners', key: { realmId: 1, 'owners.kind': 1, 'owners.ref': 1 } },
+          { name: 'realm_administrators', key: { realmId: 1, 'administrators.kind': 1, 'administrators.ref': 1 } },
           { name: 'realm_owner', key: { realmId: 1, 'owner.kind': 1 } },
           { name: '__safe_content__', key: { __safeContent__: 1 } },
         ],
       },
     });
     await reconcileIndexes(db as never);
-    expect(state[CLIENT_COLLECTION].dropped).toEqual(['realm_owner']);
+    expect(state[CREDENTIAL_COLLECTION].dropped).toEqual(['realm_owner']);
   });
 
   it('leaves a time series alone, since its default meta index belongs to the engine', async () => {
@@ -100,14 +101,14 @@ describe('index reconciliation', () => {
 
   it('never drops a collection or a document', async () => {
     const { db, state } = fakeDb({
-      [CLIENT_COLLECTION]: {
+      [CREDENTIAL_COLLECTION]: {
         indexes: [{ name: 'realm_owner', key: { realmId: 1, 'owner.kind': 1 } }],
         documents: [{ clientId: 'a' }],
       },
     });
     await reconcileIndexes(db as never);
-    expect(Object.keys(state)).toEqual([CLIENT_COLLECTION]);
-    expect(state[CLIENT_COLLECTION].documents).toHaveLength(1);
+    expect(Object.keys(state)).toEqual([CREDENTIAL_COLLECTION]);
+    expect(state[CREDENTIAL_COLLECTION].documents).toHaveLength(1);
   });
 });
 

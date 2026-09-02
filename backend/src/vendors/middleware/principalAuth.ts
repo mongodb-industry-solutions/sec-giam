@@ -4,8 +4,8 @@ import { JwtTokenFormat } from '../../modules/oauth/services/jwtTokenFormat';
 import { KeyRing } from '../../modules/keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../modules/keys/services/signingKeyStore';
 import { RealmService } from '../../modules/realm/services/realm.service';
-import { CLIENT_COLLECTION } from '../../shared/models/collections';
-import { ClientRecord } from '../../modules/oauth/models/client.model';
+import { findOAuthClient } from '../../modules/oauth/services/clientAuth.service';
+import { OAuthClient } from '../../modules/oauth/models/client.model';
 import { DecisionService } from '../../modules/authorization/services/decision.service';
 import { SecurityEventService } from '../../modules/audit/services/securityEvent.service';
 
@@ -71,9 +71,8 @@ export async function resolvePrincipal(
   if (!claims || typeof claims.sub !== 'string') return null;
 
   const clientId = typeof claims.client_id === 'string' ? claims.client_id : audience;
-  const client = await db.collection<ClientRecord>(CLIENT_COLLECTION)
-    .findOne({ realmId: home.realmId, clientId, status: 'active' }, { projection: { _id: 0, clientId: 1 } });
-  if (!client) return null;
+  const client = await findOAuthClient(db, home.realmId, clientId);
+  if (!client || client.status !== 'active') return null;
 
   const crossRealm = home.realmId !== target.realmId;
   if (crossRealm) {
