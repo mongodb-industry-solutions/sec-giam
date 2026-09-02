@@ -1,17 +1,21 @@
 import type { Binary } from 'mongodb';
-import { PRINCIPAL_COLLECTION, API_KEY_COLLECTION } from '../../shared/models/collections';
+import { PRINCIPAL_COLLECTION } from '../../shared/models/collections';
 import { config } from '../../config';
 
 // What GIAM encrypts at rest, under its OWN DEKs in its OWN vault.
 //
-// Deliberately narrow. A credential is already a one-way hash, so encrypting it buys nothing while
-// blocking the lookup that verifies it. What is encrypted is the personal data an identity record
-// holds and the API key hash, which is a bearer secret rather than a digest of a password.
+// Deliberately narrow: the personal data a principal record holds, and nothing else.
+//
+// v40 P3.3 DROPPED Queryable Encryption over the API key hash. Two reasons, and the second is the
+// one that decided it. It encrypted a one-way hash, which buys no confidentiality that the hash did
+// not already provide. And the API key merged into `credential`, so keeping the entry would have
+// made `credential` an encrypted collection: every client authentication would then carry
+// ESC/ECOC state on what is now one of the hottest lookups in the system, in exchange for
+// encrypting a digest. A credential is verified rather than looked up, so nothing is lost.
 export interface GiamDeks {
   identityEmail: Binary;
   identityPhone: Binary;
   identityName: Binary;
-  apiKeyHash: Binary;
 }
 
 // Deterministic alt-names, so a reseed finds the existing key instead of minting a second one.
@@ -19,7 +23,6 @@ export const DEK_ALT_NAMES = {
   identityEmail: 'DEK-giam-identity-email',
   identityPhone: 'DEK-giam-identity-phone',
   identityName: 'DEK-giam-identity-name',
-  apiKeyHash: 'DEK-giam-apikey-hash',
 } as const;
 
 /**
@@ -64,12 +67,6 @@ export function buildEncryptedFieldsMaps(deks: GiamDeks): Record<string, { field
         { keyId: deks.identityEmail, path: 'primaryEmail', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },
         { keyId: deks.identityPhone, path: 'primaryPhone', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },
         { keyId: deks.identityName, path: 'name.formatted', bsonType: 'string', queries: nameQueries },
-      ],
-    },
-    [API_KEY_COLLECTION]: {
-      // Equality over ciphertext: a presented key is located by its hash without decrypting the set.
-      fields: [
-        { keyId: deks.apiKeyHash, path: 'keyHash', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },
       ],
     },
   };

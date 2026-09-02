@@ -73,7 +73,6 @@ export async function provisionGiamDeks(client: MongoClient, reset = false): Pro
     identityEmail: await getOrCreate(DEK_ALT_NAMES.identityEmail),
     identityPhone: await getOrCreate(DEK_ALT_NAMES.identityPhone),
     identityName: await getOrCreate(DEK_ALT_NAMES.identityName),
-    apiKeyHash: await getOrCreate(DEK_ALT_NAMES.apiKeyHash),
   };
 }
 

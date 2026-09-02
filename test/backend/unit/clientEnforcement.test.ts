@@ -12,7 +12,9 @@ import {
 import { TokenIssuer } from '../../../backend/src/modules/oauth/services/tokenIssuer.service';
 import { enforcementFor } from '../../../backend/src/modules/realm/models/realm.model';
 import type { RealmRecord } from '../../../backend/src/modules/realm/models/realm.model';
-import type { ClientRecord } from '../../../backend/src/modules/oauth/models/client.model';
+import type { OAuthClient } from '../../../backend/src/modules/oauth/models/client.model';
+import { clientMetadata } from '../../../backend/src/modules/oauth/models/client.model';
+import type { CredentialRecord } from '../../../backend/src/modules/directory/models/credential.model';
 import { newMeta } from '../../../backend/src/shared/models/base.model';
 import { config } from '../../../backend/src/config';
 import type { KeyRing } from '../../../backend/src/modules/keys/services/keyRing.service';
@@ -47,12 +49,16 @@ function realmOf(mode?: RealmRecord['clientEnforcement']): RealmRecord {
   };
 }
 
-async function registeredClient(overrides: Partial<ClientRecord> = {}): Promise<ClientRecord> {
-  return {
-    realmId: 'realm-1',
-    tenantId: 'default',
+/**
+ * A registered client, as it is now STORED: a credential of type `oauth_client`.
+ *
+ * The registration and the secret live on the credential; the flat client the protocol code reads
+ * is projected from it. Building the stored shape here rather than the projected one is what makes
+ * this suite exercise the real read path instead of a convenient stand-in.
+ */
+async function registeredClient(overrides: Partial<OAuthClient> = {}): Promise<CredentialRecord> {
+  const flat: Partial<OAuthClient> = {
     clientId: 'orders-web',
-    clientSecretHash: await bcrypt.hash(KNOWN_SECRET, 4),
     clientName: 'Orders',
     clientType: 'confidential',
     redirectUris: ['https://app.example/callback'],
@@ -60,18 +66,44 @@ async function registeredClient(overrides: Partial<ClientRecord> = {}): Promise<
     scope: 'openid read:orders write:orders',
     requirePkce: false,
     tokenEndpointAuthMethod: 'client_secret_basic',
-    status: 'active',
-    meta: newMeta('Client'),
     ...overrides,
+  };
+  return {
+    realmId: 'realm-1',
+    tenantId: 'default',
+    credentialId: 'cred-orders-web',
+    subjectId: flat.clientId as string,
+    type: 'oauth_client',
+    ownerSubjectId: 'subject-1',
+    clientId: flat.clientId as string,
+    ...(overrides.clientSecretHash === undefined
+      ? { secretHash: await bcrypt.hash(KNOWN_SECRET, 4) }
+      : {}),
+    metadata: clientMetadata(flat),
+    status: (overrides.status ?? 'active') as CredentialRecord['status'],
+    assurance: { level: 'aal1', method: 'client_secret' },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    meta: newMeta('Credential'),
   };
 }
 
-/** A directory holding exactly the clients handed to it, and nothing else. */
-function dbOf(clients: ClientRecord[]): Db {
+/**
+ * A directory holding exactly the credentials handed to it, and nothing else.
+ *
+ * Serves `find`, because client authentication reads a LIST now: a rotation window has two active
+ * secrets for one clientId and either must be accepted.
+ */
+function dbOf(credentials: CredentialRecord[]): Db {
   return {
     collection: () => ({
-      findOne: async (filter: { clientId: string }) =>
-        clients.find((client) => client.clientId === filter.clientId) ?? null,
+      find: (filter: { clientId?: string }) => ({
+        toArray: async () => credentials.filter(
+          (credential) => !filter.clientId || credential.clientId === filter.clientId,
+        ),
+      }),
+      findOne: async (filter: { clientId?: string }) => credentials.find(
+        (credential) => !filter.clientId || credential.clientId === filter.clientId,
+      ) ?? null,
     }),
   } as unknown as Db;
 }

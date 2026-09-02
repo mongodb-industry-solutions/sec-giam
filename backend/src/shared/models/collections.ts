@@ -70,8 +70,6 @@ export { EVENTBUS_COLLECTION };
  * usable between P1 and P7, and each is deleted by the phase that absorbs it. If one survives past
  * its phase, that is an unmerged write path and P11.6 fails on it.
  */
-export const CLIENT_COLLECTION = 'client';                    // P3, into credential
-export const API_KEY_COLLECTION = 'apiKey';                   // P3, into credential
 export const TOOL_COLLECTION = 'tool';                        // P4, into resource
 export const MCP_SERVER_COLLECTION = 'mcpServer';             // P4, into resource
 export const RESOURCE_SERVER_COLLECTION = 'resourceServer';   // P4, into resource

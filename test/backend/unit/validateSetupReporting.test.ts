@@ -11,7 +11,7 @@ vi.mock('../../../backend/src/vendors/encryption/keyVault', () => ({
 
 import { validateSetup } from '../../../backend/src/vendors/setup/validateSetup';
 import {
-  CLIENT_COLLECTION, CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION,
+  CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION,
 } from '../../../backend/src/shared/models/collections';
 
 interface Fixture {
@@ -74,14 +74,14 @@ describe('validateSetup reports every condition', () => {
 
   it('names an index that is present and no longer declared', async () => {
     const { checks } = await run({
-      [CLIENT_COLLECTION]: {
+      [CREDENTIAL_COLLECTION]: {
         indexes: [
           { name: '_id_', key: { _id: 1 } },
           { name: 'realm_owner', key: { realmId: 1, 'owner.kind': 1 } },
         ],
       },
     });
-    const check = detailOf(checks, `${CLIENT_COLLECTION} carries no index the model dropped`);
+    const check = detailOf(checks, `${CREDENTIAL_COLLECTION} carries no index the model dropped`);
     expect(check?.ok).toBe(false);
     expect(check?.detail).toContain('realm_owner');
     expect(check?.severity).toBe('warning');
@@ -89,7 +89,7 @@ describe('validateSetup reports every condition', () => {
 
   it('leaves an index it cannot judge alone, and says so', async () => {
     const { checks } = await run({
-      [CLIENT_COLLECTION]: {
+      [CREDENTIAL_COLLECTION]: {
         indexes: [
           { name: '__safe_content__', key: { __safeContent__: 1 } },
           { name: 'hand_made', key: { $weird: 1 } },

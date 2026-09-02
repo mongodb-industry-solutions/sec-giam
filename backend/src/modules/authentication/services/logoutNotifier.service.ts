@@ -3,7 +3,7 @@ import { createHmac } from 'crypto';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { JwtTokenFormat } from '../../oauth/services/jwtTokenFormat';
-import { ClientRecord } from '../../oauth/models/client.model';
+import { OAuthClient } from '../../oauth/models/client.model';
 
 /**
  * Telling the other applications that a session ended.
@@ -55,7 +55,7 @@ export class LogoutNotifier {
    * token lifetime, which is short, and the revocation is recorded here regardless.
    */
   async notify(
-    clients: ClientRecord[],
+    clients: OAuthClient[],
     realm: { issuer: string; realmId: string },
     subjectId: string,
     sessionId: string,

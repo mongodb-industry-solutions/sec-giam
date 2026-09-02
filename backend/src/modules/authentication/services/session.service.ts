@@ -5,8 +5,8 @@ import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord, isLive } from '../models/session.model';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { TokenIssuer } from '../../oauth/services/tokenIssuer.service';
-import { ClientRecord } from '../../oauth/models/client.model';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
+import { OAuthClient } from '../../oauth/models/client.model';
+import { listOAuthClients } from '../../oauth/services/clientAuth.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 
 /**
@@ -143,7 +143,7 @@ export class SessionService {
     sessionId: string,
     reason: SessionRecord['terminationReason'],
     issuer: TokenIssuer,
-  ): Promise<{ terminated: boolean; revokedTokens: number; notify: ClientRecord[] }> {
+  ): Promise<{ terminated: boolean; revokedTokens: number; notify: OAuthClient[] }> {
     const session = await this.find(realmId, sessionId);
     if (!session || session.terminatedAt) {
       return { terminated: false, revokedTokens: 0, notify: [] };
@@ -177,10 +177,8 @@ export class SessionService {
     });
 
     const notify = session.clientIds.length > 0
-      ? await this.db
-        .collection<ClientRecord>(CLIENT_COLLECTION)
-        .find({ realmId, clientId: { $in: session.clientIds } }, { projection: { _id: 0 } })
-        .toArray()
+      ? (await listOAuthClients(this.db, realmId))
+        .filter((client) => session.clientIds.includes(client.clientId))
       : [];
 
     return { terminated: true, revokedTokens, notify };
@@ -197,10 +195,10 @@ export class SessionService {
     subjectId: string,
     reason: SessionRecord['terminationReason'],
     issuer: TokenIssuer,
-  ): Promise<{ sessions: number; revokedTokens: number; notify: ClientRecord[] }> {
+  ): Promise<{ sessions: number; revokedTokens: number; notify: OAuthClient[] }> {
     const live = await this.listFor(realmId, subjectId);
     let revokedTokens = 0;
-    const notify = new Map<string, ClientRecord>();
+    const notify = new Map<string, OAuthClient>();
 
     for (const session of live) {
       const outcome = await this.terminate(realmId, session.sessionId, reason, issuer);

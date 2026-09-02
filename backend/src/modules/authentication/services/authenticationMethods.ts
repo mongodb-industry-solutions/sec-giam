@@ -3,8 +3,8 @@ import * as bcrypt from 'bcryptjs';
 import type { AuthenticationMethod, PrincipalResolution } from '../../../shared/ports';
 import { credentialStores } from '../../../shared/ports';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
-import { ClientRecord } from '../../oauth/models/client.model';
+import { findOAuthClient } from '../../oauth/services/clientAuth.service';
+import { OAuthClient } from '../../oauth/models/client.model';
 import { canAuthenticate } from '../../directory/models/principal.model';
 
 /**
@@ -124,9 +124,7 @@ export const clientSecretMethod: AuthenticationMethod = {
     const clientSecret = String(context.presented.clientSecret ?? '');
     if (!clientId || !clientSecret) return null;
 
-    const client = await boundDb
-      .collection<ClientRecord>(CLIENT_COLLECTION)
-      .findOne({ realmId: context.realmId, clientId }, { projection: { _id: 0 } });
+    const client = await findOAuthClient(boundDb, context.realmId, clientId);
     if (!client || client.status !== 'active' || !client.clientSecretHash) return null;
     if (!await bcrypt.compare(clientSecret, client.clientSecretHash)) return null;
 

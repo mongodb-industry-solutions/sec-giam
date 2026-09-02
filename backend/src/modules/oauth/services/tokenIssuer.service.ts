@@ -4,7 +4,7 @@ import { TOKEN_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION } from '
 import { DecisionService } from '../../authorization/services/decision.service';
 import { TokenRecord, ActorClaim } from '../models/token.model';
 import { RealmRecord } from '../../realm/models/realm.model';
-import { ClientRecord } from '../models/client.model';
+import { OAuthClient } from '../models/client.model';
 import { JwtTokenFormat } from './jwtTokenFormat';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { newMeta } from '../../../shared/models/base.model';
@@ -15,7 +15,7 @@ const AUTHORITY_RESOURCE_SERVER = 'authority';
 
 export interface IssueTokensInput {
   realm: RealmRecord;
-  client: ClientRecord;
+  client: OAuthClient;
   subjectId?: string;
   scope: string[];
   sessionId?: string;
@@ -77,8 +77,8 @@ export class TokenIssuer {
    * The authority's own surface is excluded deliberately. A token for a business API must not also
    * open the administrative one just because both live in the same realm.
    */
-  private async audienceFor(realm: RealmRecord, client: ClientRecord): Promise<string[]> {
-    const declared = (client as ClientRecord & { audience?: string[] }).audience;
+  private async audienceFor(realm: RealmRecord, client: OAuthClient): Promise<string[]> {
+    const declared = (client as OAuthClient & { audience?: string[] }).audience;
     if (declared?.length) return declared;
 
     const servers = await this.db
@@ -121,7 +121,7 @@ export class TokenIssuer {
     return realms.map((entry) => ({ id: entry.realmId, name: entry.name }));
   }
 
-  private ttl(realm: RealmRecord, client: ClientRecord): { access: number; refresh: number } {
+  private ttl(realm: RealmRecord, client: OAuthClient): { access: number; refresh: number } {
     return {
       access: client.tokenPolicy?.accessTokenTtlSeconds ?? realm.tokenPolicy.accessTokenTtlSeconds,
       refresh: client.tokenPolicy?.refreshTokenTtlSeconds ?? realm.tokenPolicy.refreshTokenTtlSeconds,
@@ -130,7 +130,7 @@ export class TokenIssuer {
 
   private async record(
     realm: RealmRecord,
-    client: ClientRecord,
+    client: OAuthClient,
     input: { jti: string; type: TokenRecord['type']; subjectId?: string; scope: string; expiresAt: Date; sessionId?: string; actor?: ActorClaim },
   ): Promise<void> {
     await this.tokens.insertOne({

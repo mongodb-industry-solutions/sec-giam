@@ -3,16 +3,18 @@ import * as bcrypt from 'bcryptjs';
 import { v5 as uuidv5 } from 'uuid';
 import { clientSecretFor } from '@leafypay/platform-links';
 import {
-  CLIENT_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION,
+  CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION,
   PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
 } from '../../shared/models/collections';
-import { ClientRecord } from '../../modules/oauth/models/client.model';
+import { OAuthClient } from '../../modules/oauth/models/client.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import {
   RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
 } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
+import { CredentialRecord } from '../../modules/directory/models/credential.model';
+import { clientMetadata } from '../../modules/oauth/models/client.model';
 import { readSeedFile } from './readSeedFile';
 
 /**
@@ -35,16 +37,16 @@ interface ClientFixture {
   realm: string;
   clientId: string;
   clientName: string;
-  clientType: ClientRecord['clientType'];
+  clientType: OAuthClient['clientType'];
   redirectUris: string[];
   postLogoutRedirectUris?: string[];
-  grantTypes: ClientRecord['grantTypes'];
+  grantTypes: OAuthClient['grantTypes'];
   scope: string;
   requirePkce: boolean;
-  tokenEndpointAuthMethod: ClientRecord['tokenEndpointAuthMethod'];
-  applicationType?: ClientRecord['applicationType'];
-  status: ClientRecord['status'];
-  backchannel?: ClientRecord['backchannel'];
+  tokenEndpointAuthMethod: OAuthClient['tokenEndpointAuthMethod'];
+  applicationType?: OAuthClient['applicationType'];
+  status: OAuthClient['status'];
+  backchannel?: OAuthClient['backchannel'];
   demoRoster?: string[];
   /** Only the authority's own console. Absent means the client asks for consent. */
   firstParty?: boolean;
@@ -70,7 +72,7 @@ export async function seedClients(db: Db): Promise<void> {
     .toArray() as unknown as Array<{ realmId: string; name: string }>;
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
 
-  const clients = db.collection<ClientRecord>(CLIENT_COLLECTION);
+  const clients = db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
   const identities = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
 
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
@@ -89,36 +91,58 @@ export async function seedClients(db: Db): Promise<void> {
       ? clientSecretFor(fixture.clientId)
       : undefined;
 
-    await upsertSeed<ClientRecord>(
+    /**
+     * A client registration is a credential of type `oauth_client`.
+     *
+     * The hash goes in ON INSERT ONLY, never as a field the seeder owns and compares. bcrypt salts
+     * randomly, so a freshly computed hash never equals the stored one and treating it as owned made
+     * every reseed rewrite every client. The secret itself is derived from the client id, so
+     * re-hashing buys nothing: what matters is that the stored hash verifies.
+     */
+    await upsertSeed<CredentialRecord>(
       clients,
-      { realmId, clientId: fixture.clientId },
+      { realmId, clientId: fixture.clientId, type: 'oauth_client' },
       {
-        clientName: fixture.clientName,
-        clientType: fixture.clientType,
-        // Derived from the client id, then hashed. The fixture says WHETHER a client is confidential
-        // and never what its secret is: a literal in a checked-in file is indistinguishable from a
-        // leaked credential, to a scanner and to a reader. What is STORED is the hash either way.
-        ...(clientSecret
-          ? {
-            clientSecretHash: await bcrypt.hash(clientSecret, 12),
-            clientSecretPrefix: clientSecret.slice(0, 8),
-          }
-          : {}),
-        redirectUris: fixture.redirectUris,
-        ...(fixture.postLogoutRedirectUris ? { postLogoutRedirectUris: fixture.postLogoutRedirectUris } : {}),
-        grantTypes: fixture.grantTypes,
-        scope: fixture.scope,
-        requirePkce: fixture.requirePkce,
-        tokenEndpointAuthMethod: fixture.tokenEndpointAuthMethod,
-        ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
-        ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
-        ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),
-        ...(fixture.firstParty ? { firstParty: fixture.firstParty } : {}),
-        ...(fixture.owners?.length ? { owners: fixture.owners } : {}),
+        // Owned and compared: the registration metadata, which a fixture edit should propagate.
+        metadata: clientMetadata({
+          clientName: fixture.clientName,
+          clientType: fixture.clientType,
+          redirectUris: fixture.redirectUris,
+          ...(fixture.postLogoutRedirectUris ? { postLogoutRedirectUris: fixture.postLogoutRedirectUris } : {}),
+          grantTypes: fixture.grantTypes as OAuthClient['grantTypes'],
+          scope: fixture.scope,
+          requirePkce: fixture.requirePkce,
+          tokenEndpointAuthMethod: fixture.tokenEndpointAuthMethod,
+          ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
+          ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
+          ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),
+          ...(fixture.firstParty ? { firstParty: fixture.firstParty } : {}),
+        }),
+        ...(fixture.owners?.length ? { administrators: fixture.owners } : {}),
         status: fixture.status,
       },
-      { realmId, tenantId: DEFAULT_TENANT_ID, clientId: fixture.clientId },
-      'Client',
+      {
+        realmId,
+        tenantId: DEFAULT_TENANT_ID,
+        credentialId: uuidv5(`oauth-client:${realmId}:${fixture.clientId}`, CLIENT_NAMESPACE),
+        subjectId: fixture.clientId,
+        type: 'oauth_client',
+        clientId: fixture.clientId,
+        // The principal the client acts as. A service client is its own subject.
+        ownerSubjectId: fixture.clientId,
+        // The fixture says WHETHER a client is confidential and never what its secret is: a literal
+        // in a checked-in file is indistinguishable from a leaked credential, to a scanner and to a
+        // reader. What is STORED is the hash either way.
+        ...(clientSecret
+          ? {
+            secretHash: await bcrypt.hash(clientSecret, 12),
+            secretPrefix: clientSecret.slice(0, 8),
+          }
+          : {}),
+        assurance: { level: 'aal1', method: 'client_secret' },
+        createdAt: SEED_GRANTED_AT,
+      },
+      'Credential',
     );
     clientCount += 1;
 

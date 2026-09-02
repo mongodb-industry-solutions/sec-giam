@@ -1,8 +1,9 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
-import { GRANT_COLLECTION, CLIENT_COLLECTION } from '../../../shared/models/collections';
+import { GRANT_COLLECTION } from '../../../shared/models/collections';
+import { listOAuthClients } from '../../oauth/services/clientAuth.service';
 import { GrantRecord, grantedScopes, covers } from '../models/grant.model';
-import { ClientRecord } from '../../oauth/models/client.model';
+import { OAuthClient } from '../../oauth/models/client.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
@@ -54,9 +55,8 @@ export class GrantService {
   /** The client's display name and logo travel with the grant, so a caller needs no second read. */
   private async decorate(realmId: string, records: GrantRecord[]): Promise<GrantView[]> {
     const clientIds = [...new Set(records.map((grant) => grant.clientId))];
-    const clients = await this.db.collection<ClientRecord>(CLIENT_COLLECTION)
-      .find({ realmId, clientId: { $in: clientIds } }, { projection: { _id: 0, clientId: 1, clientName: 1, logoUri: 1 } })
-      .toArray() as unknown as Array<Pick<ClientRecord, 'clientId' | 'clientName' | 'logoUri'>>;
+    const clients = (await listOAuthClients(this.db, realmId))
+      .filter((client) => clientIds.includes(client.clientId));
     const byId = new Map(clients.map((client) => [client.clientId, client]));
 
     return records.map((grant) => {
@@ -117,7 +117,7 @@ export class GrantService {
   async consent(
     realm: RealmRecord,
     subjectId: string,
-    client: Pick<ClientRecord, 'clientId' | 'clientName'>,
+    client: Pick<OAuthClient, 'clientId' | 'clientName'>,
     scopes: string[],
   ): Promise<void> {
     if (scopes.length === 0) return;

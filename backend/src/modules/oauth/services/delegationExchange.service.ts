@@ -2,7 +2,7 @@ import { Db } from 'mongodb';
 import { DELEGATION_COLLECTION } from '../../../shared/models/collections';
 import { DelegationRecord, isExercisable, narrowScope, chainDepth } from '../../consent/models/delegation.model';
 import { RealmRecord } from '../../realm/models/realm.model';
-import { ClientRecord } from '../models/client.model';
+import { OAuthClient } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { ActorClaim } from '../models/token.model';
@@ -58,7 +58,7 @@ export class DelegationExchangeService {
    */
   async authorizeHop(
     realm: RealmRecord,
-    client: ClientRecord,
+    client: OAuthClient,
     presented: { subjectId: string; scope: string[]; actor?: ActorClaim },
     requested: { scope: string[]; transactionId?: string },
   ): Promise<DelegationOutcome | DelegationRefusal> {

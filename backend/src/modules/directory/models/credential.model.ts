@@ -1,4 +1,4 @@
-import { Meta, Scoped } from '../../../shared/models/base.model';
+import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
 
 /**
  * One collection for every authentication factor, discriminated by type.
@@ -9,7 +9,26 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  * accident: the two are simply not in the same document.
  */
 
-export type CredentialType = 'password' | 'public_key' | 'client_secret' | 'totp' | 'recovery_code';
+/**
+ * Every kind of thing that identifies a principal.
+ *
+ * `oauth_client` is here because a `client_id` plus a `client_secret` is structurally a username
+ * plus a password: it authenticates a party to this server. Its redirect URIs, grant types and
+ * scopes are metadata OF that credential rather than a separate kind of record, and treating it as
+ * one means disabling an application is the same operation as revoking an API key instead of a
+ * special case with its own code path.
+ */
+export type CredentialType =
+  | 'password'
+  | 'public_key'
+  | 'client_secret'
+  | 'totp'
+  | 'recovery_code'
+  | 'api_key'
+  | 'oauth_client';
+
+/** The most active `oauth_client` credentials one `clientId` may have at once. */
+export const MAX_ACTIVE_CLIENT_SECRETS = 2;
 
 /** NIST SP 800-63 authenticator assurance. Recorded per credential, since it is a property of one. */
 export interface Assurance {
@@ -18,12 +37,85 @@ export interface Assurance {
   verifiedAt?: string;
 }
 
+/**
+ * What an `oauth_client` credential carries beyond the credential fields themselves.
+ *
+ * Type specific and unindexed: nothing here is ever a query predicate, because a client is always
+ * resolved by `clientId` and then read whole. Keeping it in one sub document is what stops the
+ * credential collection growing a column per application type.
+ */
+export interface OAuthClientMetadata {
+  clientName: string;
+  clientType: 'confidential' | 'public';
+  redirectUris: string[];
+  postLogoutRedirectUris?: string[];
+  grantTypes: string[];
+  scopes: string[];
+  requirePkce: boolean;
+  tokenEndpointAuthMethod:
+    | 'client_secret_basic' | 'client_secret_post' | 'private_key_jwt' | 'tls_client_auth' | 'none';
+  applicationType?: 'web' | 'native' | 'service';
+  tokenPolicy?: Record<string, unknown>;
+  logoUri?: string;
+  clientUri?: string;
+  demoRoster?: string[];
+  firstParty?: boolean;
+  backchannel?: Record<string, unknown>;
+  /** RFC 8705: the certificate a client is bound to, when it authenticates with one. */
+  mtls?: { certificateThumbprint?: string };
+  claimMappings?: Record<string, string>;
+}
+
 export interface CredentialRecord extends Scoped {
   credentialId: string;
   subjectId: string;
   type: CredentialType;
 
-  /** bcrypt, for `password` and `client_secret`. Salted, so it is verified rather than looked up. */
+  /**
+   * The principal this credential ACTS AS, and which answers for what it does.
+   *
+   * Required, and flat: it always terminates at a principal. Making an application a principal
+   * instead would allow a principal to own a principal, which is recursive, and every ownership
+   * query would then have to decide how deep to look.
+   *
+   * This is the `sub` of a `client_credentials` token, so it must be a principal of kind `service`
+   * or `workload`. That is better than an abstract application entity, not a workaround: a service
+   * token is then attributable to a real subject with a lifecycle and an owner.
+   *
+   * Deliberately SINGULAR and deliberately not the same thing as `administrators` below. A token has
+   * exactly one subject, so the identity a credential acts as cannot be a set; who may administer
+   * the registration can be, and conflating the two is what makes the question look unanswerable.
+   */
+  ownerSubjectId: string;
+
+  /**
+   * Who may administer this credential. A SET, because two people sharing one integration is normal.
+   *
+   * Every administrator holds the same authority: read, edit, rotate the secret, withdraw. There is
+   * no primary, because a hierarchy raises a question this authority cannot answer, namely what
+   * happens to the application when the primary leaves. It must never reach zero, or the credential
+   * becomes unadministrable and only an operator credential can touch it again.
+   *
+   * Still flat and still terminating at a principal, so the ADR's structural guarantee holds: this
+   * widens WHO MANAGES it, never what it is attributable to.
+   */
+  administrators?: OwnerRef[];
+
+  /** The authentication path this credential belongs to, when it belongs to one. */
+  domainId?: string;
+
+  /** The wire identifier for an `oauth_client` or an `api_key`. Not unique on its own: see below. */
+  clientId?: string;
+  /**
+   * The leading, non-secret part of a key, so an operator can tell two apart in a list without
+   * either being recoverable from what they are looking at.
+   */
+  secretPrefix?: string;
+
+  /** Type-specific, unindexed. Present for `oauth_client`. */
+  metadata?: OAuthClientMetadata;
+
+  /** bcrypt, for `password`, `client_secret`, `api_key` and `oauth_client`. Salted, so it is verified rather than looked up. */
   secretHash?: string;
 
   /** For `public_key`: what the authenticator registered. Public material only, by definition. */
@@ -38,7 +130,12 @@ export interface CredentialRecord extends Scoped {
   signCount?: number;
 
   label?: string;
-  status: 'active' | 'revoked';
+  /**
+   * `suspended` is reversible and `revoked` is terminal, and the difference matters: suspending an
+   * application is an operational decision somebody may undo, while revoking one is a statement that
+   * the credential must never work again. Collapsing them would make an undo look like a new grant.
+   */
+  status: 'active' | 'suspended' | 'revoked';
   assurance: Assurance;
 
   createdAt: string;
@@ -48,7 +145,26 @@ export interface CredentialRecord extends Scoped {
 }
 
 export function isUsable(credential: Pick<CredentialRecord, 'status' | 'expiresAt'>, now = new Date()): boolean {
+  // Only `active` is usable. Suspended and revoked both refuse; the distinction is about whether the
+  // refusal can be lifted, not about whether it applies.
   if (credential.status !== 'active') return false;
   // An expiry that has passed is a refusal, not a warning: a credential is either current or it is not.
   return !credential.expiresAt || Date.parse(credential.expiresAt) > now.getTime();
+}
+
+/**
+ * Why `{realmId, clientId}` is NOT uniquely indexed.
+ *
+ * Rotating a client secret with an overlap window means two credentials for one `clientId` are
+ * active at the same time, each with its own hash, so authentication accepts either while the
+ * deployment moves from the old secret to the new one. A unique index on the pair would make the
+ * overlap impossible and rotation would be back to a single field that has to be swapped
+ * instantaneously, which is the limitation this change exists to remove.
+ *
+ * Uniqueness still holds where it means something: `credentialId` is globally unique, and the
+ * number of concurrently active secrets per `clientId` is capped here rather than by an index,
+ * because the rule is "at most two" and an index can only express "exactly one".
+ */
+export function withinActiveSecretCap(activeCount: number): boolean {
+  return activeCount < MAX_ACTIVE_CLIENT_SECRETS;
 }

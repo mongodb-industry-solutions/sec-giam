@@ -8,7 +8,7 @@ import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { AUTH_REQUEST_COLLECTION } from '../../../shared/models/collections';
 import { AuthRequestRecord, isRedeemable } from '../models/authRequest.model';
-import { scopesOf, ClientRecord } from '../models/client.model';
+import { scopesOf, OAuthClient } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { BackchannelService, isFailure, BACKCHANNEL_GRANT } from '../../authentication/services/backchannel.service';
 import { TokenExchangeService, isRefusal, TOKEN_EXCHANGE_GRANT } from '../services/tokenExchange.service';
@@ -47,7 +47,7 @@ export async function tokenController(fastify: FastifyInstance) {
     realm: RealmRecord,
     input: {
       grantType: string;
-      client: ClientRecord;
+      client: OAuthClient;
       subjectId?: string;
       scope: string[];
       onBehalf?: boolean;
@@ -222,22 +222,47 @@ export async function tokenController(fastify: FastifyInstance) {
       const invalid = requested.filter((scope) => !allowed.includes(scope));
       if (invalid.length > 0) return refuse(400, 'invalid_scope', `not permitted: ${invalid.join(' ')}`);
 
+      /**
+       * The `sub` is the principal the registration ACTS AS, and it must be a real one.
+       *
+       * An application is not a principal here, deliberately: that would make a principal able to
+       * own a principal, which is recursive, and every ownership query would have to decide how deep
+       * to look. So the grant issues a token whose subject is the OWNING principal, of kind
+       * `service` or `workload`. That is better than the alternative rather than a workaround, since
+       * a service token is then attributable to a subject with a lifecycle and an owner instead of
+       * to an abstract application that answers for nothing.
+       *
+       * Refused when the owner is neither kind, because a token issued as a person for a machine
+       * grant is an attribution nobody could defend afterwards.
+       */
+      const owner = await new DirectoryService(fastify.db).findBySubjectId(client.clientId);
+      if (!owner) {
+        return refuse(400, 'invalid_client', 'this registration names no principal to act as');
+      }
+      if (owner.kind !== 'service' && owner.kind !== 'workload') {
+        return refuse(
+          400,
+          'unauthorized_client',
+          'client_credentials issues a token as the owning principal, which must be a service or a workload',
+        );
+      }
+
       // A machine principal's permissions are resolved exactly as a person's are, from the roles
-      // assigned to it. That is the one-pipeline rule at the authorization step: a service identity
-      // is not a special case that skips the decision point.
+      // it holds. That is the one-pipeline rule at the authorization step: a service identity is not
+      // a special case that skips the decision point.
       const machine = await new DecisionService(fastify.db)
-        .effectivePermissions(realm.realmId, client.clientId, client.clientId);
+        .effectivePermissions(realm.realmId, owner.subjectId, client.clientId);
 
       const scope = requested.length > 0 ? requested : allowed;
       const tokens = await issuer.issue({
         realm,
         client,
-        subjectId: client.clientId,
+        subjectId: owner.subjectId,
         scope,
         permissions: machine.permissions,
         roles: machine.roles,
       });
-      recordIssued(realm, { grantType, client, subjectId: client.clientId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: owner.subjectId, scope, correlationId, ipHash });
       return reply.send(tokens);
     }
 

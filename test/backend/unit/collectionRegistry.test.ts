@@ -90,20 +90,14 @@ describe('v39 P1.1: the collection registry matches the data model', () => {
       identityEmail: placeholder,
       identityPhone: placeholder,
       identityName: placeholder,
-      apiKeyHash: placeholder,
     })).sort();
     const marked = encryptedCollections().map((spec) => spec.name).sort();
     // A collection marked encrypted with no map would be created plain, and nothing at runtime would
     // complain: the field would simply be stored in the clear. So every marked collection must be
-    // mapped. The converse is allowed only while a collection is mid-absorption: apiKey still has a
-    // map until P3 folds it into credential and drops the entry, because encrypting a one-way hash
-    // buys no control and would make credential an encrypted collection on its hot lookup path.
-    for (const name of marked) {
-      expect(mapped, `${name} is marked encrypted but has no encryptedFields map`).toContain(name);
-    }
-    const transitional = ['apiKey'];
-    const unexpected = mapped.filter((n) => !marked.includes(n) && !transitional.includes(n));
-    expect(unexpected, `mapped but not marked encrypted: ${unexpected.join(', ')}`).toEqual([]);
+    // mapped, and nothing else may be. P3.3 dropped the apiKey entry rather than carrying it onto
+    // credential: it encrypted a one-way hash, and keeping it would have made credential an
+    // encrypted collection on what is now one of the hottest lookups in the system.
+    expect(mapped).toEqual(marked);
   });
 
   it('marks nothing encrypted whose only sensitive value is already a one-way hash', () => {
