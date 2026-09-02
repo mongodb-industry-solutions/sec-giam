@@ -78,22 +78,66 @@ RFC 9068, the JWT profile. Signed **RS256**.
 | `typ` | `at+jwt` in the header, so an ID token cannot be presented as an access token |
 | `scope` | Space-delimited, per RFC 6749 |
 
-### The one non-standard member: `permissions`
+### The two non-standard members: `roles` and `permissions`
+
+**v40 CHANGED THIS, and it is a breaking change for every verifier. Read the whole section.**
+
+A token carries `roles` by DEFAULT and `permissions` only when the client asked to narrow:
 
 ```json
-"permissions": [
-  { "resource": "transactions", "action": "view" },
-  { "resource": "cards", "action": "manage" }
-]
+"roles": ["level1_analyst", "customer"]
 ```
 
-Entries are drawn from the catalog the application itself registered (§5). No standard defines this
-claim, and that is stated rather than dressed up: OAuth scopes describe what a CLIENT was authorised
-to request, and this describes what the PRINCIPAL may do at this resource server. Conflating the two
-is a common and expensive mistake, because a client's scope is not a person's authority.
+```json
+"permissions": ["transactions:view", "cards:manage"]
+```
 
-An application receiving a token with no `permissions` claim **denies everything**. An absent claim
-is not an unrestricted one.
+Two changes from v39, and both matter to a verifier:
+
+1. **A permission is a STRING, `resource:action`**, not an object with two keys. It is the same
+   string on a role, on a policy and in a token, so there is one form and nothing to convert. The
+   old `{ "resource": "...", "action": "..." }` shape is gone.
+2. **`permissions` is ABSENT unless the client requested specific ones.** A JWT travels in an HTTP
+   header and proxies commonly cut around 8 KB; a token carrying three hundred expanded permissions
+   fails intermittently in production depending on which proxy the request crossed. Three roles,
+   expanded by the verifier, is the only form that scales.
+
+#### What a verifier must do
+
+Read `roles`, and expand them against the published catalog:
+
+```
+GET ${authority-origin}/realms/${realm}/permissions
+{ "catalogVersion": 3,
+  "roles":       [ { "name": "level1_analyst", "permissions": ["transactions:view"] } ],
+  "permissions": [ { "permission": "transactions:view", "resource": "transactions", ... } ] }
+```
+
+Cache it against `catalogVersion`, which bumps whenever any resource catalog changes. Or call the
+decision endpoint per request, which is authoritative and costs a round trip. Either is correct; the
+choice belongs to the resource server, per operation.
+
+A client that wants a narrower token asks for it, space-delimited, at the token endpoint:
+
+```
+POST /realms/${realm}/protocol/openid-connect/token
+grant_type=...&permissions=transactions%3Aview
+```
+
+Requested permissions are **intersected** with what the subject's roles grant. A permission the
+subject does not hold is dropped and the drop is recorded; asking can only ever narrow. That is what
+makes it safe for a client to ask at all, and it is why a wildcard request is refused outright.
+
+#### Absence still means deny
+
+An application receiving a token with **neither** `roles` nor `permissions` **denies everything**.
+An absent claim is not an unrestricted one. What changed is only which claim carries the authority
+by default, never the direction of the default itself.
+
+No standard defines either claim, and that is stated rather than dressed up: OAuth scopes describe
+what a CLIENT was authorised to request, and these describe what the PRINCIPAL may do at this
+resource server. Conflating the two is a common and expensive mistake, because a client's scope is
+not a person's authority.
 
 ### Optional members the application will use if present
 
@@ -152,7 +196,7 @@ One call, at boot:
 
 ```
 PUT ${authority-origin}/admin/resource-servers/${name}/permissions
-{ "realm": "...", "audience": "...", "permissionCatalogVersion": "1", "permissions": [ ... ] }
+{ "realm": "...", "audience": "...", "catalogVersion": 1, "permissions": [ ... ] }
 ```
 
 The catalog ships in the application's own code, because only the code containing a guard can say a

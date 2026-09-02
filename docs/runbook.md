@@ -246,3 +246,31 @@ curl -s -H "Authorization: Bearer $GIAM_ADMIN_TOKEN" \
 
 `status: "degraded"` means **serving, with a stated weakness**. It does not mean broken. Read
 `findings[]`: each carries a code you can alert on, the exact risk, and the remedy.
+
+### What `--reset` does now, and why it is not just a convenience
+
+`--reset` drops and recreates every collection the registry names, AND drops every collection it no
+longer names, including the driver's encrypted-state collections whose parent is gone.
+
+That second half was added in v40 because without it a reset was not a reset. A collection the model
+had renamed away survived every one, and its `encryptedFields` still referenced data encryption keys
+the rebuilt vault no longer held. Validation then reported a stale key on a collection nothing
+reads, and the advice it gave, "rebuild with `--reset`", could never fix it, because the reset was
+exactly what skipped it.
+
+Guarded to `--reset` only. An ordinary `setup:db` run removes nothing.
+
+**A reseed is idempotent.** Running `setup:seed` twice reports zero created and zero updated the
+second time. If it reports updates on an unchanged fixture, something in a seeder is writing a
+value that differs per run: a wall clock, or a freshly salted hash compared as if it were owned
+data. Both of those were real and both were fixed in v40.
+
+### The access token lifetime IS the revocation objective
+
+Five minutes, by default, per realm. An access token is verified against the published key set
+without touching the database, so revoking a session cannot reach one already issued: the worst case
+propagation is exactly this lifetime. Shortening it shortens the exposure and costs more refreshes;
+lengthening it does the reverse. Nothing else about revocation changes that trade.
+
+For a resource server that needs to hear sooner, subscribe it to the signal stream on its `resource`
+record, or poll `GET /realms/:realm/signals?since=<instant>`. Both carry the same events.
