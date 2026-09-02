@@ -118,7 +118,19 @@ export async function rosterController(fastify: FastifyInstance) {
       .toArray() as unknown as Array<{ roleId: string; name: string }>;
 
     const roleNameById = new Map(roles.map((role) => [role.roleId, role.name]));
-    const roleBySubject = new Map(assignments.map((a) => [a.subjectId, roleNameById.get(a.roleId)]));
+
+    // A persona can hold more than one role: the seed appends the realm administrator to whoever already
+    // administers the realm. Collecting all of them, rather than keeping whichever the driver returned
+    // last, is what stops those personas from being grouped under a role their screen never offers and
+    // then filtered out of their own login list.
+    const rolesBySubject = new Map<string, string[]>();
+    for (const assignment of assignments) {
+      const name = roleNameById.get(assignment.roleId);
+      if (!name) continue;
+      const held = rolesBySubject.get(assignment.subjectId);
+      if (held) held.push(name);
+      else rolesBySubject.set(assignment.subjectId, [name]);
+    }
 
     // The roles this client's screen offers. Read from the client record rather than passed in, so a
     // caller cannot widen its own roster by asking for more.
@@ -131,6 +143,12 @@ export async function rosterController(fastify: FastifyInstance) {
       ) as { demoRoster?: string[] } | null
       : null;
     const offered = client?.demoRoster;
+
+    // The role this screen should show the persona under: the one it offers, when it offers any of them.
+    const roleFor = (subjectId: string): string | undefined => {
+      const held = rolesBySubject.get(subjectId) ?? [];
+      return (offered && held.find((role) => offered.includes(role))) ?? held[0];
+    };
 
     return reply.send({
       realm: realm.name,
@@ -151,14 +169,14 @@ export async function rosterController(fastify: FastifyInstance) {
         // behaviour a realm with no application-specific screen should have.
         .filter((identity) => {
           if (!offered) return true;
-          const role = roleBySubject.get(identity.subjectId);
+          const role = roleFor(identity.subjectId);
           return Boolean(role && offered.includes(role));
         })
         .map((identity) => ({
           subjectId: identity.subjectId,
           userName: identity.userName,
           ...(toScimEmails(identity)[0] ? { email: toScimEmails(identity)[0].value } : {}),
-          ...(roleBySubject.get(identity.subjectId) ? { role: roleBySubject.get(identity.subjectId) as string } : {}),
+          ...(roleFor(identity.subjectId) ? { role: roleFor(identity.subjectId) as string } : {}),
           ...(identity.demoNote ? { demoNote: identity.demoNote } : {}),
         })),
     });

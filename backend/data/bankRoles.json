@@ -7,14 +7,16 @@
     "description": "Day-to-day banking operations: account holders, accounts, movements and the cards this bank issued.",
     "scopeKind": "all",
     "builtin": true,
-    "sodRationale": "Operates cards without being able to disclose one. Authority to administer a card is deliberately not authority to read its number, which is why cardData is a separate resource from issuedCards and why this role holds the second and not the first.",
+    "sodRationale": "Operates cards without being able to disclose one. Authority to administer a card is deliberately not authority to read its number, which is why cardData is a separate resource from issuedCards and why this role holds the second and not the first. It may disclose an account number and a holder's contact details, which is personal data under the privacy rules rather than cardholder data, and a different regime from the card number it cannot read.",
     "permissions": {
       "accountHolders": [
         "view",
+        "viewSensitive",
         "manage"
       ],
       "accounts": [
         "view",
+        "viewSensitive",
         "manage"
       ],
       "movements": [
@@ -64,7 +66,14 @@
       "cardData": [
         "viewSensitive"
       ]
-    }
+    },
+    "denialRationale": [
+      {
+        "resource": "accounts",
+        "action": "viewSensitive",
+        "reason": "Holding the one authority that reads a card number is reason to hold no other disclosure. The account number behind the card is servicing and investigation data, and this role does neither."
+      }
+    ]
   },
   {
     "realm": "bankcore",
@@ -74,13 +83,15 @@
     "description": "Read-only oversight across the bank, including account-access consents and the request trail.",
     "scopeKind": "all",
     "builtin": true,
-    "sodRationale": "Read-only is the whole role. Someone who can change what they oversee cannot attest to it, so no permission here grants a mutation and none may be added without ending the role's independence.",
+    "sodRationale": "Read-only is the whole role. Someone who can change what they oversee cannot attest to it, so no permission here grants a mutation and none may be added without ending the role's independence. Disclosing an account number or a holder's contact details is a read, and an investigation that cannot resolve which account a movement landed in is not an investigation.",
     "permissions": {
       "accountHolders": [
-        "view"
+        "view",
+        "viewSensitive"
       ],
       "accounts": [
-        "view"
+        "view",
+        "viewSensitive"
       ],
       "movements": [
         "view"
@@ -293,6 +304,11 @@
         "resource": "cardData",
         "action": "viewSensitive",
         "reason": "An account holder sees the card they hold, not its stored number. The number is disclosed through the card officer's audited path, not read from a self-service screen."
+      },
+      {
+        "resource": "accounts",
+        "action": "viewSensitive",
+        "reason": "Their own account number reaches them through their statement, which is a banking product, not through a staff disclosure route whose audit row means an employee revealed somebody's data."
       }
     ]
   }
