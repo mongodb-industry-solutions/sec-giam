@@ -35,17 +35,19 @@ export const DEK_ALT_NAMES = {
  * SCIM `emails[]` and `phoneNumbers[]` representation is projected from these at read time, so the
  * wire contract still matches the standard while the stored value stays encrypted and searchable.
  *
- * substringPreview requires crypt_shared 8.2+ AND server 8.2+. On an older cluster it degrades to
- * equality rather than failing setup, which keeps the field encrypted and exactly searchable instead
- * of trading the whole deployment for one query shape.
+ * The substring query type requires server 9.0+, which GA'd it and rejects the earlier
+ * `substringPreview` name outright: a collection still carrying the old name fails EVERY encrypted
+ * query on it, including the plain equality lookups on the other two fields. On an older cluster the
+ * field degrades to equality rather than failing setup, which keeps it encrypted and exactly
+ * searchable instead of trading the whole deployment for one query shape.
  */
 export function buildEncryptedFieldsMaps(deks: GiamDeks): Record<string, { fields: unknown[] }> {
   const nameQueries = config.mongodb.textSearch
     ? {
-      queryType: 'substringPreview',
+      queryType: 'substring',
       contention: 8,
-      // Within the cluster's default substringPreview limits, so setup needs no
-      // fleDisableSubstringPreviewParameterLimits override. The server refuses strMaxLength above 60
+      // Within the cluster's default substring limits, so setup needs no parameter-limit override.
+      // The server refuses strMaxLength above 60
       // outright, and 30 is what the platform already uses for the equivalent field. A longer
       // formatted name is refused at write time rather than silently truncated.
       strMaxLength: 30,
