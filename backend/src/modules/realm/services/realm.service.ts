@@ -49,6 +49,20 @@ export class RealmService {
   }
 
   /**
+   * The realm's own directory, as a domain.
+   *
+   * Every realm has exactly one, created at seed time, which is what lets local authentication
+   * resolve through a domain like every other path rather than through a branch only it takes. It
+   * carries the password rules and the concurrent-session limit for that path.
+   */
+  async localDomain(realmId: string): Promise<DomainRecord | null> {
+    return this.providers.findOne(
+      { realmId, protocol: 'internal' },
+      { projection: { _id: 0 } },
+    );
+  }
+
+  /**
    * Home-realm discovery: which provider should authenticate the address the user typed.
    *
    * Returns null when nothing claims the domain, and the caller then shows a picker. Guessing would

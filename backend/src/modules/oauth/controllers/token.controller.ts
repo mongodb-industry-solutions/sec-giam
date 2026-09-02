@@ -544,7 +544,7 @@ export async function tokenController(fastify: FastifyInstance) {
           onBehalf: true,
           correlationId,
           ipHash,
-          delegationId: hop.delegation.delegationId,
+          delegationId: hop.delegation.grantId,
           ...(body.transaction_id ? { transactionId: String(body.transaction_id) } : {}),
         });
         return reply.send(tokens);

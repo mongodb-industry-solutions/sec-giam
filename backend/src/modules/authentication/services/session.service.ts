@@ -3,6 +3,26 @@ import { v4 as uuidv4 } from 'uuid';
 import { newMeta } from '../../../shared/models/base.model';
 import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord, isLive } from '../models/session.model';
+import { DOMAIN_COLLECTION } from '../../../shared/models/collections';
+import { DomainRecord, concurrentSessionRule } from '../../realm/models/domain.model';
+import { DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
+
+/**
+ * Why a sign-in was refused rather than granted a session.
+ *
+ * A distinct shape, so a caller cannot mistake it for a session by accident: the two would
+ * otherwise differ only in which fields happen to be present.
+ */
+export interface SessionLimitRefusal {
+  refused: true;
+  limit: number;
+  held: number;
+  reason: string;
+}
+
+export function isSessionLimitRefusal(value: unknown): value is SessionLimitRefusal {
+  return typeof value === 'object' && value !== null && (value as SessionLimitRefusal).refused === true;
+}
 
 /**
  * Why a session ended.
@@ -52,7 +72,7 @@ export class SessionService {
     authRequestId?: string;
     userAgentHash?: string;
     ipHash?: string;
-  }): Promise<SessionRecord> {
+  }): Promise<SessionRecord | SessionLimitRefusal> {
     const now = new Date();
     const session: SessionRecord = {
       realmId: input.realm.realmId,
@@ -75,6 +95,25 @@ export class SessionService {
       ...(input.ipHash ? { ipHash: input.ipHash } : {}),
       meta: newMeta('Session'),
     };
+    /**
+     * P8.6. The concurrent-session limit, enforced by the DOMAIN that authenticated this session.
+     *
+     * On the domain and not the realm or the client, because how many times you may be signed in is
+     * an authentication rule. A realm offering two ways in applies each one's limit to its own
+     * sessions, counted per subject within the realm.
+     *
+     * Applied BEFORE the insert, so `refuse-new` can refuse without a session existing first, and
+     * eviction never has to consider the session it is making room for.
+     */
+    if (input.domainId) {
+      const refusal = await this.applyConcurrencyLimit({
+        realmId: input.realm.realmId,
+        subjectId: input.subjectId,
+        domainId: input.domainId,
+      });
+      if (refusal) return refusal;
+    }
+
     await this.sessions.insertOne(session);
 
     // Recorded here rather than in each controller, for the same reason the record is built here: a
@@ -146,6 +185,71 @@ export class SessionService {
         },
       },
     );
+  }
+
+  /**
+   * Makes room for a new session, or refuses it, according to the domain's rule.
+   *
+   * Returns a refusal rather than throwing, because "you already have as many sessions as you may
+   * have" is an ordinary outcome of signing in and not an error in the service.
+   *
+   * `evict-oldest` deletes, which is what makes eviction reach the evicted device: deleting a
+   * session emits a revocation signal, so it learns it has been signed out instead of holding a
+   * valid token until it expires. Marking it would have left that device working.
+   */
+  private async applyConcurrencyLimit(input: {
+    realmId: string;
+    subjectId: string;
+    domainId: string;
+  }): Promise<SessionLimitRefusal | null> {
+    const domain = await this.db
+      .collection<DomainRecord>(DOMAIN_COLLECTION)
+      .findOne({ realmId: input.realmId, providerId: input.domainId }, { projection: { _id: 0, session: 1 } });
+    const rule = concurrentSessionRule(domain ?? {});
+    // Null is unlimited, and it is the default. Zero would mean no session may be opened at all.
+    if (rule.limit === null) return null;
+
+    const held = await this.sessions
+      .find(
+        { realmId: input.realmId, subjectId: input.subjectId, domainId: input.domainId },
+        { projection: { _id: 0, sessionId: 1, createdAt: 1 } },
+      )
+      .sort({ createdAt: 1 })
+      .toArray();
+
+    if (held.length < rule.limit) return null;
+
+    if (rule.onExceed === 'refuse-new') {
+      // Correct for a service account, where the session already open is the real one and a second
+      // caller is more likely a misconfiguration than a person on a second device.
+      return {
+        refused: true,
+        limit: rule.limit,
+        held: held.length,
+        reason: 'this authentication path allows no further concurrent session',
+      };
+    }
+
+    // Oldest first, and enough of them that inserting one more lands exactly at the limit.
+    const evict = held.slice(0, held.length - rule.limit + 1);
+    for (const stale of evict) {
+      await this.sessions.deleteOne({ realmId: input.realmId, sessionId: stale.sessionId });
+      void new SecurityEventService(this.db).record({
+        realmId: input.realmId,
+        tenantId: DEFAULT_TENANT_ID,
+        category: 'session',
+        action: 'authentication.session.evicted',
+        outcome: 'success',
+        subjectId: input.subjectId,
+        target: { type: 'session', ref: stale.sessionId },
+        detail: {
+          reason: 'the concurrent-session limit on this authentication path was reached',
+          limit: rule.limit,
+          domainId: input.domainId,
+        },
+      });
+    }
+    return null;
   }
 
   /**

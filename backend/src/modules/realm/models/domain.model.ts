@@ -1,22 +1,32 @@
 import { Meta, Scoped } from '../../../shared/models/base.model';
 
 /**
- * An upstream identity provider, federated inside a realm.
+ * ONE AUTHENTICATION PATH INTO A REALM, local or federated.
  *
- * This is the half of the platform's old authentication domain that was about PROTOCOL, split away
- * from the half that was about tenancy. Conflating them is why adding a second identity source used
- * to look like adding a second tenant.
+ * Widened from "an upstream identity provider" by ADR section 3, and the widening is the point. The
+ * local authentication rules used to live on the realm while external providers lived here, which
+ * was two places describing the same thing: how a subject proves who they are. A realm's own
+ * directory is now ONE DOMAIN AMONG OTHERS rather than a special case with its own home.
  *
- * A realm with no provider row authenticates internally. Adding a third-party provider is this record
- * plus a claim mapping: no application code, no application deployment, no application restart. That
- * is the whole argument for brokering rather than each application implementing OIDC and SAML again.
+ * That is also what lets this authority sit in front of an upstream. A realm with three domains
+ * offers three ways in, and the sign-in screen is a projection of that list rather than a branch on
+ * whether any providers happen to be configured.
+ *
+ * Naming note: the ADR calls this discriminator `kind`. It is `protocol` here, with the same
+ * meaning and the same values, because the name is already part of a published port contract and
+ * renaming it would ripple through the port and its consumers for no gain. `internal` is the ADR's
+ * `local`.
+ *
+ * Adding a third-party provider is still this record plus a claim mapping: no application code, no
+ * deployment, no restart. That is the whole argument for brokering rather than every application
+ * implementing OIDC and SAML again.
  */
 export interface DomainRecord extends Scoped {
   providerId: string;
   /** Slug, unique inside the realm. */
   name: string;
   displayName: string;
-  protocol: 'internal' | 'oidc' | 'saml' | 'spiffe';
+  protocol: 'internal' | 'oidc' | 'saml' | 'ldap' | 'spiffe';
   /** Which port implementation handles it. Configuration on the record, never an environment read. */
   adapter: string;
   enabled: boolean;
@@ -42,5 +52,76 @@ export interface DomainRecord extends Scoped {
    * called, which is exactly the coupling brokering removes.
    */
   claimMappings: Array<{ claim: string; value: string; roleName: string }>;
+
+  /**
+   * How a subject proves who they are on THIS path. Moved off the realm by ADR section 3.
+   *
+   * It sat on the realm, which meant a realm offering both its own directory and an upstream had
+   * one password policy describing one of them and nothing describing the other. Rules about
+   * proving identity belong to the path that does the proving.
+   *
+   * Present for `internal`, and meaningless for a federated path where the upstream sets its own.
+   */
+  authentication?: {
+    passwordPolicy?: {
+      minLength: number;
+      requireUppercase: boolean;
+      requireNumber: boolean;
+      requireSymbol: boolean;
+      /** How many previous credentials may not be reused. Zero means no history is kept. */
+      historyDepth: number;
+    };
+    /** The floor this path must reach. A path that cannot reach it should not be offered. */
+    requiredAssurance?: 'aal1' | 'aal2' | 'aal3';
+    mfaRequired?: boolean;
+    lockout?: {
+      /** Consecutive failures before the account is locked on this path. */
+      maxAttempts: number;
+      /** How long the lock holds. Zero means until an administrator lifts it. */
+      forSeconds: number;
+    };
+  };
+
+  /**
+   * How many sessions a subject may hold at once through this path.
+   *
+   * On the DOMAIN and not on the realm or the client, because how many times you may be signed in
+   * is an authentication rule. A realm with two domains applies each domain's limit to its own
+   * sessions, counted per subject within the realm.
+   *
+   * Unlimited is the default, deliberately. `maxConcurrent: 1` for a person using a laptop, a phone
+   * and a tablet produces constant eviction ping-pong; it belongs on high-assurance and
+   * administrative paths, not everywhere.
+   *
+   * Eviction is a `deleteOne` on `session`, so it emits a revocation signal for free: an evicted
+   * device learns it has been evicted rather than holding a valid token until it expires.
+   */
+  session?: {
+    maxConcurrent: number | null;
+    /** `refuse-new` is correct for a service account, where the existing session is the real one. */
+    onExceed: 'evict-oldest' | 'refuse-new';
+  };
+
   meta: Meta;
+}
+
+/** The password rules in force on a path, or null where the upstream owns them. */
+export function passwordPolicyOf(domain: Pick<DomainRecord, 'protocol' | 'authentication'>) {
+  if (domain.protocol !== 'internal') return null;
+  return domain.authentication?.passwordPolicy ?? null;
+}
+
+/**
+ * What to do when a subject already holds the limit on this path.
+ *
+ * Null means unlimited, which is not the same as zero: zero would mean no session may be opened at
+ * all, and returning "allowed" for an unconfigured domain is what keeps unlimited the default.
+ */
+export function concurrentSessionRule(
+  domain: Pick<DomainRecord, 'session'>,
+): { limit: number | null; onExceed: 'evict-oldest' | 'refuse-new' } {
+  return {
+    limit: domain.session?.maxConcurrent ?? null,
+    onExceed: domain.session?.onExceed ?? 'evict-oldest',
+  };
 }

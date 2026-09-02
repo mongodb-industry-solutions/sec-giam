@@ -52,7 +52,7 @@ export interface CredentialStore extends PortImplementation {
 
 /** Upstream federation. A realm with no provider authenticates internally. */
 export interface IdentityProviderAdapter extends PortImplementation {
-  readonly protocol: 'internal' | 'oidc' | 'saml' | 'spiffe';
+  readonly protocol: 'internal' | 'oidc' | 'saml' | 'ldap' | 'spiffe';
   /** The URL to send the browser to, or null when the protocol has no redirect step. */
   authorizationUrl(providerId: string, state: string): Promise<string | null>;
   /** Turns whatever came back into claims. Mapping to a role happens above this line. */

@@ -1,6 +1,8 @@
 import { Db } from 'mongodb';
-import { DELEGATION_COLLECTION } from '../../../shared/models/collections';
-import { DelegationRecord, isExercisable, narrowScope, chainDepth } from '../../consent/models/delegation.model';
+import { GRANT_COLLECTION } from '../../../shared/models/collections';
+import {
+  GrantRecord, isExercisable, narrowScope, chainDepth, grantedScopes,
+} from '../../consent/models/grant.model';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { OAuthClient } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
@@ -36,7 +38,7 @@ export interface DelegationOutcome {
   subjectId: string;
   scope: string[];
   actor: ActorClaim;
-  delegation: DelegationRecord;
+  delegation: GrantRecord;
 }
 
 export function isDelegationRefusal(value: unknown): value is DelegationRefusal {
@@ -47,7 +49,7 @@ export class DelegationExchangeService {
   constructor(private readonly db: Db) {}
 
   private get delegations() {
-    return this.db.collection<DelegationRecord>(DELEGATION_COLLECTION);
+    return this.db.collection<GrantRecord>(GRANT_COLLECTION);
   }
 
   /**
@@ -72,7 +74,6 @@ export class DelegationExchangeService {
         clientId: client.clientId,
         subjectId: presented.subjectId,
         cause,
-        principalSubjectId: presented.subjectId,
         agentId: client.clientId,
         decision: 'deny',
         ...(requested.transactionId ? { transactionId: requested.transactionId } : {}),
@@ -90,7 +91,7 @@ export class DelegationExchangeService {
     if (chainDepth(presented.actor) >= bound) return refuse('chain_depth_exceeded');
 
     const delegation = await this.delegations.findOne(
-      { realmId: realm.realmId, principalSubjectId: presented.subjectId, agentId: client.clientId },
+      { realmId: realm.realmId, subjectId: presented.subjectId, agentSubjectId: client.clientId },
       { projection: { _id: 0 } },
     );
     if (!delegation) return refuse('no_delegation');
@@ -103,11 +104,11 @@ export class DelegationExchangeService {
     }
 
     // Rule 3 again, from the delegation's own side: the grantor said how far this may travel.
-    if (chainDepth(presented.actor) > delegation.maxDepth) return refuse('delegation_depth_exceeded');
+    if (chainDepth(presented.actor) > (delegation.maxDepth ?? 0)) return refuse('delegation_depth_exceeded');
 
     // Rule 1, twice over. Narrowed against what the delegation permits AND against what the inbound
     // token actually carried, because a delegation cannot lend authority its holder did not present.
-    const permitted = narrowScope(delegation.scope, requested.scope);
+    const permitted = narrowScope(grantedScopes(delegation), requested.scope);
     const effective = narrowScope(presented.scope, permitted);
     if (effective.length === 0) return refuse('no_scope_remains');
 
@@ -117,7 +118,7 @@ export class DelegationExchangeService {
     if (decision.effect !== 'allow') return refuse('delegate_lacks_permission');
 
     void this.delegations.updateOne(
-      { delegationId: delegation.delegationId },
+      { grantId: delegation.grantId },
       { $set: { lastUsedAt: new Date().toISOString() } },
     );
 
@@ -129,12 +130,12 @@ export class DelegationExchangeService {
       outcome: 'success',
       clientId: client.clientId,
       subjectId: presented.subjectId,
-      target: { type: 'delegation', ref: delegation.delegationId },
+      target: { type: 'delegation', ref: delegation.grantId },
       // The chain, named field by field. This is the record that answers, later, which human
       // authorised the action and which agent actually took it.
-      principalSubjectId: delegation.principalSubjectId,
-      agentId: delegation.agentId,
-      delegationId: delegation.delegationId,
+      principalSubjectId: delegation.subjectId,
+      agentId: delegation.agentSubjectId,
+      delegationId: delegation.grantId,
       ...(requested.transactionId ? { transactionId: requested.transactionId } : {}),
       decision: 'allow',
       detail: { purpose: delegation.purpose, scope: effective, depth: chainDepth(presented.actor) + 1 },

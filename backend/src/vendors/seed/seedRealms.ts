@@ -6,6 +6,10 @@ import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
 import { realmIssuer } from '../../config';
+import { v5 as uuidv5 } from 'uuid';
+
+/** Stable ids for the domains a realm always has, so a reseed finds them again. */
+const DOMAIN_NAMESPACE = 'd0a7c3e1-5b92-4f18-9c64-8e3a1f7b2d05';
 
 /**
  * The realms and the providers federated inside them.
@@ -26,7 +30,8 @@ interface RealmFixture {
   clientEnforcement?: RealmRecord['clientEnforcement'];
   registration?: Partial<RealmRecord['registration']>;
   tokenPolicy?: Partial<RealmRecord['tokenPolicy']>;
-  passwordPolicy?: Partial<RealmRecord['passwordPolicy']>;
+  /** Overrides for the realm's own directory, which is a domain now rather than realm config. */
+  localAuthentication?: Partial<NonNullable<DomainRecord['authentication']>>;
   branding?: Partial<RealmRecord['branding']>;
   providers?: Array<{
     providerId: string;
@@ -60,13 +65,24 @@ const DEFAULT_TOKEN_POLICY: RealmRecord['tokenPolicy'] = {
   sessionMaxTtlSeconds: 43_200,
 };
 
-const DEFAULT_PASSWORD_POLICY: RealmRecord['passwordPolicy'] = {
-  minLength: 8,
-  requireUppercase: false,
-  requireNumber: false,
-  requireSymbol: false,
-  historyDepth: 0,
+/**
+ * The rules for proving identity against a realm's OWN directory.
+ *
+ * On the local domain rather than on the realm, because that is the path they describe. A realm that
+ * also federates has an upstream setting its own, and the two no longer have to pretend to be one.
+ */
+const DEFAULT_LOCAL_AUTHENTICATION: NonNullable<DomainRecord['authentication']> = {
+  passwordPolicy: {
+    minLength: 8,
+    requireUppercase: false,
+    requireNumber: false,
+    requireSymbol: false,
+    historyDepth: 0,
+  },
 };
+
+/** The slug every realm's own directory is registered under. */
+const LOCAL_DOMAIN_NAME = 'local';
 
 export async function seedRealms(db: Db): Promise<void> {
   const fixtures = readSeedFile<RealmFixture[]>('realms.json');
@@ -90,7 +106,6 @@ export async function seedRealms(db: Db): Promise<void> {
         ...(fixture.notice ? { notice: fixture.notice } : {}),
         registration: { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
         tokenPolicy: { ...DEFAULT_TOKEN_POLICY, ...fixture.tokenPolicy },
-        passwordPolicy: { ...DEFAULT_PASSWORD_POLICY, ...fixture.passwordPolicy },
         branding: { displayName: fixture.displayName, ...fixture.branding },
         demoMode: fixture.demoMode ?? false,
         // Absent in the fixture means the realm inherits the deployment default, which is strict.
@@ -102,6 +117,38 @@ export async function seedRealms(db: Db): Promise<void> {
       'Realm',
     );
     console.log(`  realm:    ${fixture.name} (${issuer}) ${realm.action}`);
+
+    /**
+     * P8.3. Every realm gets ONE local domain, always.
+     *
+     * Local authentication then resolves through a domain like every other path, instead of through
+     * a branch on the realm that only the local case takes. A realm with one domain shows no
+     * chooser on the sign-in screen, which is a presentation decision rather than a model one.
+     */
+    const localId = uuidv5(`domain:${fixture.realmId}:${LOCAL_DOMAIN_NAME}`, DOMAIN_NAMESPACE);
+    const local = await upsertSeed<DomainRecord>(
+      providers,
+      { providerId: localId },
+      {
+        name: LOCAL_DOMAIN_NAME,
+        displayName: `${fixture.displayName} directory`,
+        protocol: 'internal',
+        adapter: 'internal',
+        enabled: true,
+        config: {},
+        claimMappings: [],
+        authentication: {
+          ...DEFAULT_LOCAL_AUTHENTICATION,
+          ...fixture.localAuthentication,
+        },
+        // Unlimited by default: one session per subject produces constant eviction for a person
+        // using a laptop, a phone and a tablet.
+        session: { maxConcurrent: null, onExceed: 'evict-oldest' },
+      },
+      { providerId: localId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
+      'Domain',
+    );
+    console.log(`  domain:   ${fixture.name}/${LOCAL_DOMAIN_NAME} (internal) ${local.action}`);
 
     for (const provider of fixture.providers ?? []) {
       const outcome = await upsertSeed(
@@ -119,9 +166,9 @@ export async function seedRealms(db: Db): Promise<void> {
         },
         // Inside the realm, not beside it. This is the split the platform's old model conflated.
         { providerId: provider.providerId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
-        'IdentityProvider',
+        'Domain',
       );
-      console.log(`  provider: ${fixture.name}/${provider.name} (${provider.protocol}) ${outcome.action}`);
+      console.log(`  domain:   ${fixture.name}/${provider.name} (${provider.protocol}) ${outcome.action}`);
     }
   }
 }
