@@ -2,13 +2,14 @@ import { Db } from 'mongodb';
 import { v5 as uuidv5 } from 'uuid';
 import {
   RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
-  ROLE_ASSIGNMENT_COLLECTION, REALM_COLLECTION,
+  PRINCIPAL_COLLECTION, REALM_COLLECTION,
 } from '../../shared/models/collections';
 import {
-  ResourceServerRecord, PermissionRecord, RoleRecord, RoleAssignmentRecord, RolePermission, DenialRationale,
+  ResourceServerRecord, PermissionRecord, RoleRecord, RolePermission, DenialRationale,
 } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
-import { upsertSeed } from './upsertSeed';
+import { PrincipalRecord } from '../../modules/directory/models/principal.model';
+import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
 
 /**
@@ -94,7 +95,7 @@ export async function seedAuthorization(
   const servers = db.collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION);
   const permissions = db.collection<PermissionRecord>(PERMISSION_COLLECTION);
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
-  const assignments = db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
+  const principals = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
 
   const now = new Date().toISOString();
   const seenServers = new Set<string>();
@@ -204,25 +205,15 @@ export async function seedAuthorization(
       const known = roleFixtures.some((role) => role.name === grant.roleName && role.realm === identity.realm);
       if (!known) throw new Error(`${identityFixtureName} grants unknown role "${grant.roleName}" in realm "${identity.realm}"`);
 
-      const id = realmGrantId(identity.subjectId, grant.roleName, targetRealmId);
-      await upsertSeed<RoleAssignmentRecord>(
-        assignments,
-        { assignmentId: id },
+      await upsertHolding(
+        principals,
+        { realmId: homeRealmId, subjectId: identity.subjectId },
         {
-          subjectId: identity.subjectId,
           roleId: roleId(homeRealmId, grant.roleName),
           scope: { kind: 'realm', ref: targetRealmId },
-          grantedAt: now,
+          grantedAt: SEED_GRANTED_AT,
           ...(grant.justification ? { justification: grant.justification } : {}),
         },
-        {
-          assignmentId: id,
-          subjectId: identity.subjectId,
-          roleId: roleId(homeRealmId, grant.roleName),
-          realmId: homeRealmId,
-          tenantId: DEFAULT_TENANT_ID,
-        },
-        'RoleAssignment',
       );
       crossRealm += 1;
     }
@@ -240,24 +231,15 @@ export async function seedAuthorization(
       throw new Error(`${identityFixtureName} assigns unknown role "${identity.roleName}" in realm "${identity.realm}"`);
     }
 
-    await upsertSeed<RoleAssignmentRecord>(
-      assignments,
-      { assignmentId: assignmentId(identity.subjectId, identity.roleName) },
+    await upsertHolding(
+      principals,
+      { realmId, subjectId: identity.subjectId },
       {
-        subjectId: identity.subjectId,
         roleId: id,
-        grantedAt: now,
-        // No expiry: a permanent assignment. An elevation carries one, and that single difference is
-        // what makes the same record type serve both.
+        grantedAt: SEED_GRANTED_AT,
+        // No expiry: a permanent holding. An elevation carries one, and that single difference is
+        // what makes the same entry shape serve both.
       },
-      {
-        assignmentId: assignmentId(identity.subjectId, identity.roleName),
-        subjectId: identity.subjectId,
-        roleId: id,
-        realmId,
-        tenantId: DEFAULT_TENANT_ID,
-      },
-      'RoleAssignment',
     );
     assigned += 1;
   }
@@ -338,18 +320,10 @@ export async function seedAuthorization(
       if (identity.realm !== realmName || !identity.roleName) continue;
       if (!administrativeRoles.has(identity.roleName)) continue;
 
-      await upsertSeed<RoleAssignmentRecord>(
-        assignments,
-        { assignmentId: assignmentId(identity.subjectId, ADMINISTRATOR_ROLE) },
-        { subjectId: identity.subjectId, roleId: roleId(realmId, ADMINISTRATOR_ROLE), grantedAt: now },
-        {
-          assignmentId: assignmentId(identity.subjectId, ADMINISTRATOR_ROLE),
-          subjectId: identity.subjectId,
-          roleId: roleId(realmId, ADMINISTRATOR_ROLE),
-          realmId,
-          tenantId: DEFAULT_TENANT_ID,
-        },
-        'RoleAssignment',
+      await upsertHolding(
+        principals,
+        { realmId, subjectId: identity.subjectId },
+        { roleId: roleId(realmId, ADMINISTRATOR_ROLE), grantedAt: SEED_GRANTED_AT },
       );
       administrators += 1;
     }
@@ -358,6 +332,6 @@ export async function seedAuthorization(
   console.log(`  resourceServer: ${seenServers.size}`);
   console.log(`  permission: ${seenPermissions.size}`);
   console.log(`  role: ${roleCount}`);
-  console.log(`  roleAssignment: ${assigned} (+${crossRealm} naming another realm)`);
+  console.log(`  roleHolding: ${assigned} (+${crossRealm} naming another realm)`);
   console.log(`  realmAdministrator: ${administrators}`);
 }

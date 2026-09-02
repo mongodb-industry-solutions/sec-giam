@@ -3,16 +3,16 @@ import * as bcrypt from 'bcryptjs';
 import { v5 as uuidv5 } from 'uuid';
 import { clientSecretFor } from '@leafypay/platform-links';
 import {
-  CLIENT_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, ROLE_COLLECTION,
+  CLIENT_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION,
   PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
 } from '../../shared/models/collections';
 import { ClientRecord } from '../../modules/oauth/models/client.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import {
-  RoleAssignmentRecord, RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
+  RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
 } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
-import { upsertSeed } from './upsertSeed';
+import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
 
 /**
@@ -72,7 +72,7 @@ export async function seedClients(db: Db): Promise<void> {
 
   const clients = db.collection<ClientRecord>(CLIENT_COLLECTION);
   const identities = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
-  const assignments = db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
+
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
 
   const now = new Date().toISOString();
@@ -199,13 +199,12 @@ export async function seedClients(db: Db): Promise<void> {
       'Role',
     );
 
-    const assignmentId = uuidv5(`service-assignment:${fixture.clientId}`, CLIENT_NAMESPACE);
-    await upsertSeed<RoleAssignmentRecord>(
-      assignments,
-      { assignmentId },
-      { subjectId: fixture.clientId, roleId, grantedAt: now },
-      { assignmentId, subjectId: fixture.clientId, roleId, realmId, tenantId: DEFAULT_TENANT_ID },
-      'RoleAssignment',
+    // The service principal holds its role like anyone else: authority is never an implicit
+    // consequence of holding a credential.
+    await upsertHolding(
+      identities,
+      { realmId, subjectId: fixture.clientId },
+      { roleId, grantedAt: SEED_GRANTED_AT },
     );
   }
 

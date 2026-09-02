@@ -97,30 +97,6 @@ export interface RoleRecord extends Scoped {
  * same record type expresses both, so an elevation is auditable, revocable and listable in exactly
  * the way a stateless capability token is not.
  */
-export interface RoleAssignmentRecord extends Scoped {
-  assignmentId: string;
-  subjectId: string;
-  roleId: string;
-  /**
-   * Narrows the assignment to one object, when it is not realm-wide.
-   *
-   * `kind: 'realm'` is the one value this authority interprets itself: it points the assignment at
-   * ANOTHER realm, granting administration of that realm to a principal whose identity, credentials
-   * and token stay in this one. Every other kind is the consuming application's vocabulary and means
-   * nothing here.
-   */
-  scope?: { kind: string; ref: string };
-  grantedBy?: string;
-  grantedAt: string;
-  notBefore?: string;
-  expiresAt?: string;
-  /** True only for a time-bound elevation, so the expiry sweep cannot touch a permanent grant. */
-  ephemeral?: boolean;
-  justification?: string;
-  approvalRef?: string;
-  meta: Meta;
-}
-
 /** The claim shape a resource server reads. Deliberately small: it travels in every token. */
 export interface EffectivePermission {
   resource: string;
@@ -135,19 +111,19 @@ export function permissionKey(permission: { resource: string; action: string }):
 export const REALM_SCOPE_KIND = 'realm';
 
 /**
- * Whether an assignment held in `homeRealmId` grants anything in `targetRealmId`.
+ * Whether a role holding held in `homeRealmId` grants anything in `targetRealmId`.
  *
- * Two rules and no third. A realm-scoped assignment grants ONLY in the realm it names, so it never
- * widens the home realm; anything else grants only at home, so an unscoped assignment never leaks
+ * Two rules and no third. A realm-scoped holding grants ONLY in the realm it names, so it never
+ * widens the home realm; anything else grants only at home, so an unscoped holding never leaks
  * outward. Neither direction is inferred, which is what keeps one realm's authority out of another.
  */
-export function assignmentAppliesIn(
-  assignment: Pick<RoleAssignmentRecord, 'scope'>,
+export function holdingAppliesIn(
+  holding: { scope?: { kind: string; ref: string } },
   homeRealmId: string,
   targetRealmId: string,
 ): boolean {
-  return assignment.scope?.kind === REALM_SCOPE_KIND
-    ? assignment.scope.ref === targetRealmId
+  return holding.scope?.kind === REALM_SCOPE_KIND
+    ? holding.scope.ref === targetRealmId
     : homeRealmId === targetRealmId;
 }
 

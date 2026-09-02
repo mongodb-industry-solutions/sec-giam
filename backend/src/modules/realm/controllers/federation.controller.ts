@@ -6,10 +6,10 @@ import { SessionService } from '../../authentication/services/session.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { identityProviders } from '../../../shared/ports';
 import { bindIdentityProviders } from '../services/oidcProvider';
-import { PRINCIPAL_COLLECTION, DOMAIN_COLLECTION, ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION } from '../../../shared/models/collections';
-import { PrincipalRecord } from '../../directory/models/principal.model';
+import { PRINCIPAL_COLLECTION, DOMAIN_COLLECTION, ROLE_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord, RoleHolding } from '../../directory/models/principal.model';
 import { DomainRecord } from '../models/domain.model';
-import { RoleAssignmentRecord, RoleRecord } from '../../authorization/models/authorization.model';
+import { RoleRecord } from '../../authorization/models/authorization.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { problem } from '../../../shared/models/problem';
 
@@ -245,21 +245,24 @@ export async function federationController(fastify: FastifyInstance) {
       .find({ realmId, name: { $in: wanted } }, { projection: { _id: 0, roleId: 1, name: 1 } })
       .toArray() as unknown as Array<{ roleId: string; name: string }>;
 
-    const assignments = fastify.db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
-    await assignments.deleteMany({ realmId, subjectId, grantedBy: provider.providerId });
+    const principals = fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
+
+    // Only what THIS provider granted is replaced, so a role an administrator granted deliberately
+    // survives a federated sign-in. `grantedBy` carrying the provider id is what distinguishes them.
+    await principals.updateOne(
+      { realmId, subjectId },
+      { $pull: { roles: { grantedBy: provider.providerId } } },
+    );
     if (roles.length === 0) return;
 
-    await assignments.insertMany(roles.map((role) => ({
-      realmId,
-      tenantId,
-      assignmentId: `assign-${randomUUID()}`,
-      subjectId,
+    const granted: RoleHolding[] = roles.map((role) => ({
       roleId: role.roleId,
       grantedAt: new Date().toISOString(),
-      // Recorded so an assignment made by federation is distinguishable from one an administrator
-      // made deliberately, and so only the former is replaced at the next sign-in.
       grantedBy: provider.providerId,
-      meta: newMeta('RoleAssignment'),
-    })) as unknown as RoleAssignmentRecord[]);
+    }));
+    await principals.updateOne(
+      { realmId, subjectId },
+      { $push: { roles: { $each: granted } } },
+    );
   }
 }

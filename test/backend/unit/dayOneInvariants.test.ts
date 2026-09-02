@@ -8,9 +8,12 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import { resolve, relative, sep } from 'path';
 import {
   GIAM_COLLECTIONS, scopedCollections,
-  PRINCIPAL_COLLECTION, AGENT_COLLECTION, DELEGATION_COLLECTION, GRANT_COLLECTION,
+  PRINCIPAL_COLLECTION, DELEGATION_COLLECTION, GRANT_COLLECTION,
   AUDIT_COLLECTION,
 } from '../../../backend/src/shared/models/collections';
+import {
+  MAX_ROLE_HOLDINGS, isHoldingActive,
+} from '../../../backend/src/modules/directory/models/principal.model';
 import { plannedIndexes } from '../../../backend/src/vendors/setup/createIndexes';
 
 const SRC = resolve(__dirname, '../../../backend/src');
@@ -118,7 +121,7 @@ describe('v39 P0.6: the four doors that cannot be reopened cheaply', () => {
     // principal record. The approved-versus-ran distinction is carried by the audit record, which
     // names both the principal and the configuration digest in force at the time.
     const names = GIAM_COLLECTIONS.map((s) => s.name);
-    expect(names).not.toContain(AGENT_COLLECTION);
+    expect(names).not.toContain('agent');
     expect(names).toContain(PRINCIPAL_COLLECTION);
   });
 
@@ -129,6 +132,43 @@ describe('v39 P0.6: the four doors that cannot be reopened cheaply', () => {
     const names = GIAM_COLLECTIONS.map((s) => s.name);
     expect(names).not.toContain(DELEGATION_COLLECTION);
     expect(names).toContain(GRANT_COLLECTION);
+  });
+
+  it('caps the embedded role array, and declares no TTL index that would expire its holder', () => {
+    // Embedding is only safe while the array is bounded, so the bound is asserted rather than
+    // described. The second half matters more: a TTL index expires whole DOCUMENTS and never array
+    // elements, so a TTL on the principal's own `expiresAt` would delete the SUBJECT rather than the
+    // lapsed holding. That is why expiry is filtered at read time and swept for hygiene only.
+    expect(MAX_ROLE_HOLDINGS).toBeGreaterThan(0);
+    expect(MAX_ROLE_HOLDINGS).toBeLessThanOrEqual(200);
+
+    const principalTtl = plannedIndexes().filter(
+      (plan) => plan.collection === PRINCIPAL_COLLECTION
+        && plan.options.expireAfterSeconds !== undefined,
+    );
+    expect(principalTtl, 'a TTL index on principal would expire the subject, not the role').toEqual([]);
+  });
+
+  it('indexes the inverse role question, because certification and revocation both ask it', () => {
+    // "Who holds role X" is the query embedding makes expensive, so it is the one that must be
+    // indexed. Multikey over the embedded array, and leading with the partition key.
+    const inverse = plannedIndexes().find(
+      (plan) => plan.collection === PRINCIPAL_COLLECTION
+        && Object.keys(plan.keys as Record<string, unknown>).join(',') === 'realmId,roles.roleId',
+    );
+    expect(inverse, 'no multikey index on {realmId, roles.roleId}').toBeTruthy();
+  });
+
+  it('holds a lapsed or unapproved role as granting nothing', () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const future = new Date(Date.now() + 60_000).toISOString();
+    // Read-time filtering is the correctness mechanism, so it is asserted directly rather than
+    // through whatever happens to call it.
+    expect(isHoldingActive({ roleId: 'r', grantedAt: past })).toBe(true);
+    expect(isHoldingActive({ roleId: 'r', grantedAt: past, expiresAt: future })).toBe(true);
+    expect(isHoldingActive({ roleId: 'r', grantedAt: past, expiresAt: past })).toBe(false);
+    // Fails closed: an elevation nobody has approved yet grants nothing, whatever its expiry says.
+    expect(isHoldingActive({ roleId: 'r', grantedAt: past, expiresAt: future, pendingApproval: true })).toBe(false);
   });
 
   it('keeps the tenant partition as a field rather than as a collection', () => {

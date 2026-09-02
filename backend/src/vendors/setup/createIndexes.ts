@@ -2,10 +2,10 @@ import { Db, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import {
   GIAM_COLLECTIONS, collectionSpec,
   REALM_COLLECTION, DOMAIN_COLLECTION,
-  PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, AGENT_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
+  PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
   CLIENT_COLLECTION, API_KEY_COLLECTION, AUTH_REQUEST_COLLECTION, TOKEN_COLLECTION,
   KEY_COLLECTION, RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
-  ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION,
+  POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
   AUDIT_COLLECTION,
 } from '../../shared/models/collections';
@@ -56,16 +56,16 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, demoFeatured: 1 }, options: { name: 'realm_demoFeatured', sparse: true } },
     // The workload binding, when one is attested.
     { collection: PRINCIPAL_COLLECTION, keys: { 'workload.spiffeId': 1 }, options: { name: 'workload_spiffeId', sparse: true } },
+    // The inverse question: "who holds role X". Needed for access certification and for role
+    // revocation, and multikey because the roles are embedded. Without it, both scan the realm.
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, 'roles.roleId': 1 }, options: { name: 'realm_roles_roleId' } },
+    // Elevations in force, and the sweep that removes lapsed entries.
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, 'roles.ephemeral': 1 }, options: { name: 'realm_roles_ephemeral', sparse: true } },
 
     { collection: CREDENTIAL_COLLECTION, keys: { credentialId: 1 }, options: { name: 'credentialId_unique', unique: true } },
     // The authentication hot path: every factor a subject holds of a given type, active ones first.
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, subjectId: 1, type: 1, status: 1 }, options: { name: 'realm_subject_type_status' } },
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, expiresAt: 1 }, options: { name: 'realm_expiresAt', sparse: true } },
-
-    { collection: AGENT_COLLECTION, keys: { agentId: 1 }, options: { name: 'agentId_unique', unique: true } },
-    { collection: AGENT_COLLECTION, keys: { realmId: 1, name: 1, version: 1 }, options: { name: 'realm_name_version_unique', unique: true } },
-    { collection: AGENT_COLLECTION, keys: { realmId: 1, tenantId: 1, lifecycleState: 1 }, options: { name: 'realm_tenant_state' } },
-    { collection: AGENT_COLLECTION, keys: { subjectId: 1 }, options: { name: 'subjectId' } },
 
     { collection: TOOL_COLLECTION, keys: { toolId: 1 }, options: { name: 'toolId_unique', unique: true } },
     { collection: TOOL_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
@@ -126,16 +126,10 @@ export function plannedIndexes(): IndexPlan[] {
     // Role composition is resolved with a graph lookup, which needs the parent edge indexed.
     { collection: ROLE_COLLECTION, keys: { realmId: 1, parentRoleIds: 1 }, options: { name: 'realm_parentRoleIds' } },
 
-    { collection: ROLE_ASSIGNMENT_COLLECTION, keys: { assignmentId: 1 }, options: { name: 'assignmentId_unique', unique: true } },
-    // The decision point's own query, and the reason the pair leads: resolve one subject's live roles.
-    { collection: ROLE_ASSIGNMENT_COLLECTION, keys: { realmId: 1, subjectId: 1, expiresAt: 1 }, options: { name: 'realm_subject_expiresAt' } },
-    { collection: ROLE_ASSIGNMENT_COLLECTION, keys: { realmId: 1, roleId: 1 }, options: { name: 'realm_roleId' } },
-    // An elevation expires; a permanent assignment has no expiry and must not be swept.
-    {
-      collection: ROLE_ASSIGNMENT_COLLECTION,
-      keys: { expiresAt: 1 },
-      options: { name: 'expiresAt_ttl', expireAfterSeconds: 0, partialFilterExpression: { ephemeral: true } },
-    },
+    // No TTL index for an expired role holding, deliberately. A TTL index expires whole DOCUMENTS
+    // and never array elements, so declaring one here would delete the principal rather than the
+    // lapsed entry. Expiry is enforced by filtering at read time, which is the correctness
+    // mechanism, plus the sweeper in `RoleAdminService.sweepExpiredHoldings` for hygiene.
 
     { collection: POLICY_COLLECTION, keys: { policyId: 1 }, options: { name: 'policyId_unique', unique: true } },
     // A decision names the policy that decided it as `name@version`, so two policies sharing a name

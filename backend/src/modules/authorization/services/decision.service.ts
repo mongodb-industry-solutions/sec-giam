@@ -1,11 +1,14 @@
 import { Db } from 'mongodb';
 import {
-  ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION,
 } from '../../../shared/models/collections';
 import {
-  RoleRecord, RoleAssignmentRecord, ResourceServerRecord, EffectivePermission, permissionKey,
-  AdministrableRealm, assignmentAppliesIn, REALM_SCOPE_KIND,
+  RoleRecord, ResourceServerRecord, EffectivePermission, permissionKey,
+  AdministrableRealm, holdingAppliesIn, REALM_SCOPE_KIND,
 } from '../models/authorization.model';
+import {
+  PrincipalRecord, RoleHolding, activeHoldings,
+} from '../../directory/models/principal.model';
 
 /**
  * The decision point: what a principal may actually do, right now.
@@ -26,22 +29,22 @@ export class DecisionService {
   constructor(private readonly db: Db) {}
 
   /**
-   * Live assignments for a subject.
+   * Live role holdings for a subject, read from the principal that holds them.
    *
-   * Expiry is judged here rather than left to the sweep: a time-bound elevation must stop granting
-   * the moment it lapses, not whenever the database next removes it.
+   * ONE read, which is the point of embedding them: this is the hottest path in the system and the
+   * referenced form was two reads plus a traversal.
+   *
+   * Expiry is judged here rather than left to the sweep, and that ordering is the correctness
+   * argument rather than an optimisation: a TTL index cannot reach an array element, so an expired
+   * holding is still physically present until a sweeper removes it. A time-bound elevation must stop
+   * granting the moment it lapses, not whenever the database next gets round to it.
    */
-  private async liveAssignments(realmId: string, subjectId: string): Promise<RoleAssignmentRecord[]> {
-    const now = new Date();
-    const held = await this.db
-      .collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION)
-      .find({ realmId, subjectId }, { projection: { _id: 0 } })
-      .toArray();
-    return held.filter((assignment) => {
-      if (assignment.notBefore && Date.parse(assignment.notBefore) > now.getTime()) return false;
-      if (assignment.expiresAt && Date.parse(assignment.expiresAt) <= now.getTime()) return false;
-      return true;
-    });
+  private async liveHoldings(realmId: string, subjectId: string): Promise<RoleHolding[]> {
+    const principal = await this.db
+      .collection<PrincipalRecord>(PRINCIPAL_COLLECTION)
+      .findOne({ realmId, subjectId }, { projection: { _id: 0, roles: 1 } });
+    if (!principal) return [];
+    return activeHoldings(principal);
   }
 
   /**
@@ -104,8 +107,8 @@ export class DecisionService {
       .collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION)
       .findOne({ realmId: homeRealmId, audience }, { projection: { _id: 0, resourceServerId: 1 } });
 
-    const held = await this.liveAssignments(homeRealmId, subjectId);
-    const assignments = held.filter((assignment) => assignmentAppliesIn(assignment, homeRealmId, targetRealmId));
+    const held = await this.liveHoldings(homeRealmId, subjectId);
+    const assignments = held.filter((assignment) => holdingAppliesIn(assignment, homeRealmId, targetRealmId));
     const roles = await this.resolveRoles(homeRealmId, assignments.map((assignment) => assignment.roleId));
 
     const composed: RoleRecord[] = [];
@@ -177,7 +180,7 @@ export class DecisionService {
    * case and costs one indexed read.
    */
   async grantedRealmIds(homeRealmId: string, subjectId: string): Promise<string[]> {
-    const held = await this.liveAssignments(homeRealmId, subjectId);
+    const held = await this.liveHoldings(homeRealmId, subjectId);
     const named = held
       .filter((assignment) => assignment.scope?.kind === REALM_SCOPE_KIND && assignment.scope.ref)
       .map((assignment) => assignment.scope!.ref)

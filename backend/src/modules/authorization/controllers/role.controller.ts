@@ -119,21 +119,18 @@ export async function roleController(fastify: FastifyInstance) {
   const assignmentView = {
     type: 'object',
     additionalProperties: false,
-    required: ['assignmentId', 'subjectId', 'roleId', 'grantedAt', 'live'],
+    required: ['subjectId', 'roleId', 'grantedAt', 'live'],
     properties: {
-      assignmentId: { type: 'string' },
       subjectId: { type: 'string' },
       roleId: { type: 'string' },
       grantedAt: { type: 'string' },
       grantedBy: { type: 'string' },
-      notBefore: { type: 'string' },
       expiresAt: { type: 'string' },
       ephemeral: { type: 'boolean' },
       justification: { type: 'string' },
-      live: { type: 'boolean', description: 'False once an expiry has passed or a start has not arrived.' },
+      live: { type: 'boolean', description: 'False once an expiry has passed.' },
     },
     examples: [{
-      assignmentId: '0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05',
       subjectId: 'a1000070-0000-4000-8000-000000000070',
       roleId: 'a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4',
       grantedAt: '2026-08-30T09:12:00.000Z',
@@ -586,56 +583,59 @@ export async function roleController(fastify: FastifyInstance) {
     if (isRoleRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
 
     audit(realm, 'authorization.assignment.granted', caller.subjectId, {
-      roleId, holder: outcome.subjectId, assignmentId: outcome.assignmentId,
+      roleId, holder: outcome.subjectId,
     });
     return reply.status(201).send(outcome);
   });
 
-  fastify.delete('/realms/:realm/role-assignments/:assignmentId', {
+  fastify.delete('/realms/:realm/principals/:subjectId/roles/:roleId', {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'revokeRoleAssignment',
       tags: ['authorization'],
       summary: 'Take a role back from a principal',
       description:
-        'No applicable standard. Removes one assignment and nothing else: the role, and everyone '
-        + 'else holding it, are untouched. It takes effect at the next token issued, which is why '
-        + 'access-token lifetimes are short and why the irreversible operations introspect.',
+        'No applicable standard. Removes one holding and nothing else: the role, and everyone '
+        + 'else holding it, are untouched. Addressed by the subject and the role, because a role a '
+        + 'subject holds lives on the subject and has no identifier of its own. It takes effect at '
+        + 'the next token issued, which is why access-token lifetimes are short and why the '
+        + 'irreversible operations introspect.',
       security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
-        required: ['realm', 'assignmentId'],
-        properties: { realm: { type: 'string' }, assignmentId: { type: 'string' } },
+        required: ['realm', 'subjectId', 'roleId'],
+        properties: { realm: { type: 'string' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
       },
       response: {
         200: {
           description: 'Revoked.',
           type: 'object',
           additionalProperties: false,
-          required: ['revoked', 'assignmentId'],
-          properties: { revoked: { type: 'boolean' }, assignmentId: { type: 'string' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
-          examples: [{ revoked: true, assignmentId: '0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05', subjectId: 'a1000070-0000-4000-8000-000000000070', roleId: 'a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4' }],
+          required: ['revoked', 'subjectId', 'roleId'],
+          properties: { revoked: { type: 'boolean' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
+          examples: [{ revoked: true, subjectId: 'a1000070-0000-4000-8000-000000000070', roleId: 'a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4' }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
-        404: { $ref: 'Problem#', description: 'No such assignment in this realm.' },
+        404: { $ref: 'Problem#', description: 'That principal does not hold that role in this realm.' },
       },
     },
   }, async (request, reply) => {
-    const { realm: realmName, assignmentId } = request.params as { realm: string; assignmentId: string };
+    const { realm: realmName, subjectId, roleId } = request.params as
+      { realm: string; subjectId: string; roleId: string };
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'assignments', 'manage');
-    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.assignment.revoked', caller.subjectId, gate.refused, { assignmentId }));
+    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.assignment.revoked', caller.subjectId, gate.refused, { subjectId, roleId }));
 
-    const revoked = await new RoleAdminService(fastify.db).revoke(realm.realmId, assignmentId);
-    if (!revoked) return reply.status(404).send(problem(404, 'No such assignment'));
+    const revoked = await new RoleAdminService(fastify.db).revoke(realm.realmId, subjectId, roleId);
+    if (!revoked) return reply.status(404).send(problem(404, 'No such holding'));
 
     audit(realm, 'authorization.assignment.revoked', caller.subjectId, {
-      assignmentId, holder: revoked.subjectId, roleId: revoked.roleId,
+      holder: revoked.subjectId, roleId: revoked.roleId,
     });
-    return reply.send({ revoked: true, assignmentId, subjectId: revoked.subjectId, roleId: revoked.roleId });
+    return reply.send({ revoked: true, subjectId: revoked.subjectId, roleId: revoked.roleId });
   });
 }

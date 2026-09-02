@@ -1,12 +1,15 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
 } from '../../../shared/models/collections';
 import {
-  RoleRecord, RoleAssignmentRecord, RolePermission, PermissionRecord, ResourceServerRecord,
+  RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
   permissionKey,
 } from '../models/authorization.model';
+import {
+  PrincipalRecord, RoleHolding, isHoldingActive, MAX_ROLE_HOLDINGS,
+} from '../../directory/models/principal.model';
 import { newMeta, touchMeta } from '../../../shared/models/base.model';
 
 /**
@@ -60,17 +63,22 @@ export interface RoleDetail extends RoleSummary {
   lastModified?: string;
 }
 
+/**
+ * One holding, as an administrator sees it.
+ *
+ * Identified by the PAIR `(subjectId, roleId)` rather than by an assignment id. An embedded entry
+ * has no independent identity, and inventing a synthetic one would be a key nothing enforces: the
+ * pair is already unique, because a subject either holds a role or does not.
+ */
 export interface AssignmentView {
-  assignmentId: string;
   subjectId: string;
   roleId: string;
   grantedAt: string;
   grantedBy?: string;
-  notBefore?: string;
   expiresAt?: string;
   ephemeral?: boolean;
   justification?: string;
-  /** False once an expiry has passed or a start has not arrived. Judged here, not by the sweep. */
+  /** False once an expiry has passed. Judged here, not by the sweep. */
   live: boolean;
 }
 
@@ -87,8 +95,8 @@ export class RoleAdminService {
     return this.db.collection<RoleRecord>(ROLE_COLLECTION);
   }
 
-  private get assignments() {
-    return this.db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
+  private get principals() {
+    return this.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   }
 
   /** Resource server ids to names, so a permission reads as text rather than as an identifier. */
@@ -109,11 +117,20 @@ export class RoleAdminService {
     return new Set(permissions.map((permission) => permissionKey(permission)));
   }
 
+  /**
+   * How many principals hold each of these roles.
+   *
+   * The inverse question, which is what the multikey index on `{realmId, roles.roleId}` exists for.
+   * Lapsed holdings are counted too: "who used to have this" is the question after an incident, and
+   * an administrator deciding whether a role is safe to remove needs the real number.
+   */
   private async countAssignments(realmId: string, roleIds: string[]): Promise<Map<string, number>> {
     if (roleIds.length === 0) return new Map();
-    const counts = await this.assignments.aggregate<{ _id: string; total: number }>([
-      { $match: { realmId, roleId: { $in: roleIds } } },
-      { $group: { _id: '$roleId', total: { $sum: 1 } } },
+    const counts = await this.principals.aggregate<{ _id: string; total: number }>([
+      { $match: { realmId, 'roles.roleId': { $in: roleIds } } },
+      { $unwind: '$roles' },
+      { $match: { 'roles.roleId': { $in: roleIds } } },
+      { $group: { _id: '$roles.roleId', total: { $sum: 1 } } },
     ]).toArray();
     return new Map(counts.map((entry) => [entry._id, entry.total]));
   }
@@ -458,7 +475,7 @@ export class RoleAdminService {
       };
     }
 
-    const held = await this.assignments.countDocuments({ realmId, roleId });
+    const held = await this.principals.countDocuments({ realmId, 'roles.roleId': roleId });
     if (held > 0) {
       return {
         status: 409,
@@ -484,31 +501,33 @@ export class RoleAdminService {
     return { removed: true };
   }
 
-  private static view(assignment: RoleAssignmentRecord, now = Date.now()): AssignmentView {
-    const started = !assignment.notBefore || Date.parse(assignment.notBefore) <= now;
-    const unexpired = !assignment.expiresAt || Date.parse(assignment.expiresAt) > now;
+  private static view(subjectId: string, holding: RoleHolding, now = new Date()): AssignmentView {
     return {
-      assignmentId: assignment.assignmentId,
-      subjectId: assignment.subjectId,
-      roleId: assignment.roleId,
-      grantedAt: assignment.grantedAt,
-      ...(assignment.grantedBy ? { grantedBy: assignment.grantedBy } : {}),
-      ...(assignment.notBefore ? { notBefore: assignment.notBefore } : {}),
-      ...(assignment.expiresAt ? { expiresAt: assignment.expiresAt } : {}),
-      ...(assignment.ephemeral ? { ephemeral: assignment.ephemeral } : {}),
-      ...(assignment.justification ? { justification: assignment.justification } : {}),
-      live: started && unexpired,
+      subjectId,
+      roleId: holding.roleId,
+      grantedAt: holding.grantedAt,
+      ...(holding.grantedBy ? { grantedBy: holding.grantedBy } : {}),
+      ...(holding.expiresAt ? { expiresAt: holding.expiresAt } : {}),
+      ...(holding.ephemeral ? { ephemeral: holding.ephemeral } : {}),
+      ...(holding.justification ? { justification: holding.justification } : {}),
+      live: isHoldingActive(holding, now),
     };
   }
 
   /** Who holds a role, lapsed ones included: "who used to have this" is the question after an incident. */
   async assignmentsFor(realmId: string, roleId: string): Promise<AssignmentView[]> {
-    const held = await this.assignments
-      .find({ realmId, roleId }, { projection: { _id: 0 } })
-      .sort({ grantedAt: -1 })
+    const holders = await this.principals
+      .find({ realmId, 'roles.roleId': roleId }, { projection: { _id: 0, subjectId: 1, roles: 1 } })
       .toArray();
-    const now = Date.now();
-    return held.map((assignment) => RoleAdminService.view(assignment, now));
+    const now = new Date();
+    const views: AssignmentView[] = [];
+    for (const holder of holders) {
+      for (const holding of holder.roles ?? []) {
+        if (holding.roleId !== roleId) continue;
+        views.push(RoleAdminService.view(holder.subjectId, holding, now));
+      }
+    }
+    return views.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
   }
 
   async grant(
@@ -519,23 +538,35 @@ export class RoleAdminService {
     const role = await this.roles.findOne({ realmId, roleId: input.roleId }, { projection: { _id: 0, roleId: 1 } });
     if (!role) return null;
 
-    const duplicate = await this.assignments.findOne(
-      { realmId, roleId: input.roleId, subjectId: input.subjectId },
-      { projection: { _id: 0, assignmentId: 1 } },
+    const principal = await this.principals.findOne(
+      { realmId, subjectId: input.subjectId },
+      { projection: { _id: 0, roles: 1 } },
     );
-    if (duplicate) {
+    if (!principal) return null;
+
+    const existing = principal.roles ?? [];
+    if (existing.some((holding) => holding.roleId === input.roleId)) {
       return {
         status: 409,
         title: 'Already assigned',
-        detail: 'That principal already holds this role. Revoke the existing assignment to change its terms.',
+        detail: 'That principal already holds this role. Revoke the existing holding to change its terms.',
       };
     }
 
-    const assignment: RoleAssignmentRecord = {
-      realmId,
-      tenantId,
-      assignmentId: uuidv4(),
-      subjectId: input.subjectId,
+    // The cap is what makes embedding safe. Refused rather than allowed to grow, because an
+    // unbounded array is the antipattern this model is built to avoid, and a subject approaching
+    // the cap is a subject whose entitlements belong in policy.
+    if (existing.length >= MAX_ROLE_HOLDINGS) {
+      return {
+        status: 409,
+        title: 'Too many roles held',
+        detail:
+          `That principal already holds ${existing.length} roles, which is the limit. Fine-grained `
+          + 'authority belongs in a policy rather than in more roles on one subject.',
+      };
+    }
+
+    const holding: RoleHolding = {
       roleId: input.roleId,
       grantedBy: input.grantedBy,
       grantedAt: new Date().toISOString(),
@@ -543,18 +574,52 @@ export class RoleAdminService {
       // the expiry rather than being asked for separately and getting out of step with it.
       ...(input.expiresAt ? { expiresAt: input.expiresAt, ephemeral: true } : {}),
       ...(input.justification ? { justification: input.justification } : {}),
-      meta: newMeta('RoleAssignment'),
     };
-    await this.assignments.insertOne(assignment);
-    return RoleAdminService.view(assignment);
+
+    // Guarded on the role being absent, so two concurrent grants cannot both append it.
+    const outcome = await this.principals.updateOne(
+      { realmId, subjectId: input.subjectId, 'roles.roleId': { $ne: input.roleId } },
+      { $push: { roles: holding } },
+    );
+    if (outcome.matchedCount === 0) {
+      return {
+        status: 409,
+        title: 'Already assigned',
+        detail: 'That principal already holds this role. Revoke the existing holding to change its terms.',
+      };
+    }
+    return RoleAdminService.view(input.subjectId, holding);
   }
 
-  /** Removes one assignment. The role and every other holder are untouched. */
-  async revoke(realmId: string, assignmentId: string): Promise<AssignmentView | null> {
-    const assignment = await this.assignments.findOne({ realmId, assignmentId }, { projection: { _id: 0 } });
-    if (!assignment) return null;
-    await this.assignments.deleteOne({ realmId, assignmentId });
-    return RoleAdminService.view(assignment);
+  /**
+   * Removes one holding. The role and every other holder are untouched.
+   *
+   * Keyed by the pair, because that is the holding's identity now that it lives inside the subject.
+   */
+  async revoke(realmId: string, subjectId: string, roleId: string): Promise<AssignmentView | null> {
+    const principal = await this.principals.findOne(
+      { realmId, subjectId },
+      { projection: { _id: 0, roles: 1 } },
+    );
+    const holding = (principal?.roles ?? []).find((entry) => entry.roleId === roleId);
+    if (!holding) return null;
+    await this.principals.updateOne({ realmId, subjectId }, { $pull: { roles: { roleId } } });
+    return RoleAdminService.view(subjectId, holding);
+  }
+
+  /**
+   * Removes every lapsed holding. Hygiene only.
+   *
+   * Correctness never depends on this running: an expired holding is already filtered out at read
+   * time, because a TTL index cannot reach an array element. This keeps documents from carrying
+   * dead entries forever, which is a storage-limitation concern rather than an access-control one.
+   */
+  async sweepExpiredHoldings(now: Date = new Date()): Promise<{ principalsTouched: number }> {
+    const outcome = await this.principals.updateMany(
+      { 'roles.expiresAt': { $lte: now.toISOString() } },
+      { $pull: { roles: { expiresAt: { $lte: now.toISOString() } } } },
+    );
+    return { principalsTouched: outcome.modifiedCount };
   }
 
   /** Every permission any resource server in this realm declares, for building a role. */

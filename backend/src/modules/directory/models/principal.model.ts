@@ -31,6 +31,80 @@ export interface MultiValued {
   type?: string;
 }
 
+/** An agent's identity lifecycle. Whether it may OPERATE is the governing system's call, not this one. */
+export type AgentLifecycleState = 'proposed' | 'approved' | 'active' | 'suspended' | 'retired';
+
+/**
+ * One role a subject holds, as an entry in `principal.roles[]`.
+ *
+ * Wider than the ADR's minimum of `{roleId, grantedBy, grantedAt, expiresAt?}`, and each addition
+ * is a durable fact about the assignment rather than a flow, so it is kept:
+ *
+ * - `scope` carries cross-realm administration. `kind: 'realm'` is the one value this authority
+ *   interprets itself, pointing an assignment at ANOTHER realm so a principal whose identity,
+ *   credentials and token stay here may administer there. Dropping it would delete a working
+ *   capability, not simplify a shape.
+ * - `justification` and `approvalRef` are what make an elevation reviewable after the fact. An
+ *   elevation nobody can explain later is an elevation that failed its own purpose.
+ * - `ephemeral` marks a time-bound elevation, so a sweep cannot touch a permanent grant.
+ *
+ * `notBefore` does NOT survive. It existed to encode a pending elevation as an assignment dated far
+ * in the future, which `expiresAt` plus a read-time filter now expresses directly.
+ */
+export interface RoleHolding {
+  roleId: string;
+  grantedBy?: string;
+  grantedAt: string;
+  /** Absent means permanent. Present is a JIT elevation, and it needs no second collection. */
+  expiresAt?: string;
+  scope?: { kind: string; ref: string };
+  ephemeral?: boolean;
+  justification?: string;
+  approvalRef?: string;
+  /**
+   * Requested and awaiting an approval, granting nothing until it arrives.
+   *
+   * An explicit flag replaces the previous trick of dating `notBefore` far in the future so that
+   * every expiry check would ignore the entry. That worked, and it meant a reader had to know the
+   * convention to see that a live-looking assignment granted nothing.
+   *
+   * A pending request is a FLOW rather than a fact and properly belongs in its own short-lived
+   * record. The `elevationRequest` collection that would hold it is deferred, so it is carried here
+   * as a flag that fails closed, and it stays a flag until that collection exists.
+   */
+  pendingApproval?: boolean;
+}
+
+/**
+ * Whether a holding is in force now.
+ *
+ * Read-time filtering is the CORRECTNESS mechanism, never the sweeper: a TTL index cannot reach an
+ * array element, so an expired entry is present in the document until something removes it. Every
+ * effective-roles read goes through here.
+ */
+export function isHoldingActive(holding: RoleHolding, now: Date = new Date()): boolean {
+  // Fails closed on both counts: an unapproved request grants nothing, and so does a lapsed one.
+  if (holding.pendingApproval) return false;
+  if (!holding.expiresAt) return true;
+  return new Date(holding.expiresAt).getTime() > now.getTime();
+}
+
+/** The roles in force for a subject, expired entries removed. */
+export function activeHoldings(
+  principal: Pick<PrincipalRecord, 'roles'>,
+  now: Date = new Date(),
+): RoleHolding[] {
+  return (principal.roles ?? []).filter((holding) => isHoldingActive(holding, now));
+}
+
+/**
+ * The cap the embedded array is asserted against.
+ *
+ * Embedding is only safe while the array is bounded. A subject approaching this is a subject whose
+ * entitlements should live in policy, so the number is a design signal and not just a guard.
+ */
+export const MAX_ROLE_HOLDINGS = 100;
+
 export interface PrincipalRecord extends Scoped {
   /** The OIDC `sub`. Reuses the platform's existing login reference so historical rows resolve. */
   subjectId: string;
@@ -77,12 +151,58 @@ export interface PrincipalRecord extends Scoped {
   };
 
   /**
+   * Set for `kind: agent`. What was APPROVED, carried by the subject that acts.
+   *
+   * A sub document rather than a collection, exactly as workload attestation is: a separate record
+   * held half a subject whose other half was already here. The approved-versus-running distinction
+   * survives in `configurationDigest`, which is the whole point of recording one. An agent running
+   * under a configuration that does not match what was approved is the ordinary way an approved
+   * thing becomes an unapproved thing, and the audit record names the digest in force at the time.
+   *
+   * `allowedToolIds` does NOT survive. What an agent may call is an authorization question, so it is
+   * policy over a resource of kind tool, decided by the same engine that decides everything else.
+   * An allow list here would be a second authorization system with no conditions and no audit.
+   */
+  agent?: {
+    name: string;
+    /** Immutable once approved. A new version is a new record, because it was approved separately. */
+    version: string;
+    /** Why it exists, in the owner's own words. What a reviewer reads first. */
+    purpose: string;
+    /**
+     * The party ANSWERABLE for what it does, which is not always the party that runs it.
+     *
+     * An operations team may run an agent for a business owner, and after an incident the question
+     * is who was accountable, not who deployed it.
+     */
+    accountableParty: string;
+    configurationDigest?: string;
+    /** Signed where the approval must be verifiable rather than merely stored. */
+    signedMetadata?: string;
+    lifecycleState: AgentLifecycleState;
+  };
+
+  /**
    * Who is accountable for a non-human principal.
    *
    * The absence of an owner, a lifecycle and an audit trail is what turns service accounts into the
    * permanent, unattributable credentials every audit finds, so a machine identity carries all three.
    */
   owner?: OwnerRef;
+
+  /**
+   * The roles this subject holds, embedded.
+   *
+   * Embedded against the general advice, deliberately and for two reasons. Cardinality is bounded:
+   * a subject holds units or tens of roles, because fine grain lives in `policy` and not as rows
+   * here. And this is the hottest read in the system: issuing a token needs the subject and its
+   * roles, which embedded is one read and referenced is two plus a graph traversal.
+   *
+   * Two costs are accepted. A TTL index expires whole documents and never array elements, so expiry
+   * is enforced by filtering at read time, which is required anyway, plus a sweeper for hygiene. And
+   * the inverse question, "who holds role X", needs the multikey index on `{realmId, roles.roleId}`.
+   */
+  roles?: RoleHolding[];
 
   /**
    * Binds a principal to the business record they own, for a self-scoped role.

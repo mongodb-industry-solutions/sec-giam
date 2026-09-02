@@ -4,7 +4,7 @@ import { requireAuthorityCaller } from '../../../vendors/middleware/authorityAut
 import { problem } from '../../../shared/models/problem';
 import {
   REALM_COLLECTION, DOMAIN_COLLECTION, PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
-  CLIENT_COLLECTION, ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION,
+  CLIENT_COLLECTION, ROLE_COLLECTION, POLICY_COLLECTION,
   PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
   GRANT_COLLECTION,
 } from '../../../shared/models/collections';
@@ -86,11 +86,14 @@ const VIEWS: Record<string, ConsoleView> = {
     note: 'The separation-of-duties rationale travels with the role: an absence with no recorded reason reads as an oversight rather than a decision.',
   },
   assignments: {
-    collection: ROLE_ASSIGNMENT_COLLECTION,
-    projection: { _id: 0, realmId: 1, subjectId: 1, roleId: 1, grantedAt: 1, grantedBy: 1, expiresAt: 1 },
+    // Read from the principal, because a role a subject holds lives on the subject now. The console
+    // shows the holder and its array; who-holds-role-X is served by the multikey index.
+    collection: PRINCIPAL_COLLECTION,
+    projection: { _id: 0, realmId: 1, subjectId: 1, userName: 1, roles: 1 },
     realmScoped: true,
-    sort: { grantedAt: -1 },
+    sort: { userName: 1 },
     summary: 'Who holds which role',
+    note: 'A holding is an entry on the principal rather than a record of its own, so it is identified by the subject and the role together.',
   },
   policies: {
     collection: POLICY_COLLECTION,
