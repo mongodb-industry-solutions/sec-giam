@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, AppWindow, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, AppWindow, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
 import { can, type Claims } from './console';
 
 /**
@@ -12,6 +12,17 @@ import { can, type Claims } from './console';
  * except that the console does not know what it is showing them.
  */
 
+/**
+ * Which end of the sidebar a section belongs to.
+ *
+ * `panel` is the authority itself: the realm's principals, roles, keys, sessions. `account` is the
+ * signed-in person: who they are, what they authorised, how they authenticate, and where to read
+ * about any of it. Splitting them is the point, because the two groups answer different questions and
+ * a reader looking for their own credentials should not have to scan an administration list to find
+ * them.
+ */
+export type ConsoleGroup = 'panel' | 'account';
+
 export interface ConsoleSection {
   key: string;
   label: string;
@@ -20,6 +31,8 @@ export interface ConsoleSection {
   /** One line, for the sidebar tooltip and the dashboard card. */
   description: string;
   exact?: boolean;
+  /** Defaults to `panel`, so a section added without thinking about it lands with the rest. */
+  group?: ConsoleGroup;
   visible: (claims: Claims | null) => boolean;
 }
 
@@ -31,33 +44,6 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     icon: LayoutGrid,
     description: 'Everything this account can reach, at a glance.',
     exact: true,
-    visible: () => true,
-  },
-  {
-    key: 'profile',
-    label: 'Profile',
-    path: '/system/profile',
-    icon: UserRound,
-    description: 'Who the authority says you are, and what your current token allows.',
-    // Everybody can read their own profile, so this one is never hidden.
-    visible: () => true,
-  },
-  {
-    key: 'applications',
-    // Named for what it holds: consents this person granted, not the registry of registered clients.
-    // "Applications" alone reads as the registry, which is an operator surface and a different thing.
-    label: 'Authorized apps',
-    path: '/system/applications',
-    icon: Layers,
-    description: 'Applications you allowed to act on your behalf, what each may do, and when you granted it.',
-    visible: () => true,
-  },
-  {
-    key: 'credentials',
-    label: 'Authenticators',
-    path: '/system/credentials',
-    icon: KeyRound,
-    description: 'Devices registered to approve a sign-in for you. Retire one you no longer hold.',
     visible: () => true,
   },
   {
@@ -134,10 +120,55 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     description: 'What this realm signs with, what still verifies, and which replica holds each key.',
     visible: (claims) => can(claims, 'keys', 'view'),
   },
+
+  // ── The signed-in person, pinned to the foot of the sidebar ─────────────────────────────────────
+  {
+    key: 'profile',
+    label: 'Profile',
+    path: '/system/profile',
+    icon: UserRound,
+    description: 'Who the authority says you are, and what your current token allows.',
+    group: 'account',
+    // Everybody can read their own profile, so this one is never hidden.
+    visible: () => true,
+  },
+  {
+    key: 'applications',
+    // Named for what it holds: consents this person granted, not the registry of registered clients.
+    // "Applications" alone reads as the registry, which is an operator surface and a different thing.
+    label: 'Authorized apps',
+    path: '/system/applications',
+    icon: Layers,
+    description: 'Applications you allowed to act on your behalf, what each may do, and when you granted it.',
+    group: 'account',
+    visible: () => true,
+  },
+  {
+    key: 'credentials',
+    label: 'Authenticators',
+    path: '/system/credentials',
+    icon: KeyRound,
+    description: 'Devices registered to approve a sign-in for you. Retire one you no longer hold.',
+    group: 'account',
+    visible: () => true,
+  },
+  {
+    key: 'help',
+    label: 'Help and roles',
+    path: '/system/help',
+    icon: HelpCircle,
+    description: 'What this authority is for, what each role may do, and the standards it speaks.',
+    group: 'account',
+    visible: () => true,
+  },
 ];
 
 export function visibleSections(claims: Claims | null): ConsoleSection[] {
   return CONSOLE_SECTIONS.filter((section) => section.visible(claims));
+}
+
+export function inGroup(sections: ConsoleSection[], group: ConsoleGroup): ConsoleSection[] {
+  return sections.filter((section) => (section.group ?? 'panel') === group);
 }
 
 /** Only one section is active: the most specific path that matches, so siblings stay independent. */

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { activeSection, visibleSections, type ConsoleSection } from '../lib/consoleNav';
+import { activeSection, inGroup, visibleSections, type ConsoleSection } from '../lib/consoleNav';
 import type { Claims } from '../lib/console';
 
 const COLLAPSED_KEY = 'giam.sidebar.collapsed';
@@ -42,6 +42,8 @@ export function ConsoleSidebar({ claims }: { claims: Claims | null }) {
         collapsed ? 'w-14' : 'w-52'
       }`}
     >
+      {/* `flex-1` on the scrolling nav is what pushes the account block to the foot: it takes the free
+          space, so its sibling below has nowhere to go but the bottom edge. */}
       <nav aria-label="Console sections" className="min-h-0 flex-1 overflow-y-auto py-3">
         <div className="flex items-center justify-between px-3 pb-2">
           {!collapsed && <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Console</p>}
@@ -55,28 +57,40 @@ export function ConsoleSidebar({ claims }: { claims: Claims | null }) {
           </button>
         </div>
 
-        {sections.map((section) => {
-          const Icon = section.icon;
-          const active = isActive(section);
-          return (
-            <Link
-              key={section.key}
-              href={section.path}
-              title={collapsed ? `${section.label}: ${section.description}` : section.description}
-              aria-current={active ? 'page' : undefined}
-              className={`relative flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:bg-white/10 ${
-                active
-                  ? 'border-r-2 border-[#00ED64] bg-[#00ED64]/10 text-[#00ED64]'
-                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <Icon size={16} className="shrink-0" />
-              {!collapsed && <span className="truncate">{section.label}</span>}
-            </Link>
-          );
-        })}
+        {inGroup(sections, 'panel').map((section) => (
+          <SidebarLink key={section.key} section={section} active={isActive(section)} collapsed={collapsed} />
+        ))}
       </nav>
+
+      <div aria-label="Your account" className="border-t border-white/10 py-1">
+        {inGroup(sections, 'account').map((section) => (
+          <SidebarLink key={section.key} section={section} active={isActive(section)} collapsed={collapsed} />
+        ))}
+      </div>
     </aside>
+  );
+}
+
+function SidebarLink({ section, active, collapsed }: {
+  section: ConsoleSection;
+  active: boolean;
+  collapsed: boolean;
+}) {
+  const Icon = section.icon;
+  return (
+    <Link
+      href={section.path}
+      title={collapsed ? `${section.label}: ${section.description}` : section.description}
+      aria-current={active ? 'page' : undefined}
+      className={`relative flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:bg-white/10 ${
+        active
+          ? 'border-r-2 border-[#00ED64] bg-[#00ED64]/10 text-[#00ED64]'
+          : 'text-gray-400 hover:bg-white/5 hover:text-white'
+      }`}
+    >
+      <Icon size={16} className="shrink-0" />
+      {!collapsed && <span className="truncate">{section.label}</span>}
+    </Link>
   );
 }
 
