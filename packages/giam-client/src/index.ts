@@ -30,7 +30,18 @@ export interface VerifiedClaims {
   aud: string | string[];
   exp: number;
   scope: string[];
-  permissions: Array<{ resource: string; action: string }>;
+  /**
+   * Full permission strings, `resource:action`.
+   *
+   * v40 changed both the shape and the default. It was `[{resource, action}]`; it is now one string
+   * per entry, because that is the same spelling a role and a policy use and there is nothing to
+   * convert between the three places a permission appears.
+   *
+   * ABSENT unless the client asked to narrow. A JWT travels in an HTTP header and proxies commonly
+   * cut around 8 KB, so a token carrying every expanded permission fails intermittently depending
+   * on which proxy the request crossed. Read `roles` and expand, or ask for what you need.
+   */
+  permissions: string[];
   roles: string[];
   clientId?: string;
   sessionId?: string;
@@ -266,7 +277,19 @@ export class GiamClient {
       exp: Number(claims.exp ?? 0),
       scope: typeof claims.scope === 'string' ? claims.scope.split(' ').filter(Boolean) : [],
       permissions: Array.isArray(claims.permissions)
-        ? claims.permissions as Array<{ resource: string; action: string }>
+        ? (claims.permissions as unknown[])
+          /**
+           * Strings only, and a v39-shaped entry is CONVERTED rather than dropped.
+           *
+           * Not a compatibility shim for the old authority: a verifier may hold a token minted
+           * minutes before an authority upgrade, and refusing it would turn a rolling deploy into
+           * an outage. The conversion is one expression and it disappears when the last such token
+           * has expired, which is five minutes.
+           */
+          .map((entry) => (typeof entry === 'string'
+            ? entry
+            : `${(entry as { resource?: string }).resource ?? ''}:${(entry as { action?: string }).action ?? ''}`))
+          .filter((entry) => entry.length > 1 && !entry.startsWith(':') && !entry.endsWith(':'))
         : [],
       roles: Array.isArray(claims.roles) ? claims.roles as string[] : [],
       clientId: typeof claims.client_id === 'string' ? claims.client_id : undefined,
@@ -321,4 +344,108 @@ export class GiamClient {
 export function isLogoutToken(claims: Record<string, unknown>): boolean {
   const events = claims.events as Record<string, unknown> | undefined;
   return Boolean(events && 'http://schemas.openid.net/event/backchannel-logout' in events);
+}
+
+/**
+ * The published role catalog, as a verifier caches it.
+ *
+ * `catalogVersion` bumps whenever any resource catalog changes, so a cache holds until the number
+ * moves. Without a version a verifier either re-fetches per request, which defeats the point, or
+ * caches forever, which is how a withdrawn permission keeps working.
+ */
+export interface RoleCatalog {
+  catalogVersion: number;
+  roles: Array<{ name: string; permissions: string[] }>;
+}
+
+/**
+ * What a caller may actually do, from the claims plus the catalog.
+ *
+ * The union of the permissions carried explicitly and those the carried roles expand to. Union
+ * rather than either-or, because a token may legitimately carry both: a client that narrowed still
+ * gets its roles, so a resource server enforcing roles keeps working.
+ *
+ * Expansion is the verifier's job by design. It is what lets a token carry three roles instead of
+ * three hundred permissions, which is the difference between a token that always fits in a header
+ * and one that fails on whichever proxy is strictest.
+ */
+export function effectivePermissions(
+  claims: Pick<VerifiedClaims, 'permissions' | 'roles'>,
+  catalog: RoleCatalog | null,
+): Set<string> {
+  const held = new Set<string>(claims.permissions);
+  if (!catalog) return held;
+  const byName = new Map(catalog.roles.map((role) => [role.name, role.permissions]));
+  for (const role of claims.roles) {
+    for (const permission of byName.get(role) ?? []) held.add(permission);
+  }
+  return held;
+}
+
+/**
+ * Whether a caller holds one permission.
+ *
+ * ABSENCE IS REFUSAL. A token carrying neither claim, or a catalog that has not loaded, grants
+ * nothing: an unresolved authority must never read as an unrestricted one, and that is the single
+ * most important line in this file.
+ */
+export function holdsPermission(
+  claims: Pick<VerifiedClaims, 'permissions' | 'roles'>,
+  catalog: RoleCatalog | null,
+  resource: string,
+  action: string,
+): boolean {
+  return effectivePermissions(claims, catalog).has(`${resource}:${action}`);
+}
+
+/**
+ * Fetches the published role catalog, cached against its own version.
+ *
+ * The catalog is what turns the `roles` a token carries into the permissions a resource server
+ * enforces. Cached because re-fetching per request would defeat the reason roles are carried at
+ * all, and re-validated by `catalogVersion` because a cache with no invalidation is how a
+ * withdrawn permission keeps working.
+ *
+ * A fetch failure returns the LAST GOOD catalog rather than null, for the same reason the key set
+ * does: an authority outage must not turn into a platform outage. It returns null only when there
+ * has never been one, and null denies everything, which is the correct direction to fail.
+ */
+export function createCatalogCache(options: {
+  origin: string;
+  realm: string;
+  /** How long before the version is re-checked. Short: the check is one small request. */
+  ttlMs?: number;
+  token?: () => Promise<string | undefined>;
+}) {
+  let cached: RoleCatalog | null = null;
+  let fetchedAt = 0;
+  const ttl = options.ttlMs ?? 60_000;
+
+  return {
+    /** The catalog, refreshed when stale. Never throws. */
+    async get(): Promise<RoleCatalog | null> {
+      if (cached && Date.now() - fetchedAt < ttl) return cached;
+      try {
+        const bearer = await options.token?.();
+        const response = await fetch(
+          `${options.origin.replace(/\/$/, '')}/realms/${options.realm}/permissions`,
+          {
+            headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
+            signal: AbortSignal.timeout(5_000),
+          },
+        );
+        if (!response.ok) return cached;
+        const body = await response.json() as RoleCatalog;
+        if (!Array.isArray(body?.roles)) return cached;
+        cached = { catalogVersion: Number(body.catalogVersion ?? 0), roles: body.roles };
+        fetchedAt = Date.now();
+        return cached;
+      } catch {
+        // The last good catalog, or null when there has never been one. Null denies everything.
+        return cached;
+      }
+    },
+    /** For a test, or for an operator forcing a refresh after a deploy. */
+    invalidate(): void { fetchedAt = 0; },
+  };
 }
