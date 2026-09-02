@@ -70,7 +70,6 @@ export { EVENTBUS_COLLECTION };
  * usable between P1 and P7, and each is deleted by the phase that absorbs it. If one survives past
  * its phase, that is an unmerged write path and P11.6 fails on it.
  */
-export const PERMISSION_COLLECTION = 'permission';            // P5, into a permission string
 export const TOKEN_COLLECTION = 'token';                      // P6, into session
 export const DELEGATION_COLLECTION = 'delegation';            // P7, into grant
 

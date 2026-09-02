@@ -5,7 +5,7 @@ import { problem } from '../../../shared/models/problem';
 import {
   REALM_COLLECTION, DOMAIN_COLLECTION, PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
   ROLE_COLLECTION, POLICY_COLLECTION,
-  PERMISSION_COLLECTION, RESOURCE_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
+  RESOURCE_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
   GRANT_COLLECTION,
 } from '../../../shared/models/collections';
 
@@ -115,19 +115,19 @@ const VIEWS: Record<string, ConsoleView> = {
     sort: { name: 1 },
     summary: 'The rules evaluated beyond role membership',
   },
-  permissions: {
-    collection: PERMISSION_COLLECTION,
-    projection: { _id: 0, realmId: 1, resourceId: 1, resource: 1, action: 1, description: 1 },
-    realmScoped: true,
-    sort: { resource: 1 },
-    summary: 'Every permission a resource server has declared',
-  },
-  'resource-servers': {
+  resources: {
+    // One view, because an API, a tool and a Model Context Protocol server are the same kind of
+    // thing. The action catalog is read WITH the resource, since that is where it lives now: a
+    // permission is the string `resource:action` and has no row of its own to list.
     collection: RESOURCE_COLLECTION,
-    projection: { _id: 0, realmId: 1, resourceId: 1, name: 1, displayName: 1, registeredAt: 1 },
+    projection: {
+      _id: 0, realmId: 1, resourceId: 1, kind: 1, name: 1, displayName: 1, audience: 1,
+      parentResourceId: 1, actions: 1, catalogVersion: 1, status: 1, validationMode: 1, registeredAt: 1,
+    },
     realmScoped: true,
     sort: { name: 1 },
-    summary: 'The applications that enforce this authority decisions',
+    summary: 'Every protected object, and the actions it declares',
+    note: 'The catalog is what a policy naming this resource is validated against: an action absent here cannot be granted.',
   },
   sessions: {
     collection: SESSION_COLLECTION,

@@ -1,16 +1,14 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ROLE_COLLECTION, PRINCIPAL_COLLECTION, PERMISSION_COLLECTION, RESOURCE_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_COLLECTION,
 } from '../../../shared/models/collections';
-import {
-  RoleRecord, RolePermission, PermissionRecord, permissionKey,
-} from '../models/authorization.model';
+import { RoleRecord } from '../models/authorization.model';
 import {
   PrincipalRecord, RoleHolding, isHoldingActive, MAX_ROLE_HOLDINGS,
 } from '../../directory/models/principal.model';
 import { newMeta, touchMeta } from '../../../shared/models/base.model';
-import { ResourceRecord } from '../models/resource.model';
+import { ResourceRecord, parsePermission, permissionString } from '../models/resource.model';
 
 /**
  * Administering roles: what they grant, what they inherit, and who holds them.
@@ -108,13 +106,24 @@ export class RoleAdminService {
     return new Map(servers.map((server) => [server.resourceId, server.name]));
   }
 
-  /** Every permission a resource server in this realm has actually declared. */
+  /**
+   * Every permission any resource in this realm actually declares.
+   *
+   * Built from `resource.actions[]` rather than read from a table of permission rows. The catalog
+   * belongs on the resource because a resource knows its own verbs, the list is bounded, and it is
+   * replaced as a block at deploy time; a separate row per permission was an identifier nobody
+   * referenced and a second place for the same fact to be wrong.
+   */
   private async declared(realmId: string): Promise<Set<string>> {
-    const permissions = await this.db
-      .collection<PermissionRecord>(PERMISSION_COLLECTION)
-      .find({ realmId, deprecated: { $ne: true } }, { projection: { _id: 0, resource: 1, action: 1 } })
+    const resources = await this.db
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId, status: { $ne: 'withdrawn' } }, { projection: { _id: 0, name: 1, actions: 1 } })
       .toArray();
-    return new Set(permissions.map((permission) => permissionKey(permission)));
+    const declared = new Set<string>();
+    for (const resource of resources) {
+      for (const action of resource.actions ?? []) declared.add(permissionString(resource.name, action));
+    }
+    return declared;
   }
 
   /**
@@ -202,7 +211,7 @@ export class RoleAdminService {
         seen.add(id);
         const role = byId.get(id);
         if (!role) return;
-        for (const permission of role.permissions ?? []) keys.add(permissionKey(permission));
+        for (const permission of role.permissions ?? []) keys.add(permission);
         for (const parent of role.parentRoleIds ?? []) walk(parent, depth + 1);
       };
       walk(roleId, 0);
@@ -237,27 +246,31 @@ export class RoleAdminService {
     ]);
 
     const { role, inherited } = composed;
-    const describe = (permission: RolePermission, via: RoleRecord): ResolvedPermission => ({
-      resource: permission.resource,
-      action: permission.action,
-      resourceServer: names.get(permission.resourceId) ?? permission.resourceId,
-      via: via.name,
-      inherited: via.roleId !== roleId,
-      // A permission no resource server declares is enforceable by nothing, which is worth showing
-      // rather than leaving as a row that looks exactly like one that works.
-      unenforced: !declared.has(permissionKey(permission)),
-    });
+    const describe = (permission: string, via: RoleRecord): ResolvedPermission => {
+      const parsed = parsePermission(permission);
+      return {
+        resource: parsed?.resource ?? permission,
+        action: parsed?.action ?? '',
+        resourceServer: names.get(parsed?.resource ?? '') ?? (parsed?.resource ?? ''),
+        via: via.name,
+        inherited: via.roleId !== roleId,
+        // A permission no resource declares is enforceable by nothing, which is worth showing
+        // rather than leaving as an entry that looks exactly like one that works.
+        unenforced: !declared.has(permission),
+      };
+    };
 
     const own = (role.permissions ?? []).map((permission) => describe(permission, role));
 
     const effective = new Map<string, ResolvedPermission>();
-    for (const permission of own) effective.set(`${permission.resource}:${permission.action}`, permission);
+    for (const permission of role.permissions ?? []) {
+      effective.set(permission, describe(permission, role));
+    }
     for (const parent of inherited) {
       for (const permission of parent.permissions ?? []) {
-        const key = permissionKey(permission);
         // The role's own statement wins the attribution: a permission it holds directly is not
         // inherited, whatever a parent also happens to grant.
-        if (!effective.has(key)) effective.set(key, describe(permission, parent));
+        if (!effective.has(permission)) effective.set(permission, describe(permission, parent));
       }
     }
 
@@ -289,43 +302,50 @@ export class RoleAdminService {
   }
 
   /**
-   * Turns `resource:action` pairs into permissions bound to the resource server that declared them.
+   * Checks `resource:action` pairs against the catalogs and returns them as permission strings.
    *
-   * A pair no server declares is refused rather than stored: the authority may only grant what an
-   * application said it enforces, and a role granting something nothing checks is a role that
-   * appears to work and does not.
+   * P5.7. A pair whose resource type IS registered and whose verb that resource never declared is
+   * refused rather than stored: the authority may only grant what an application said it enforces,
+   * and a role granting something nothing checks is a role that appears to work and does not.
+   *
+   * A resource type nothing registers is a different case and is ALLOWED through: those are matched
+   * by pattern, they have no catalog to validate against, and refusing them would make it impossible
+   * to grant anything over a dynamically identified object.
    */
   private async bind(
     realmId: string,
     wanted: Array<{ resource: string; action: string }>,
-  ): Promise<RolePermission[] | RoleRefusal> {
+  ): Promise<string[] | RoleRefusal> {
     if (wanted.length === 0) return [];
-    const declared = await this.db
-      .collection<PermissionRecord>(PERMISSION_COLLECTION)
-      .find({ realmId }, { projection: { _id: 0, resourceId: 1, resource: 1, action: 1 } })
-      .toArray();
-    const byKey = new Map(declared.map((permission) => [permissionKey(permission), permission]));
 
-    const bound: RolePermission[] = [];
-    const unknown: string[] = [];
+    const resources = await this.db
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId }, { projection: { _id: 0, name: 1, actions: 1 } })
+      .toArray();
+    const catalog = new Map(resources.map((resource) => [resource.name, new Set(resource.actions ?? [])]));
+
+    const bound: string[] = [];
+    const undeclared: string[] = [];
     for (const permission of wanted) {
-      const match = byKey.get(permissionKey(permission));
-      if (!match) {
-        unknown.push(permissionKey(permission));
+      const key = permissionString(permission.resource, permission.action);
+      const actions = catalog.get(permission.resource);
+      // Registered resource, undeclared verb: that is the typo this catalog exists to catch.
+      if (actions && !actions.has(permission.action)) {
+        undeclared.push(key);
         continue;
       }
-      bound.push({ resourceId: match.resourceId, resource: match.resource, action: match.action });
+      bound.push(key);
     }
-    if (unknown.length > 0) {
+    if (undeclared.length > 0) {
       return {
         status: 400,
         title: 'Undeclared permission',
         detail:
-          `No resource server in this realm declares ${unknown.join(', ')}. A permission exists only `
-          + 'once the application that enforces it has registered its catalog.',
+          `No resource in this realm declares ${undeclared.join(', ')}. A permission exists only once `
+          + 'the application that enforces it has declared the action in its catalog.',
       };
     }
-    return bound;
+    return [...new Set(bound)].sort();
   }
 
   /** Refuses a parent that does not exist, or one that would close a cycle. */
@@ -622,21 +642,38 @@ export class RoleAdminService {
     return { principalsTouched: outcome.modifiedCount };
   }
 
-  /** Every permission any resource server in this realm declares, for building a role. */
-  async catalog(realmId: string): Promise<Array<{ resource: string; action: string; description: string; resourceServer: string; deprecated: boolean }>> {
-    const [names, permissions] = await Promise.all([
-      this.serverNames(realmId),
-      this.db.collection<PermissionRecord>(PERMISSION_COLLECTION)
-        .find({ realmId }, { projection: { _id: 0 } })
-        .sort({ resource: 1, action: 1 })
-        .toArray(),
-    ]);
-    return permissions.map((permission) => ({
-      resource: permission.resource,
-      action: permission.action,
-      description: permission.description,
-      resourceServer: names.get(permission.resourceId) ?? permission.resourceId,
-      deprecated: Boolean(permission.deprecated),
-    }));
+  /**
+   * Every permission any resource in this realm declares, for building a role.
+   *
+   * Read from the resources themselves. A permission has no record of its own to carry a
+   * description, so the resource's own description answers for its whole catalog, which is where a
+   * reader would look anyway.
+   */
+  async catalog(realmId: string): Promise<Array<{
+    permission: string; resource: string; action: string; description: string; resourceServer: string;
+  }>> {
+    const resources = await this.db
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId, status: { $ne: 'withdrawn' } }, { projection: { _id: 0 } })
+      .sort({ name: 1 })
+      .toArray();
+    const byId = new Map(resources.map((resource) => [resource.resourceId, resource]));
+
+    const catalog: Array<{
+      permission: string; resource: string; action: string; description: string; resourceServer: string;
+    }> = [];
+    for (const resource of resources) {
+      const parent = resource.parentResourceId ? byId.get(resource.parentResourceId) : undefined;
+      for (const action of resource.actions ?? []) {
+        catalog.push({
+          permission: permissionString(resource.name, action),
+          resource: resource.name,
+          action,
+          description: resource.description ?? '',
+          resourceServer: parent?.name ?? resource.name,
+        });
+      }
+    }
+    return catalog.sort((a, b) => a.permission.localeCompare(b.permission));
   }
 }
