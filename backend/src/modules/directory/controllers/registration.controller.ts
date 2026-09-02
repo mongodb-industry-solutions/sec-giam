@@ -9,6 +9,7 @@ import { SecurityEventService } from '../../audit/services/securityEvent.service
 import { credentialStores } from '../../../shared/ports';
 import { newMeta } from '../../../shared/models/base.model';
 import { problem } from '../../../shared/models/problem';
+import { checkPassword, describeRefusals, passwordPolicyOf } from '../../realm/models/domain.model';
 
 /**
  * Self-service registration, where a realm allows it.
@@ -72,6 +73,27 @@ export async function registrationController(fastify: FastifyInstance) {
     if (!realm || !realm.enabled) return reply.status(404).send(problem(404, 'Unknown realm'));
     if (!realm.registration.selfServiceEnabled) {
       return reply.status(403).send(problem(403, 'Registration is closed', 'This realm does not offer self-service registration.'));
+    }
+
+    /**
+     * The password policy, ENFORCED, against the local domain that owns it.
+     *
+     * v40 P11.10 found it seeded and never checked: `minLength: 8` sat in the database and nothing
+     * compared a password to it, so the field described a control that did not exist and read as
+     * one during a review. Checked here, before anything is written, because a principal created
+     * with a refused password would have to be unwound.
+     *
+     * Refused BEFORE the user-name collision check, so a weak password is not also a way to learn
+     * which names are taken.
+     */
+    const localDomain = await new RealmService(fastify.db).localDomain(realm.realmId);
+    const broken = checkPassword(passwordPolicyOf(localDomain ?? { protocol: 'internal' }), body.password);
+    if (broken.length > 0) {
+      return reply.status(400).send(problem(
+        400,
+        'Password does not meet the policy',
+        `This realm requires ${describeRefusals(broken)}.`,
+      ));
     }
 
     const directory = new DirectoryService(fastify.db);

@@ -33,6 +33,7 @@ const METADATA_FIELDS = new Set([
   'clientName', 'clientType', 'redirectUris', 'postLogoutRedirectUris', 'grantTypes',
   'requirePkce', 'tokenEndpointAuthMethod', 'applicationType', 'tokenPolicy',
   'logoUri', 'clientUri', 'demoRoster', 'firstParty', 'backchannel', 'mtls', 'claimMappings',
+  'provisioning',
 ]);
 
 const LOGICAL = new Set(['$and', '$or', '$nor']);

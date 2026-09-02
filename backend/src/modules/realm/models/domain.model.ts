@@ -105,6 +105,56 @@ export interface DomainRecord extends Scoped {
   meta: Meta;
 }
 
+/** Why a password was refused. Named individually, so a caller can say which rule it broke. */
+export type PasswordRefusal =
+  | { rule: 'minLength'; required: number }
+  | { rule: 'requireUppercase' }
+  | { rule: 'requireNumber' }
+  | { rule: 'requireSymbol' };
+
+/**
+ * Checks a password against the path's policy. Empty means it passed.
+ *
+ * v40 P11.10: the policy was seeded and NEVER ENFORCED. `minLength: 8` sat in the database and
+ * nothing compared a password to it, so the field described a control that did not exist. A policy
+ * nobody checks is worse than no policy, because it is read as a control during a review.
+ *
+ * Returns every rule broken rather than the first, so a person is told what to fix once instead of
+ * discovering the rules one refusal at a time.
+ *
+ * A path with NO policy passes everything. That is the honest reading: a federated domain's rules
+ * belong to its upstream, and inventing a floor here would apply this authority's opinion to a
+ * password it never sees.
+ */
+export function checkPassword(
+  policy: NonNullable<NonNullable<DomainRecord['authentication']>['passwordPolicy']> | null | undefined,
+  password: string,
+): PasswordRefusal[] {
+  if (!policy) return [];
+  const broken: PasswordRefusal[] = [];
+  if (password.length < policy.minLength) {
+    broken.push({ rule: 'minLength', required: policy.minLength });
+  }
+  if (policy.requireUppercase && !/[A-Z]/.test(password)) broken.push({ rule: 'requireUppercase' });
+  if (policy.requireNumber && !/[0-9]/.test(password)) broken.push({ rule: 'requireNumber' });
+  // Anything that is not a letter, a digit or whitespace. Deliberately broad: a narrow list would
+  // refuse a perfectly good password for containing a character nobody thought to allow.
+  if (policy.requireSymbol && !/[^A-Za-z0-9\s]/.test(password)) broken.push({ rule: 'requireSymbol' });
+  return broken;
+}
+
+/** One sentence a person can act on, from the rules they broke. */
+export function describeRefusals(refusals: PasswordRefusal[]): string {
+  return refusals.map((refusal) => {
+    switch (refusal.rule) {
+      case 'minLength': return `at least ${refusal.required} characters`;
+      case 'requireUppercase': return 'an upper-case letter';
+      case 'requireNumber': return 'a digit';
+      default: return 'a symbol';
+    }
+  }).join(', ');
+}
+
 /** The password rules in force on a path, or null where the upstream owns them. */
 export function passwordPolicyOf(domain: Pick<DomainRecord, 'protocol' | 'authentication'>) {
   if (domain.protocol !== 'internal') return null;

@@ -69,9 +69,21 @@ describe('v39 P9.9: the sign-in screen carries the relying party, not the author
     expect(context.branding.displayName ?? context.displayName).toBeTruthy();
   });
 
-  it('offers the federated providers a person may choose', () => {
-    const configured = realms[0].providers ?? [];
-    expect(context.providers.length).toBe(configured.length);
+  it('offers every way in, the realm own directory included', () => {
+    /**
+     * v40 P8.5 changed what this list means, deliberately.
+     *
+     * The sign-in screen is a projection of the realm DOMAIN list, and the realm's own directory is
+     * one domain among the others rather than a special case sitting outside the list. So the count
+     * is the federated providers plus the one local path every realm has.
+     *
+     * That is the whole point of the widening: a realm with three ways in offers three, and adding
+     * a fourth is data rather than a branch in the page.
+     */
+    const federated = realms[0].providers ?? [];
+    expect(context.providers.length).toBe(federated.length + 1);
+    const local = context.providers.filter((entry) => entry.protocol === 'internal');
+    expect(local, 'the realm own directory is not offered as a way in').toHaveLength(1);
   });
 
   it('says so when a provider is visible but not usable', () => {
@@ -128,9 +140,17 @@ describe('v39 P9.9: the demo roster survived the move, persona by persona', () =
   });
 
   it('discloses nothing a sign-in page does not already show', () => {
-    // The roster is on an unauthenticated page, so this is the bound that keeps it acceptable: a
-    // name, optionally an email, and the role. Never a credential, a hash, or a business reference.
-    const permitted = new Set(['subjectId', 'userName', 'email', 'role']);
+    /**
+     * The roster is on an UNAUTHENTICATED page, so this is the bound that keeps it acceptable.
+     *
+     * Never a credential, never a hash, never a business reference. `demoNote` is permitted and
+     * belongs here: it is a deliberately OPAQUE hint written by whoever wrote the fixture, so a
+     * demonstration can tell two personas holding the same role apart without this authority
+     * learning what a merchant, an account or a case is. That opacity is the whole reason it is
+     * safe on an unauthenticated page, and it is why widening the set here is a decision rather
+     * than an accommodation.
+     */
+    const permitted = new Set(['subjectId', 'userName', 'email', 'role', 'demoNote']);
     for (const entry of context.roster) {
       const leaked = Object.keys(entry).filter((field) => !permitted.has(field));
       expect(leaked, `roster entry exposes ${leaked.join(', ')}`).toEqual([]);

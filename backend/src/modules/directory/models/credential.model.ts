@@ -64,6 +64,24 @@ export interface OAuthClientMetadata {
   /** RFC 8705: the certificate a client is bound to, when it authenticates with one. */
   mtls?: { certificateThumbprint?: string };
   claimMappings?: Record<string, string>;
+
+  /**
+   * Where this application wants to be told about identity lifecycle changes.
+   *
+   * DECLARED here as of v40 because it was being QUERIED and was not declared anywhere, so the
+   * query matched nothing and no provisioning notice had ever been delivered, before or after the
+   * consolidation. A filter on an undeclared field is the worst kind of dead code: it reads as a
+   * working feature and fails silently forever.
+   *
+   * Absent means this client does not receive notices, which is the honest default: outbound
+   * provisioning is opt-in, and a notice sent to an application that never asked for one is an
+   * unsolicited push of identity data.
+   */
+  provisioning?: {
+    endpoint: string;
+    /** Which lifecycle operations to send. Absent means all three. */
+    events?: Array<'create' | 'update' | 'deactivate'>;
+  };
 }
 
 export interface CredentialRecord extends Scoped {
