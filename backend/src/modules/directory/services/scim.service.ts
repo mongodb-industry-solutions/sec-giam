@@ -1,4 +1,4 @@
-import { IdentityRecord, toScimEmails } from '../models/identity.model';
+import { PrincipalRecord, toScimEmails } from '../models/principal.model';
 
 /**
  * SCIM 2.0 projection, in and out.
@@ -46,7 +46,7 @@ export interface ScimUser {
  * usable, and where it stands in its lifecycle. SCIM only has the boolean, so the boolean is what is
  * projected, and the richer state travels in the extension rather than being flattened away.
  */
-export function toScimUser(identity: IdentityRecord, baseUrl: string): ScimUser {
+export function toScimUser(identity: PrincipalRecord, baseUrl: string): ScimUser {
   const emails = toScimEmails(identity);
   return {
     schemas: [SCIM_USER_SCHEMA, SCIM_PRINCIPAL_EXTENSION],

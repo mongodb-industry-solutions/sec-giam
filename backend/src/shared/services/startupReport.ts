@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import { existsSync } from 'fs';
 import { config, keyVaultNamespace, realmIssuer } from '../../config';
-import { REALM_COLLECTION, IDENTITY_COLLECTION, SIGNING_KEY_COLLECTION } from '../models/collections';
+import { REALM_COLLECTION, PRINCIPAL_COLLECTION, KEY_COLLECTION } from '../models/collections';
 
 // What GIAM reports about itself at boot, so "is it working" is answerable from the log alone.
 // Every failure mode that costs time on this platform shows up here: a wrong crypt_shared path, a
@@ -97,7 +97,7 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
       // With no realm nothing can be issued, and the failure reads as a token bug rather than empty data.
       : { label: 'realms', value: 'none: nothing can authenticate. Run setup:seed', level: 'warn' });
 
-    const identities = await db.collection(IDENTITY_COLLECTION).estimatedDocumentCount();
+    const identities = await db.collection(PRINCIPAL_COLLECTION).estimatedDocumentCount();
     lines.push({
       label: 'identities',
       value: identities > 0 ? `${identities} principal(s)` : 'none: the database is not seeded',
@@ -110,12 +110,12 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
     // health check. Signing keys are what this replica can mint with; published keys include every
     // key still trusted for verification, which legitimately outnumbers them after a rotation or a
     // scale-down. A single count of everything `active` conflated the two and read as a leak.
-    const signingKeys = await db.collection(SIGNING_KEY_COLLECTION).countDocuments({
+    const signingKeys = await db.collection(KEY_COLLECTION).countDocuments({
       status: 'active',
       signingEligible: true,
       instanceId: config.keys.instanceId,
     });
-    const published = await db.collection(SIGNING_KEY_COLLECTION).countDocuments({ status: 'active' });
+    const published = await db.collection(KEY_COLLECTION).countDocuments({ status: 'active' });
     lines.push({
       label: 'published keys',
       value: published > 0

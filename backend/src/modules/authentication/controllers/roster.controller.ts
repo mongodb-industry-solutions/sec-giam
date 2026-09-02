@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { toScimEmails } from '../../directory/models/identity.model';
+import { toScimEmails } from '../../directory/models/principal.model';
 import { problem } from '../../../shared/models/problem';
 
 /**

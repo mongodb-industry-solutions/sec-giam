@@ -1,13 +1,13 @@
 import { Db, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import {
   GIAM_COLLECTIONS, collectionSpec,
-  REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION,
-  IDENTITY_COLLECTION, CREDENTIAL_COLLECTION, AGENT_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
-  CLIENT_COLLECTION, API_KEY_COLLECTION, AUTHORIZATION_REQUEST_COLLECTION, TOKEN_COLLECTION,
-  SIGNING_KEY_COLLECTION, RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
+  REALM_COLLECTION, DOMAIN_COLLECTION,
+  PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, AGENT_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
+  CLIENT_COLLECTION, API_KEY_COLLECTION, AUTH_REQUEST_COLLECTION, TOKEN_COLLECTION,
+  KEY_COLLECTION, RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
   ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
-  SECURITY_EVENT_COLLECTION,
+  AUDIT_COLLECTION,
 } from '../../shared/models/collections';
 
 export interface IndexPlan {
@@ -34,28 +34,28 @@ export function plannedIndexes(): IndexPlan[] {
     // The wire alias a caller may use instead of the realm's own name.
     { collection: REALM_COLLECTION, keys: { aliases: 1 }, options: { name: 'aliases', sparse: true } },
 
-    { collection: IDENTITY_PROVIDER_COLLECTION, keys: { providerId: 1 }, options: { name: 'providerId_unique', unique: true } },
-    { collection: IDENTITY_PROVIDER_COLLECTION, keys: { realmId: 1, tenantId: 1, name: 1 }, options: { name: 'realm_tenant_name_unique', unique: true } },
+    { collection: DOMAIN_COLLECTION, keys: { providerId: 1 }, options: { name: 'providerId_unique', unique: true } },
+    { collection: DOMAIN_COLLECTION, keys: { realmId: 1, tenantId: 1, name: 1 }, options: { name: 'realm_tenant_name_unique', unique: true } },
     // Home-realm discovery resolves an entered email domain to a provider.
-    { collection: IDENTITY_PROVIDER_COLLECTION, keys: { realmId: 1, 'config.emailDomains': 1 }, options: { name: 'realm_emailDomains', sparse: true } },
+    { collection: DOMAIN_COLLECTION, keys: { realmId: 1, 'config.emailDomains': 1 }, options: { name: 'realm_emailDomains', sparse: true } },
 
     // Directory.
-    { collection: IDENTITY_COLLECTION, keys: { subjectId: 1 }, options: { name: 'subjectId_unique', unique: true } },
-    { collection: IDENTITY_COLLECTION, keys: { realmId: 1, userName: 1 }, options: { name: 'realm_userName_unique', unique: true } },
-    { collection: IDENTITY_COLLECTION, keys: { realmId: 1, tenantId: 1, kind: 1, lifecycleState: 1 }, options: { name: 'realm_tenant_kind_state' } },
+    { collection: PRINCIPAL_COLLECTION, keys: { subjectId: 1 }, options: { name: 'subjectId_unique', unique: true } },
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, userName: 1 }, options: { name: 'realm_userName_unique', unique: true } },
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, tenantId: 1, kind: 1, lifecycleState: 1 }, options: { name: 'realm_tenant_kind_state' } },
     // SCIM correlation for inbound provisioning. Sparse: only a federated or provisioned record has one.
-    { collection: IDENTITY_COLLECTION, keys: { realmId: 1, externalId: 1 }, options: { name: 'realm_externalId', sparse: true } },
-    { collection: IDENTITY_COLLECTION, keys: { realmId: 1, providerId: 1 }, options: { name: 'realm_providerId', sparse: true } },
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, externalId: 1 }, options: { name: 'realm_externalId', sparse: true } },
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, providerId: 1 }, options: { name: 'realm_providerId', sparse: true } },
     // The blind digest, not the encrypted value: a keyed one-way digest can carry a unique index,
     // encrypted material cannot. Partial, because a workload has no phone number.
     {
-      collection: IDENTITY_COLLECTION,
+      collection: PRINCIPAL_COLLECTION,
       keys: { realmId: 1, primaryPhoneDigest: 1 },
       options: { name: 'realm_phoneDigest_unique', unique: true, partialFilterExpression: { primaryPhoneDigest: { $type: 'string' } } },
     },
-    { collection: IDENTITY_COLLECTION, keys: { realmId: 1, demoFeatured: 1 }, options: { name: 'realm_demoFeatured', sparse: true } },
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, demoFeatured: 1 }, options: { name: 'realm_demoFeatured', sparse: true } },
     // The workload binding, when one is attested.
-    { collection: IDENTITY_COLLECTION, keys: { 'workload.spiffeId': 1 }, options: { name: 'workload_spiffeId', sparse: true } },
+    { collection: PRINCIPAL_COLLECTION, keys: { 'workload.spiffeId': 1 }, options: { name: 'workload_spiffeId', sparse: true } },
 
     { collection: CREDENTIAL_COLLECTION, keys: { credentialId: 1 }, options: { name: 'credentialId_unique', unique: true } },
     // The authentication hot path: every factor a subject holds of a given type, active ones first.
@@ -86,13 +86,13 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: API_KEY_COLLECTION, keys: { realmId: 1, 'owner.kind': 1, 'owner.ref': 1 }, options: { name: 'realm_owner' } },
     // No index on keyHash here: it is a QE equality field, and its index is the encrypted one.
 
-    { collection: AUTHORIZATION_REQUEST_COLLECTION, keys: { requestId: 1 }, options: { name: 'requestId_unique', unique: true } },
+    { collection: AUTH_REQUEST_COLLECTION, keys: { requestId: 1 }, options: { name: 'requestId_unique', unique: true } },
     // The code is stored hashed, and looked up by that hash on redemption.
-    { collection: AUTHORIZATION_REQUEST_COLLECTION, keys: { realmId: 1, codeHash: 1 }, options: { name: 'realm_codeHash', sparse: true } },
-    { collection: AUTHORIZATION_REQUEST_COLLECTION, keys: { authReqId: 1 }, options: { name: 'authReqId', sparse: true } },
-    { collection: AUTHORIZATION_REQUEST_COLLECTION, keys: { realmId: 1, subjectId: 1, status: 1 }, options: { name: 'realm_subject_status', sparse: true } },
+    { collection: AUTH_REQUEST_COLLECTION, keys: { realmId: 1, codeHash: 1 }, options: { name: 'realm_codeHash', sparse: true } },
+    { collection: AUTH_REQUEST_COLLECTION, keys: { authReqId: 1 }, options: { name: 'authReqId', sparse: true } },
+    { collection: AUTH_REQUEST_COLLECTION, keys: { realmId: 1, subjectId: 1, status: 1 }, options: { name: 'realm_subject_status', sparse: true } },
     // Expiry is the database's job: a cleanup job is a thing that fails silently.
-    { collection: AUTHORIZATION_REQUEST_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0 } },
+    { collection: AUTH_REQUEST_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0 } },
 
     { collection: TOKEN_COLLECTION, keys: { jti: 1 }, options: { name: 'jti_unique', unique: true } },
     { collection: TOKEN_COLLECTION, keys: { realmId: 1, subjectId: 1, type: 1 }, options: { name: 'realm_subject_type' } },
@@ -107,12 +107,12 @@ export function plannedIndexes(): IndexPlan[] {
       options: { name: 'expiresAt_ttl', expireAfterSeconds: 86400 },
     },
 
-    { collection: SIGNING_KEY_COLLECTION, keys: { kid: 1 }, options: { name: 'kid_unique', unique: true } },
+    { collection: KEY_COLLECTION, keys: { kid: 1 }, options: { name: 'kid_unique', unique: true } },
     // The JWKS read: every key a realm still publishes, on every verification cold start.
-    { collection: SIGNING_KEY_COLLECTION, keys: { realmId: 1, status: 1, notAfter: 1 }, options: { name: 'realm_status_notAfter' } },
+    { collection: KEY_COLLECTION, keys: { realmId: 1, status: 1, notAfter: 1 }, options: { name: 'realm_status_notAfter' } },
     // Lease renewal, and finding the keys whose owning replica has gone away.
-    { collection: SIGNING_KEY_COLLECTION, keys: { realmId: 1, instanceId: 1 }, options: { name: 'realm_instanceId', sparse: true } },
-    { collection: SIGNING_KEY_COLLECTION, keys: { leaseExpiresAt: 1 }, options: { name: 'leaseExpiresAt', sparse: true } },
+    { collection: KEY_COLLECTION, keys: { realmId: 1, instanceId: 1 }, options: { name: 'realm_instanceId', sparse: true } },
+    { collection: KEY_COLLECTION, keys: { leaseExpiresAt: 1 }, options: { name: 'leaseExpiresAt', sparse: true } },
 
     // Authorization.
     { collection: RESOURCE_SERVER_COLLECTION, keys: { resourceServerId: 1 }, options: { name: 'resourceServerId_unique', unique: true } },
@@ -169,7 +169,7 @@ export function plannedIndexes(): IndexPlan[] {
     // index does not take those options, and the realm key would defeat sparseness anyway because
     // every event has one.
     {
-      collection: SECURITY_EVENT_COLLECTION,
+      collection: AUDIT_COLLECTION,
       keys: { realmId: 1, stakeholderSubjectIds: 1, ts: -1 },
       options: { name: 'realm_stakeholders_ts' },
     },

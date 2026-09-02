@@ -1,5 +1,5 @@
 import type { Binary } from 'mongodb';
-import { IDENTITY_COLLECTION, API_KEY_COLLECTION } from '../../shared/models/collections';
+import { PRINCIPAL_COLLECTION, API_KEY_COLLECTION } from '../../shared/models/collections';
 import { config } from '../../config';
 
 // What GIAM encrypts at rest, under its OWN DEKs in its OWN vault.
@@ -59,7 +59,7 @@ export function buildEncryptedFieldsMaps(deks: GiamDeks): Record<string, { field
     : { queryType: 'equality', contention: 8 };
 
   return {
-    [IDENTITY_COLLECTION]: {
+    [PRINCIPAL_COLLECTION]: {
       fields: [
         { keyId: deks.identityEmail, path: 'primaryEmail', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },
         { keyId: deks.identityPhone, path: 'primaryPhone', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },

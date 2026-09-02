@@ -137,7 +137,7 @@ export interface ProofOfPossession extends PortImplementation {
   verify(token: Record<string, unknown>, request: { headers: Record<string, unknown>; certificateThumbprint?: string }): Promise<boolean>;
 }
 
-export interface SecurityEventRecord extends Scoped {
+export interface AuditRecord extends Scoped {
   ts: string;
   action: string;
   outcome: 'success' | 'failure';
@@ -147,7 +147,7 @@ export interface SecurityEventRecord extends Scoped {
 
 /** Where security events go. More than one sink may be active; none of them may swallow an event. */
 export interface EventSink extends PortImplementation {
-  emit(event: SecurityEventRecord): Promise<void>;
+  emit(event: AuditRecord): Promise<void>;
 }
 
 /** Outbound identity lifecycle. Provisioning creates a principal; it never activates one. */

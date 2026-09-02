@@ -5,7 +5,7 @@ import { DecisionService } from '../services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
-import { ROLE_ASSIGNMENT_COLLECTION, IDENTITY_COLLECTION } from '../../../shared/models/collections';
+import { ROLE_ASSIGNMENT_COLLECTION, PRINCIPAL_COLLECTION } from '../../../shared/models/collections';
 import { RoleRecord, RoleAssignmentRecord, REALM_SCOPE_KIND } from '../models/authorization.model';
 import { ROLE_COLLECTION } from '../../../shared/models/collections';
 import { newMeta } from '../../../shared/models/base.model';
@@ -262,7 +262,7 @@ export async function crossRealmController(fastify: FastifyInstance) {
       return reply.status(400).send(problem(400, 'That is this realm', 'A principal already administers their own realm through an ordinary assignment.'));
     }
 
-    const subject = await fastify.db.collection<{ subjectId: string; realmId: string }>(IDENTITY_COLLECTION)
+    const subject = await fastify.db.collection<{ subjectId: string; realmId: string }>(PRINCIPAL_COLLECTION)
       .findOne({ realmId: holder.realmId, subjectId: body.subjectId }, { projection: { _id: 0, subjectId: 1 } });
     if (!subject) return reply.status(404).send(problem(404, 'Unknown principal', 'No principal of this realm has that subject.'));
 

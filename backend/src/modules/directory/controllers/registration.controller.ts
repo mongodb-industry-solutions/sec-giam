@@ -2,8 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../services/directory.service';
-import { IDENTITY_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord } from '../models/identity.model';
+import { PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord } from '../models/principal.model';
 import { CredentialRecord } from '../models/credential.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { credentialStores } from '../../../shared/ports';
@@ -89,7 +89,7 @@ export async function registrationController(fastify: FastifyInstance) {
     // rather than not existing, so the person can be told where their request stands.
     const lifecycleState = realm.registration.autoApprove ? 'active' : 'pending';
 
-    await fastify.db.collection<IdentityRecord>(IDENTITY_COLLECTION).insertOne({
+    await fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION).insertOne({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       subjectId,
@@ -104,7 +104,7 @@ export async function registrationController(fastify: FastifyInstance) {
       lifecycleState,
       sessionEpoch: 0,
       meta: newMeta('Identity'),
-    } as IdentityRecord);
+    } as PrincipalRecord);
 
     const store = credentialStores.resolve('bcrypt-password');
     const issued = await store.issue(subjectId, body.password);

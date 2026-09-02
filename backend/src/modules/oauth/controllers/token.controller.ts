@@ -6,8 +6,8 @@ import { TokenIssuer } from '../services/tokenIssuer.service';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { AUTHORIZATION_REQUEST_COLLECTION } from '../../../shared/models/collections';
-import { AuthorizationRequestRecord, isRedeemable } from '../models/authorizationRequest.model';
+import { AUTH_REQUEST_COLLECTION } from '../../../shared/models/collections';
+import { AuthRequestRecord, isRedeemable } from '../models/authRequest.model';
 import { scopesOf, ClientRecord } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { BackchannelService, isFailure, BACKCHANNEL_GRANT } from '../../authentication/services/backchannel.service';
@@ -301,7 +301,7 @@ export async function tokenController(fastify: FastifyInstance) {
       if (!code) return refuse(400, 'invalid_grant', 'code is required');
 
       const codeHash = createHash('sha256').update(code).digest('hex');
-      const requests = fastify.db.collection<AuthorizationRequestRecord>(AUTHORIZATION_REQUEST_COLLECTION);
+      const requests = fastify.db.collection<AuthRequestRecord>(AUTH_REQUEST_COLLECTION);
       const pending = await requests.findOne({ realmId: realm.realmId, codeHash }, { projection: { _id: 0 } });
 
       if (!pending || pending.clientId !== client.clientId) {

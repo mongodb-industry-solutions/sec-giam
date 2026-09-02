@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import type { KeyObject } from 'crypto';
 import { createPublicKey } from 'crypto';
-import type { Jwk } from '../models/signingKey.model';
+import type { Jwk } from '../models/key.model';
 
 /**
  * RFC 7638 JWK thumbprint, used as the key id.

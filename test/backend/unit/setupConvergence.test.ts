@@ -5,7 +5,7 @@ import {
 } from '../../../backend/src/vendors/setup/createIndexes';
 import { verdictOf, ValidationCheck } from '../../../backend/src/vendors/setup/validateSetup';
 import {
-  collectionsWithRetiredFields, CLIENT_COLLECTION, SECURITY_EVENT_COLLECTION,
+  collectionsWithRetiredFields, CLIENT_COLLECTION, CREDENTIAL_COLLECTION, AUDIT_COLLECTION,
 } from '../../../backend/src/shared/models/collections';
 import { RETIRED_CLIENT_FIELDS } from '../../../backend/src/modules/oauth/models/client.model';
 import { retireDeclaredFields } from '../../../backend/src/vendors/seed/upsertSeed';
@@ -91,11 +91,11 @@ describe('index reconciliation', () => {
 
   it('leaves a time series alone, since its default meta index belongs to the engine', async () => {
     const { db, state } = fakeDb({
-      [SECURITY_EVENT_COLLECTION]: { indexes: [{ name: 'meta_1_ts_1', key: { meta: 1, ts: 1 } }] },
+      [AUDIT_COLLECTION]: { indexes: [{ name: 'meta_1_ts_1', key: { meta: 1, ts: 1 } }] },
     });
-    expect(reconcilable(SECURITY_EVENT_COLLECTION)).toBe(false);
+    expect(reconcilable(AUDIT_COLLECTION)).toBe(false);
     await reconcileIndexes(db as never);
-    expect(state[SECURITY_EVENT_COLLECTION].dropped).toEqual([]);
+    expect(state[AUDIT_COLLECTION].dropped).toEqual([]);
   });
 
   it('never drops a collection or a document', async () => {
@@ -116,9 +116,11 @@ describe('retired fields', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   it('declares the retired field next to the model that retired it', () => {
+    // v40: the OAuth client registration is a credential of type oauth_client, so the fields its
+    // model retired are declared on the collection that now carries the record.
     expect(RETIRED_CLIENT_FIELDS).toContain('owner');
-    const client = collectionsWithRetiredFields().find((spec) => spec.name === CLIENT_COLLECTION);
-    expect(client?.retiredFields).toContain('owner');
+    const spec = collectionsWithRetiredFields().find((s) => s.name === CREDENTIAL_COLLECTION);
+    expect(spec?.retiredFields).toContain('owner');
   });
 
   it('never retires a field the model still declares', () => {
@@ -130,7 +132,7 @@ describe('retired fields', () => {
 
   it('unsets a retired field wherever it survives, and touches nothing else', async () => {
     const { db, state } = fakeDb({
-      [CLIENT_COLLECTION]: {
+      [CREDENTIAL_COLLECTION]: {
         documents: [
           { clientId: 'a', owner: { kind: 'principal' }, owners: [{ kind: 'principal' }] },
           { clientId: 'b', owners: [{ kind: 'principal' }] },
@@ -138,17 +140,17 @@ describe('retired fields', () => {
       },
     });
     await retireDeclaredFields(db as never);
-    expect(state[CLIENT_COLLECTION].unset).toEqual([{ owner: '' }]);
-    expect(state[CLIENT_COLLECTION].documents).toEqual([
+    expect(state[CREDENTIAL_COLLECTION].unset).toEqual([{ owner: '' }]);
+    expect(state[CREDENTIAL_COLLECTION].documents).toEqual([
       { clientId: 'a', owners: [{ kind: 'principal' }] },
       { clientId: 'b', owners: [{ kind: 'principal' }] },
     ]);
   });
 
   it('writes nothing when no retired field survives', async () => {
-    const { db, state } = fakeDb({ [CLIENT_COLLECTION]: { documents: [{ clientId: 'a' }] } });
+    const { db, state } = fakeDb({ [CREDENTIAL_COLLECTION]: { documents: [{ clientId: 'a' }] } });
     await retireDeclaredFields(db as never);
-    expect(state[CLIENT_COLLECTION].unset).toEqual([]);
+    expect(state[CREDENTIAL_COLLECTION].unset).toEqual([]);
   });
 });
 

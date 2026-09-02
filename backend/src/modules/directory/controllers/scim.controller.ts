@@ -3,8 +3,8 @@ import { randomUUID } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requireAuthority } from '../../../vendors/middleware/authorityAuth';
-import { IDENTITY_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord } from '../models/identity.model';
+import { PRINCIPAL_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord } from '../models/principal.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { provisioningTargets } from '../../../shared/ports';
 import {
@@ -80,7 +80,7 @@ export async function scimController(fastify: FastifyInstance) {
   }
 
   function identities() {
-    return fastify.db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+    return fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   }
 
   fastify.get(`${base}/Users`, {
@@ -256,7 +256,7 @@ export async function scimController(fastify: FastifyInstance) {
       lifecycleState,
       sessionEpoch: 0,
       meta: newMeta('Identity'),
-    } as unknown as IdentityRecord;
+    } as unknown as PrincipalRecord;
 
     await identities().insertOne(record);
 
@@ -376,7 +376,7 @@ export async function scimController(fastify: FastifyInstance) {
     const updated = await identities().findOne({ subjectId: id }, { projection: { _id: 0 } });
     return reply
       .header('content-type', 'application/scim+json')
-      .send(toScimUser(updated as IdentityRecord, location(realmName)));
+      .send(toScimUser(updated as PrincipalRecord, location(realmName)));
   });
 
   fastify.delete(`${base}/Users/:id`, {

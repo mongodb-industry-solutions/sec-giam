@@ -4,8 +4,8 @@ import { createHash, randomBytes } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { ClientAuthService, provisionalClient, recordSoftAdmission } from '../services/clientAuth.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { AUTHORIZATION_REQUEST_COLLECTION, SESSION_COLLECTION } from '../../../shared/models/collections';
-import { AuthorizationRequestRecord } from '../models/authorizationRequest.model';
+import { AUTH_REQUEST_COLLECTION, SESSION_COLLECTION } from '../../../shared/models/collections';
+import { AuthRequestRecord } from '../models/authRequest.model';
 import { SessionRecord, isLive } from '../../authentication/models/session.model';
 import { scopesOf } from '../models/client.model';
 import { enforcementFor } from '../../realm/models/realm.model';
@@ -249,7 +249,7 @@ export async function authorizeController(fastify: FastifyInstance) {
 
     const code = randomBytes(32).toString('base64url');
     const now = new Date();
-    const record: AuthorizationRequestRecord = {
+    const record: AuthRequestRecord = {
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       requestId: uuidv4(),
@@ -273,7 +273,7 @@ export async function authorizeController(fastify: FastifyInstance) {
       expiresAt: new Date(now.getTime() + realm.tokenPolicy.codeTtlSeconds * 1000).toISOString(),
       meta: newMeta('AuthorizationRequest'),
     };
-    await fastify.db.collection<AuthorizationRequestRecord>(AUTHORIZATION_REQUEST_COLLECTION).insertOne(record);
+    await fastify.db.collection<AuthRequestRecord>(AUTH_REQUEST_COLLECTION).insertOne(record);
 
     // The session now knows which clients hold tokens from it, so a logout can notify each of them.
     await fastify.db.collection<SessionRecord>(SESSION_COLLECTION).updateOne(

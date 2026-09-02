@@ -7,7 +7,7 @@
 import type {
   AuthenticationMethod, CredentialStore, IdentityProviderAdapter, KeyProvider,
   PolicyEvaluator, TokenFormat, ProofOfPossession, EventSink, ProvisioningTarget,
-  SecurityEventRecord, PortName,
+  AuditRecord, PortName,
 } from '../../../backend/src/shared/ports';
 import { PORT_REGISTRIES } from '../../../backend/src/shared/ports';
 
@@ -115,9 +115,9 @@ export const fakeProofOfPossession: ProofOfPossession = {
 export class FakeEventSink implements EventSink {
   readonly name = `${FAKE_PREFIX}event-sink`;
 
-  readonly received: SecurityEventRecord[] = [];
+  readonly received: AuditRecord[] = [];
 
-  async emit(event: SecurityEventRecord): Promise<void> {
+  async emit(event: AuditRecord): Promise<void> {
     this.received.push(event);
   }
 }

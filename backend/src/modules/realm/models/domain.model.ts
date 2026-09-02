@@ -11,7 +11,7 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  * plus a claim mapping: no application code, no application deployment, no application restart. That
  * is the whole argument for brokering rather than each application implementing OIDC and SAML again.
  */
-export interface IdentityProviderRecord extends Scoped {
+export interface DomainRecord extends Scoped {
   providerId: string;
   /** Slug, unique inside the realm. */
   name: string;

@@ -8,8 +8,8 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import { resolve, relative, sep } from 'path';
 import {
   GIAM_COLLECTIONS, scopedCollections,
-  IDENTITY_COLLECTION, AGENT_COLLECTION, DELEGATION_COLLECTION, GRANT_COLLECTION,
-  SECURITY_EVENT_COLLECTION,
+  PRINCIPAL_COLLECTION, AGENT_COLLECTION, DELEGATION_COLLECTION, GRANT_COLLECTION,
+  AUDIT_COLLECTION,
 } from '../../../backend/src/shared/models/collections';
 import { plannedIndexes } from '../../../backend/src/vendors/setup/createIndexes';
 
@@ -111,21 +111,24 @@ describe('v39 P0.6: every record is partitioned from its first version', () => {
 });
 
 describe('v39 P0.6: the four doors that cannot be reopened cheaply', () => {
-  it('keeps a logical agent distinct from the runtime workload that executes it', () => {
-    // One approved agent has many workloads over its life. Collapsing them means an audit record can
-    // say what was approved or what ran, never both.
+  it('folds the agent definition onto the principal that acts, not beside it', () => {
+    // v40 reverses the v39 decision deliberately. An agent is a subject that acts, so it belongs in
+    // the one register of subjects, carried as an optional sub document exactly as workload
+    // attestation already is. A separate collection held half a subject whose other half was in the
+    // principal record. The approved-versus-ran distinction is carried by the audit record, which
+    // names both the principal and the configuration digest in force at the time.
     const names = GIAM_COLLECTIONS.map((s) => s.name);
-    expect(names).toContain(AGENT_COLLECTION);
-    expect(names).toContain(IDENTITY_COLLECTION);
+    expect(names).not.toContain(AGENT_COLLECTION);
+    expect(names).toContain(PRINCIPAL_COLLECTION);
   });
 
-  it('keeps a delegation distinct from an OAuth grant', () => {
-    // A grant is consent to a client's scopes. A delegation is a person authorising an agent to act,
-    // which is purpose bound, constrained, time limited and separately revocable.
+  it('folds a delegation into the grant that carries its purpose', () => {
+    // Also a reversal. A delegation IS a grant with a purpose, constraints and an expiry: the same
+    // record with three more fields, not a second concept. Keeping both invited the question of
+    // which one a given consent lived in.
     const names = GIAM_COLLECTIONS.map((s) => s.name);
-    expect(names).toContain(DELEGATION_COLLECTION);
+    expect(names).not.toContain(DELEGATION_COLLECTION);
     expect(names).toContain(GRANT_COLLECTION);
-    expect(DELEGATION_COLLECTION).not.toBe(GRANT_COLLECTION);
   });
 
   it('keeps the tenant partition as a field rather than as a collection', () => {
@@ -137,7 +140,7 @@ describe('v39 P0.6: the four doors that cannot be reopened cheaply', () => {
   });
 
   it('stores security events in a time series rather than an ordinary collection', () => {
-    const spec = GIAM_COLLECTIONS.find((s) => s.name === SECURITY_EVENT_COLLECTION);
+    const spec = GIAM_COLLECTIONS.find((s) => s.name === AUDIT_COLLECTION);
     // It cannot be converted in place, so getting it wrong once is permanent until a drop.
     expect(spec?.kind).toBe('timeseries');
   });

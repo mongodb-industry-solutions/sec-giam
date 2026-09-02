@@ -6,9 +6,9 @@ import { SessionService } from '../../authentication/services/session.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { identityProviders } from '../../../shared/ports';
 import { bindIdentityProviders } from '../services/oidcProvider';
-import { IDENTITY_COLLECTION, IDENTITY_PROVIDER_COLLECTION, ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord } from '../../directory/models/identity.model';
-import { IdentityProviderRecord } from '../models/identityProvider.model';
+import { PRINCIPAL_COLLECTION, DOMAIN_COLLECTION, ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord } from '../../directory/models/principal.model';
+import { DomainRecord } from '../models/domain.model';
 import { RoleAssignmentRecord, RoleRecord } from '../../authorization/models/authorization.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { problem } from '../../../shared/models/problem';
@@ -65,7 +65,7 @@ export async function federationController(fastify: FastifyInstance) {
     const realm = await realmService().byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const provider = await fastify.db.collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION)
+    const provider = await fastify.db.collection<DomainRecord>(DOMAIN_COLLECTION)
       .findOne({ realmId: realm.realmId, name: providerName, enabled: true }, { projection: { _id: 0 } });
     if (!provider) return reply.status(404).send(problem(404, 'Unknown provider'));
 
@@ -131,7 +131,7 @@ export async function federationController(fastify: FastifyInstance) {
     const realm = await realmService().byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const provider = await fastify.db.collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION)
+    const provider = await fastify.db.collection<DomainRecord>(DOMAIN_COLLECTION)
       .findOne({ realmId: realm.realmId, name: providerName, enabled: true }, { projection: { _id: 0 } });
     if (!provider) return reply.status(404).send(problem(404, 'Unknown provider'));
 
@@ -156,10 +156,10 @@ export async function federationController(fastify: FastifyInstance) {
     }
 
     const externalId = String(claims.sub ?? '');
-    const identities = fastify.db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+    const identities = fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
     // Linked by upstream identifier, never by email: an address can be reassigned inside an
     // organisation, and matching on one is how a new joiner inherits somebody else's account.
-    let identity: IdentityRecord | null = await identities.findOne(
+    let identity: PrincipalRecord | null = await identities.findOne(
       { realmId: realm.realmId, providerId: provider.providerId, externalId },
       { projection: { _id: 0 } },
     );
@@ -181,7 +181,7 @@ export async function federationController(fastify: FastifyInstance) {
         externalId,
         providerId: provider.providerId,
         meta: newMeta('Identity'),
-      } as unknown as IdentityRecord;
+      } as unknown as PrincipalRecord;
       await identities.insertOne(record);
       identity = record;
     }
@@ -225,7 +225,7 @@ export async function federationController(fastify: FastifyInstance) {
     realmId: string,
     tenantId: string,
     subjectId: string,
-    provider: IdentityProviderRecord,
+    provider: DomainRecord,
     claims: Record<string, unknown>,
   ): Promise<void> {
     // The record's own shape: a list of (claim, value, roleName). Data rather than code, because

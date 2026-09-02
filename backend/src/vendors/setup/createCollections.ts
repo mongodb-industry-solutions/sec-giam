@@ -1,5 +1,5 @@
 import { Db } from 'mongodb';
-import { GIAM_COLLECTIONS, SECURITY_EVENT_COLLECTION } from '../../shared/models/collections';
+import { GIAM_COLLECTIONS, AUDIT_COLLECTION } from '../../shared/models/collections';
 import { buildEncryptedFieldsMaps, GiamDeks } from '../encryption/encryptedFieldsMaps';
 
 /**
@@ -49,7 +49,7 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
 
   // Stated rather than assumed: the audit collection is the one that must never be created plain, or
   // a range query over it would work and a reviewer would never learn it is not a time series.
-  if (!existing.has(SECURITY_EVENT_COLLECTION) || reset) {
-    console.log(`  note:    ${SECURITY_EVENT_COLLECTION} is a time series; it cannot be converted in place`);
+  if (!existing.has(AUDIT_COLLECTION) || reset) {
+    console.log(`  note:    ${AUDIT_COLLECTION} is a time series; it cannot be converted in place`);
   }
 }

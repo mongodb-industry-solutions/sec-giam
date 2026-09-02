@@ -3,11 +3,11 @@ import * as bcrypt from 'bcryptjs';
 import { v5 as uuidv5 } from 'uuid';
 import { clientSecretFor } from '@leafypay/platform-links';
 import {
-  CLIENT_COLLECTION, REALM_COLLECTION, IDENTITY_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, ROLE_COLLECTION,
+  CLIENT_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, ROLE_COLLECTION,
   PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
 } from '../../shared/models/collections';
 import { ClientRecord } from '../../modules/oauth/models/client.model';
-import { IdentityRecord } from '../../modules/directory/models/identity.model';
+import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import {
   RoleAssignmentRecord, RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
 } from '../../modules/authorization/models/authorization.model';
@@ -52,7 +52,7 @@ interface ClientFixture {
   owners?: Array<{ kind: string; ref: string; displayName?: string }>;
   /** Present when this client is a principal in its own right rather than an application's agent. */
   serviceIdentity?: {
-    kind: IdentityRecord['kind'];
+    kind: PrincipalRecord['kind'];
     userName: string;
     roleName?: string;
     owner?: { kind: string; ref: string; displayName?: string };
@@ -71,7 +71,7 @@ export async function seedClients(db: Db): Promise<void> {
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
 
   const clients = db.collection<ClientRecord>(CLIENT_COLLECTION);
-  const identities = db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+  const identities = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   const assignments = db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
 
@@ -125,7 +125,7 @@ export async function seedClients(db: Db): Promise<void> {
     if (!fixture.serviceIdentity) continue;
 
     // The machine's own principal record, keyed by the client id it authenticates as.
-    await upsertSeed<IdentityRecord>(
+    await upsertSeed<PrincipalRecord>(
       identities,
       { subjectId: fixture.clientId },
       {

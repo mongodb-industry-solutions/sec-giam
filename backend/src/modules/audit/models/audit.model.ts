@@ -11,7 +11,7 @@ import { Scoped } from '../../../shared/models/base.model';
  * phase that populates them. Adding them later would mean rewriting a collection that cannot be
  * altered in place.
  */
-export interface SecurityEventRecord extends Scoped {
+export interface AuditRecord extends Scoped {
   ts: Date;
   /** The time-series meta field. Queried by, so it holds what an investigator filters on. */
   meta: {
