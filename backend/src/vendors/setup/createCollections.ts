@@ -32,8 +32,23 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
     const registered = new Set<string>(GIAM_COLLECTIONS.map((spec) => spec.name));
     for (const name of existing) {
       if (registered.has(name)) continue;
-      // The driver's own encrypted-state collections go with their parent, not on their own.
-      if (name.startsWith('enxcol_.')) continue;
+      /**
+       * The driver's encrypted-state collections go with their parent, not on their own.
+       *
+       * Unless the parent is gone. `enxcol_.identity.esc` outlived `identity` through the rename to
+       * `principal`, and a state collection whose parent no longer exists holds index metadata for
+       * DEKs the rebuilt vault does not have. It is unreachable, unreadable and indistinguishable
+       * from a live one to anybody auditing the database.
+       */
+      if (name.startsWith('enxcol_.')) {
+        const parent = name.split('.')[1];
+        if (parent && !registered.has(parent)) {
+          await db.collection(name).drop();
+          existing.delete(name);
+          console.log(`  dropped: ${name} (encrypted state for a collection that is gone)`);
+        }
+        continue;
+      }
       // The server's own namespaces, including the view a time series collection creates. Dropping
       // one is not permitted and is not ours to attempt.
       if (name.startsWith('system.')) continue;

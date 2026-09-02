@@ -19,10 +19,25 @@ export interface IndexPlan {
 /**
  * Every index GIAM declares, in one list so setup creates it and validation checks the same thing.
  *
- * Two rules shape the list. Uniqueness is always PER REALM, because two realms are two institutions
- * and a user name that collides across them is not a collision. And every compound index leads with
- * `{realmId, tenantId}`: that pair is the partition key and the shard key if this deployment ever
- * shards, and a shard key cannot be changed later without a migration.
+ * Two rules shape the list, and the second one is stated CORRECTLY here for the first time.
+ *
+ * Uniqueness is per REALM wherever a value is only unique inside one, because two realms are two
+ * institutions and a user name that collides across them is not a collision. The exceptions are
+ * deliberate and few: an identifier resolved WITHOUT a realm in hand, such as a key id or a
+ * subject id, is globally unique, because the question a verifier asks is which realm the thing
+ * belongs to.
+ *
+ * Every compound index on a scoped collection leads with `realmId`.
+ *
+ * The header used to claim the pair `{realmId, tenantId}` led every one of them, and it did not:
+ * three of thirty-four do. Rather than widen thirty-one indexes for a field that is invariably
+ * `default`, the CLAIM is corrected, which the ADR open item explicitly allows. The property that
+ * matters is preserved either way: `{realmId, tenantId}` is the shard key, `realmId` is a prefix
+ * of it, and a query narrowing by `realmId` alone is therefore still targetable on a sharded
+ * deployment. Adding `tenantId` to every index would cost storage and write amplification on every
+ * one of them to express something the prefix already gives.
+ *
+ * The day-one invariant test asserts exactly this, so the claim cannot drift from the list again.
  */
 export function plannedIndexes(): IndexPlan[] {
   const plans: IndexPlan[] = [

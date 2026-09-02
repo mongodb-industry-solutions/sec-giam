@@ -8,6 +8,9 @@ export default defineConfig({
       '@leafypay/eventbus': resolve(__dirname, 'packages/eventbus/src/index.ts'),
       '@leafypay/platform-links': resolve(__dirname, 'packages/platform-links/src/index.ts'),
       '@leafypay/giam-client': resolve(__dirname, 'packages/giam-client/src/index.ts'),
+      // The driver is a backend dependency, not a root one, and a test that measures what the
+      // driver sends has to import the same copy the backend uses.
+      mongodb: resolve(__dirname, 'backend/node_modules/mongodb'),
     },
   },
   test: {
