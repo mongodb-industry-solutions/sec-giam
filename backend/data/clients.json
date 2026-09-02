@@ -15,6 +15,7 @@
     ],
     "grantTypes": [
       "authorization_code",
+      "client_credentials",
       "refresh_token",
       "urn:openid:params:grant-type:ciba"
     ],
@@ -42,7 +43,16 @@
     ],
     "demoRoster": [
       "customer"
-    ]
+    ],
+    "serviceIdentity": {
+      "kind": "service",
+      "userName": "Espresso Works, acting as itself",
+      "owner": {
+        "kind": "merchant",
+        "ref": "m0000001-0000-4000-8000-000000000001",
+        "displayName": "Espresso Works"
+      }
+    }
   },
   {
     "realm": "leafypay",
