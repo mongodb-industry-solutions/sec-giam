@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
+import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
 import { requireAuthorityCaller, AuthorityCaller } from '../../../vendors/middleware/authorityAuth';
 import { OAuthClient, clientFromCredential, clientMetadata } from '../models/client.model';
 import { CredentialRecord } from '../../directory/models/credential.model';
@@ -827,6 +828,33 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       clientId,
       target: { type: 'client', ref: clientId },
       stakeholderSubjectIds: ownerSubjects(existing as OAuthClient),
+    });
+
+    /**
+     * The subject is the client's `ownerId`, not its `clientId`.
+     *
+     * That is the principal the credential acts as, so it is what appears as `sub` in every token
+     * this client was issued, and therefore the only identifier a receiver can match a token it is
+     * already holding against. Signalling the `clientId` would name something no token carries as
+     * its subject.
+     *
+     * Read straight from the credential because the client VIEW does not carry it: the mapping
+     * folds `ownerId` into `owners[0]`, and the administrators are a different set of people from
+     * the one principal the credential acts as.
+     */
+    const acting = await clients().findOne(
+      clientFilter({ realmId: realm.realmId, clientId }),
+      { projection: { _id: 0, ownerId: 1 } },
+    );
+
+    void new SignalDispatcher(fastify.db).dispatch({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      event: 'credential-change',
+      subjectId: acting?.ownerId ?? clientId,
+      reason: 'the client registration was withdrawn',
+      category: 'credential',
+      target: { type: 'client', ref: clientId },
     });
 
     return reply.send({ ...view(existing as OAuthClient, caller), status: 'revoked' });

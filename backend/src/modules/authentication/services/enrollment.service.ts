@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual, createVerify, createPublicKey, randomUUID 
 import { CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
 import { CredentialRecord } from '../../directory/models/credential.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
+import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { derivedSecret } from '../../../shared/services/secrets';
@@ -214,6 +215,26 @@ export class EnrollmentService {
       return refuse(404, 'invalid_request', 'no such credential');
     }
     this.audit(realm, subjectId, 'credential.revoked', 'success', { credentialId });
+
+    /**
+     * A receiver subscribed to `credential-change` is told, rather than left to poll.
+     *
+     * This is the signal a resource server needs to stop trusting a step-up it already saw: the
+     * session may well still be live, because losing an authenticator is not signing out, and
+     * nothing else would tell a third party that the factor behind it is gone.
+     *
+     * Not awaited. Revoking the credential has already succeeded and is already durable, so a
+     * receiver being slow must not hold the caller.
+     */
+    void new SignalDispatcher(this.db).dispatch({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      event: 'credential-change',
+      subjectId,
+      reason: 'the credential was revoked by its owner',
+      category: 'credential',
+      target: { type: 'credential', ref: credentialId },
+    });
     return true;
   }
 

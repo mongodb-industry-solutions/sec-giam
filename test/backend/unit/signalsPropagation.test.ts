@@ -213,3 +213,82 @@ describe('P10: a revocation reaches a subscribed receiver, over the wire', () =>
     expect(await signals.deliver(minted, [polling])).toEqual([]);
   });
 });
+
+/**
+ * `credential-change` was declared, mapped and subscribable long before anything emitted it.
+ *
+ * That is the failure this covers, and it is a quiet one: a receiver subscribes, verifies its
+ * configuration against the feed, sees the event type listed, and then never hears about a revoked
+ * authenticator because no code path pushed one. Declaring an event is not implementing it.
+ */
+describe('P10.2: a credential change is emitted, not merely advertised', () => {
+  const target = receiver();
+  let port = 0;
+
+  beforeAll(async () => { port = await target.listen(); });
+  afterAll(async () => { await target.close(); });
+
+  function subscribedTo(event: string): ResourceRecord {
+    return {
+      ...PUSH_RECEIVER,
+      signalStream: {
+        deliveryMethod: 'push',
+        endpoint: `http://127.0.0.1:${port}/ssf`,
+        events: [event],
+      },
+    } as ResourceRecord;
+  }
+
+  it('names the credential-change CAEP type by its URI', async () => {
+    const signals = new SignalsService(resourcesHolding([]), ring);
+    const minted = await signals.mint({
+      realmId: 'r1', tenantId: 'default', event: 'credential-change', subjectId: 'sub-1',
+      reason: 'the credential was revoked by its owner',
+    }, 'https://authority.example/realms/leafypay');
+
+    const payload = JSON.parse(Buffer.from(minted.jwt.split('.')[1], 'base64url').toString('utf8'));
+    const uri = 'https://schemas.openid.net/secevent/caep/event-type/credential-change';
+    expect(Object.keys(payload.events)).toEqual([uri]);
+    expect(payload.events[uri].subject).toEqual({ format: 'opaque', id: 'sub-1' });
+    // Carries the reason, so a receiver can distinguish a revocation from a rotation.
+    expect(payload.events[uri].reason_admin.en).toBe('the credential was revoked by its owner');
+  });
+
+  it('carries NO session, because losing an authenticator is not signing out', async () => {
+    /**
+     * The distinction that makes this event worth having at all.
+     *
+     * A session-scoped signal says "this session is over". This one says "the factor behind it is
+     * gone" while the session may well still be live, and a receiver that treats the two alike
+     * would either end sessions it should not or ignore a revoked credential.
+     */
+    const signals = new SignalsService(resourcesHolding([]), ring);
+    const minted = await signals.mint({
+      realmId: 'r1', tenantId: 'default', event: 'credential-change', subjectId: 'sub-1',
+    }, 'https://authority.example/realms/leafypay');
+
+    const uri = 'https://schemas.openid.net/secevent/caep/event-type/credential-change';
+    const payload = JSON.parse(Buffer.from(minted.jwt.split('.')[1], 'base64url').toString('utf8'));
+    expect(payload.events[uri].session).toBeUndefined();
+    expect(minted.sessionId).toBeUndefined();
+  });
+
+  it('reaches a receiver subscribed to it, and not one subscribed only to sessions', async () => {
+    const wants = subscribedTo('credential-change');
+    const doesNot = { ...subscribedTo('session-revoked'), resourceId: 'resource:api:ledger' } as ResourceRecord;
+    const db = resourcesHolding([wants, doesNot]);
+    const signals = new SignalsService(db, ring);
+
+    // The routing, asserted through the query rather than assumed from the configuration.
+    const receivers = await signals.subscribers('r1', 'credential-change');
+    expect(receivers.map((entry) => entry.resourceId)).toEqual(['resource:api:payments']);
+
+    const minted = await signals.mint({
+      realmId: 'r1', tenantId: 'default', event: 'credential-change', subjectId: 'sub-1',
+    }, 'https://authority.example/realms/leafypay');
+    const outcomes = await signals.deliver(minted, receivers);
+
+    expect(outcomes).toEqual([{ resourceId: 'resource:api:payments', delivered: true, status: 202 }]);
+    expect(target.received).toContain(minted.jwt);
+  });
+});
