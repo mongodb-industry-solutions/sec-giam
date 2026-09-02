@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import { createHash } from 'crypto';
-import { SECURITY_EVENT_COLLECTION } from '../../../shared/models/collections';
-import { SecurityEventRecord } from '../models/securityEvent.model';
+import { AUDIT_COLLECTION } from '../../../shared/models/collections';
+import { AuditRecord } from '../models/audit.model';
 
 /**
  * The identity evidence trail.
@@ -128,7 +128,7 @@ export class SecurityEventService {
       const stakeholders = [...new Set(input.stakeholderSubjectIds ?? [])]
         .filter((subject) => Boolean(subject) && subject !== input.subjectId);
 
-      const event: SecurityEventRecord = {
+      const event: AuditRecord = {
         ts: new Date(),
         realmId: input.realmId,
         tenantId: input.tenantId,
@@ -164,7 +164,7 @@ export class SecurityEventService {
           ...(input.ipHash ? { ipHash: input.ipHash } : {}),
         },
       };
-      await this.db.collection<SecurityEventRecord>(SECURITY_EVENT_COLLECTION).insertOne(event);
+      await this.db.collection<AuditRecord>(AUDIT_COLLECTION).insertOne(event);
     } catch {
       // Deliberately swallowed. See above.
     }
@@ -194,7 +194,7 @@ export class SecurityEventService {
     outcome?: 'success' | 'failure';
     correlationId?: string;
     limit?: number;
-  }): Promise<SecurityEventRecord[]> {
+  }): Promise<AuditRecord[]> {
     const query: Record<string, unknown> = { realmId: filter.realmId };
     if (filter.from || filter.to) {
       query.ts = {
@@ -215,7 +215,7 @@ export class SecurityEventService {
     if (filter.correlationId) query.correlationId = filter.correlationId;
 
     return this.db
-      .collection<SecurityEventRecord>(SECURITY_EVENT_COLLECTION)
+      .collection<AuditRecord>(AUDIT_COLLECTION)
       .find(query, { projection: { _id: 0 } })
       .sort({ ts: -1 })
       .limit(Math.min(filter.limit ?? 100, 500))

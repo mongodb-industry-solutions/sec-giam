@@ -1,6 +1,6 @@
 import { Db } from 'mongodb';
-import { IDENTITY_COLLECTION, CREDENTIAL_COLLECTION, REALM_COLLECTION } from '../../shared/models/collections';
-import { IdentityRecord } from '../../modules/directory/models/identity.model';
+import { PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, REALM_COLLECTION } from '../../shared/models/collections';
+import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import { CredentialRecord } from '../../modules/directory/models/credential.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { blindDigest } from '../encryption/digest';
@@ -27,19 +27,19 @@ interface IdentityFixture {
   realm: string;
   subjectId: string;
   userName: string;
-  kind: IdentityRecord['kind'];
+  kind: PrincipalRecord['kind'];
   email?: string;
   phone?: string;
   name?: { formatted?: string; givenName?: string; familyName?: string };
   active: boolean;
-  lifecycleState: IdentityRecord['lifecycleState'];
+  lifecycleState: PrincipalRecord['lifecycleState'];
   demoFeatured?: boolean;
   demoNote?: string;
   roleName?: string;
   /** Binds an account holder to their own records, for a self-scoped role. */
   accountHolderRef?: string;
   owner?: { kind: string; ref: string; displayName?: string };
-  workload?: IdentityRecord['workload'];
+  workload?: PrincipalRecord['workload'];
 }
 
 interface CredentialFixture {
@@ -59,7 +59,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
   const fixtures = readSeedFile<IdentityFixture[]>(fixtureName);
   const credentialFixtures = readSeedFile<CredentialFixture[]>(credentialFixtureName);
 
-  const identities = db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+  const identities = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   const credentials = db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
   const now = new Date().toISOString();
 
@@ -77,7 +77,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
     if (!realmId) throw new Error(`identities.json names realm "${fixture.realm}", which is not seeded`);
     realmIdBySubject.set(fixture.subjectId, realmId);
     byKind[fixture.kind] = (byKind[fixture.kind] ?? 0) + 1;
-    await upsertSeed<IdentityRecord>(
+    await upsertSeed<PrincipalRecord>(
       identities,
       { subjectId: fixture.subjectId },
       {

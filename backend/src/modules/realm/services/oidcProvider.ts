@@ -1,8 +1,8 @@
 import { Db } from 'mongodb';
 import { createHash, timingSafeEqual } from 'crypto';
 import type { IdentityProviderAdapter } from '../../../shared/ports';
-import { IDENTITY_PROVIDER_COLLECTION } from '../../../shared/models/collections';
-import { IdentityProviderRecord } from '../models/identityProvider.model';
+import { DOMAIN_COLLECTION } from '../../../shared/models/collections';
+import { DomainRecord } from '../models/domain.model';
 
 /**
  * Federating a third-party OpenID provider.
@@ -24,10 +24,10 @@ export function bindIdentityProviders(db: Db): void {
   boundDb = db;
 }
 
-async function load(providerId: string): Promise<IdentityProviderRecord> {
+async function load(providerId: string): Promise<DomainRecord> {
   if (!boundDb) throw new Error('Identity providers are not bound to a database');
   const provider = await boundDb
-    .collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION)
+    .collection<DomainRecord>(DOMAIN_COLLECTION)
     .findOne({ providerId }, { projection: { _id: 0 } });
   if (!provider) throw new Error(`No identity provider ${providerId}`);
   if (!provider.enabled) throw new Error(`Identity provider ${provider.name} is not enabled`);
@@ -35,7 +35,7 @@ async function load(providerId: string): Promise<IdentityProviderRecord> {
 }
 
 /** Discovery, so a provider is configured by its issuer rather than by four hand-copied URLs. */
-async function endpoints(provider: IdentityProviderRecord): Promise<{
+async function endpoints(provider: DomainRecord): Promise<{
   authorization: string; token: string; jwks: string; issuer: string;
 }> {
   const configured = provider.config;

@@ -3,9 +3,9 @@ import { requireAdmin } from '../../../vendors/middleware/adminAuth';
 import { requireAuthorityCaller } from '../../../vendors/middleware/authorityAuth';
 import { problem } from '../../../shared/models/problem';
 import {
-  REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION, IDENTITY_COLLECTION, CREDENTIAL_COLLECTION,
+  REALM_COLLECTION, DOMAIN_COLLECTION, PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
   CLIENT_COLLECTION, ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION,
-  PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION, SESSION_COLLECTION, SIGNING_KEY_COLLECTION,
+  PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
   GRANT_COLLECTION,
 } from '../../../shared/models/collections';
 
@@ -46,7 +46,7 @@ const VIEWS: Record<string, ConsoleView> = {
     summary: 'The trust boundaries this authority serves',
   },
   providers: {
-    collection: IDENTITY_PROVIDER_COLLECTION,
+    collection: DOMAIN_COLLECTION,
     projection: { _id: 0, realmId: 1, name: 1, displayName: 1, protocol: 1, enabled: 1, issuer: 1, notice: 1 },
     realmScoped: true,
     sort: { name: 1 },
@@ -54,7 +54,7 @@ const VIEWS: Record<string, ConsoleView> = {
     note: 'Client secrets and endpoints a provider authenticates with are deliberately not returned.',
   },
   identities: {
-    collection: IDENTITY_COLLECTION,
+    collection: PRINCIPAL_COLLECTION,
     projection: { _id: 0, realmId: 1, subjectId: 1, userName: 1, primaryEmail: 1, name: 1, type: 1, status: 1, demoFeatured: 1, sessionEpoch: 1, accountHolderRef: 1 },
     realmScoped: true,
     sort: { userName: 1 },
@@ -128,7 +128,7 @@ const VIEWS: Record<string, ConsoleView> = {
     summary: 'What principals have authorised applications to do',
   },
   keys: {
-    collection: SIGNING_KEY_COLLECTION,
+    collection: KEY_COLLECTION,
     projection: { _id: 0, realmId: 1, kid: 1, instanceId: 1, provider: 1, status: 1, publishedAt: 1, leaseExpiresAt: 1, publicationExpiresAt: 1, algorithm: 1 },
     realmScoped: true,
     sort: { publishedAt: -1 },

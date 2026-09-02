@@ -20,7 +20,7 @@ import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
  * running right now (this container, attested, holding this credential). One approved agent has many
  * workloads over its life, and an audit record has to be able to carry both.
  */
-export type IdentityKind = 'human' | 'workload' | 'agent' | 'application' | 'service';
+export type PrincipalKind = 'human' | 'workload' | 'agent' | 'application' | 'service';
 
 export type LifecycleState = 'pending' | 'active' | 'suspended' | 'deprovisioned';
 
@@ -31,11 +31,11 @@ export interface MultiValued {
   type?: string;
 }
 
-export interface IdentityRecord extends Scoped {
+export interface PrincipalRecord extends Scoped {
   /** The OIDC `sub`. Reuses the platform's existing login reference so historical rows resolve. */
   subjectId: string;
   userName: string;
-  kind: IdentityKind;
+  kind: PrincipalKind;
 
   /**
    * The queryable personal attributes, stored as scalars.
@@ -107,17 +107,17 @@ export interface IdentityRecord extends Scoped {
 }
 
 /** The SCIM representation, built from the stored scalars. */
-export function toScimEmails(identity: Pick<IdentityRecord, 'primaryEmail' | 'emails'>): MultiValued[] {
+export function toScimEmails(identity: Pick<PrincipalRecord, 'primaryEmail' | 'emails'>): MultiValued[] {
   const primary = identity.primaryEmail ? [{ value: identity.primaryEmail, primary: true, type: 'work' }] : [];
   return [...primary, ...(identity.emails ?? [])];
 }
 
-export function toScimPhoneNumbers(identity: Pick<IdentityRecord, 'primaryPhone' | 'phoneNumbers'>): MultiValued[] {
+export function toScimPhoneNumbers(identity: Pick<PrincipalRecord, 'primaryPhone' | 'phoneNumbers'>): MultiValued[] {
   const primary = identity.primaryPhone ? [{ value: identity.primaryPhone, primary: true, type: 'mobile' }] : [];
   return [...primary, ...(identity.phoneNumbers ?? [])];
 }
 
 /** Whether this principal may authenticate at all, before any credential is checked. */
-export function canAuthenticate(identity: Pick<IdentityRecord, 'active' | 'lifecycleState'>): boolean {
+export function canAuthenticate(identity: Pick<PrincipalRecord, 'active' | 'lifecycleState'>): boolean {
   return identity.active && identity.lifecycleState === 'active';
 }

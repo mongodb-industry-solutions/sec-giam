@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
-import { REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION } from '../../shared/models/collections';
+import { REALM_COLLECTION, DOMAIN_COLLECTION } from '../../shared/models/collections';
 import { RealmRecord } from '../../modules/realm/models/realm.model';
-import { IdentityProviderRecord } from '../../modules/realm/models/identityProvider.model';
+import { DomainRecord } from '../../modules/realm/models/domain.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
@@ -32,12 +32,12 @@ interface RealmFixture {
     providerId: string;
     name: string;
     displayName: string;
-    protocol: IdentityProviderRecord['protocol'];
+    protocol: DomainRecord['protocol'];
     adapter: string;
     enabled?: boolean;
     notice?: string;
-    config?: IdentityProviderRecord['config'];
-    claimMappings?: IdentityProviderRecord['claimMappings'];
+    config?: DomainRecord['config'];
+    claimMappings?: DomainRecord['claimMappings'];
   }>;
 }
 
@@ -67,7 +67,7 @@ const DEFAULT_PASSWORD_POLICY: RealmRecord['passwordPolicy'] = {
 export async function seedRealms(db: Db): Promise<void> {
   const fixtures = readSeedFile<RealmFixture[]>('realms.json');
   const realms = db.collection<RealmRecord>(REALM_COLLECTION);
-  const providers = db.collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION);
+  const providers = db.collection<DomainRecord>(DOMAIN_COLLECTION);
 
   for (const fixture of fixtures) {
     // The issuer is COMPOSED from the deployment's public URL, never stored in a fixture. A fixture

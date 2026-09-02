@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
-import { REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION } from '../../../shared/models/collections';
+import { REALM_COLLECTION, DOMAIN_COLLECTION } from '../../../shared/models/collections';
 import { RealmRecord, matchesRealmName } from '../models/realm.model';
-import { IdentityProviderRecord } from '../models/identityProvider.model';
+import { DomainRecord } from '../models/domain.model';
 
 /**
  * Resolving realms and the providers federated inside them.
@@ -18,7 +18,7 @@ export class RealmService {
   }
 
   private get providers() {
-    return this.db.collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION);
+    return this.db.collection<DomainRecord>(DOMAIN_COLLECTION);
   }
 
   async byId(realmId: string): Promise<RealmRecord | null> {
@@ -44,7 +44,7 @@ export class RealmService {
     return this.realms.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
   }
 
-  async providersFor(realmId: string): Promise<IdentityProviderRecord[]> {
+  async providersFor(realmId: string): Promise<DomainRecord[]> {
     return this.providers.find({ realmId }, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
   }
 
@@ -55,7 +55,7 @@ export class RealmService {
    * be worse than asking: sending someone to the wrong identity provider produces a failure they
    * cannot interpret and cannot fix.
    */
-  async providerForEmail(realmId: string, email: string): Promise<IdentityProviderRecord | null> {
+  async providerForEmail(realmId: string, email: string): Promise<DomainRecord | null> {
     const domain = email.split('@')[1]?.trim().toLowerCase();
     if (!domain) return null;
     return this.providers.findOne(

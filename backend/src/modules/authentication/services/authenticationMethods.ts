@@ -5,7 +5,7 @@ import { credentialStores } from '../../../shared/ports';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { CLIENT_COLLECTION } from '../../../shared/models/collections';
 import { ClientRecord } from '../../oauth/models/client.model';
-import { canAuthenticate } from '../../directory/models/identity.model';
+import { canAuthenticate } from '../../directory/models/principal.model';
 
 /**
  * How a principal proves who it is.

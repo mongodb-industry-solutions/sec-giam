@@ -12,7 +12,7 @@ export type AuthorizationFlow = 'authorization_code' | 'ciba';
 
 export type AuthorizationStatus = 'pending' | 'approved' | 'denied' | 'consumed' | 'expired';
 
-export interface AuthorizationRequestRecord extends Scoped {
+export interface AuthRequestRecord extends Scoped {
   requestId: string;
   flow: AuthorizationFlow;
   clientId: string;
@@ -58,7 +58,7 @@ export interface AuthorizationRequestRecord extends Scoped {
  * typo and the other is an attack in progress.
  */
 export function isRedeemable(
-  request: Pick<AuthorizationRequestRecord, 'status' | 'expiresAt'>,
+  request: Pick<AuthRequestRecord, 'status' | 'expiresAt'>,
   now = new Date(),
 ): boolean {
   return request.status === 'approved' || request.status === 'pending'

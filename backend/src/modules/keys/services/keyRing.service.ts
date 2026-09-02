@@ -3,7 +3,7 @@ import { Db } from 'mongodb';
 import type { KeyProvider } from '../../../shared/ports';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { keyProviders } from '../../../shared/ports';
-import { SigningKeyRecord, JwkSet, assertNoPlaintextPrivateKey } from '../models/signingKey.model';
+import { KeyRecord, JwkSet, assertNoPlaintextPrivateKey } from '../models/key.model';
 import { pemToJwk } from './jwk';
 import { newMeta, DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
 import { config } from '../../../config';
@@ -22,17 +22,17 @@ export interface SigningKeyStore {
    * in a test has no trail to write to.
    */
   readonly eventDb?: Db;
-  upsert(record: SigningKeyRecord): Promise<void>;
-  findByKid(kid: string): Promise<SigningKeyRecord | null>;
-  listByRealm(realmId: string): Promise<SigningKeyRecord[]>;
+  upsert(record: KeyRecord): Promise<void>;
+  findByKid(kid: string): Promise<KeyRecord | null>;
+  listByRealm(realmId: string): Promise<KeyRecord[]>;
   renewLease(kid: string, leaseExpiresAt: string): Promise<void>;
   markIneligible(kid: string, notAfter: string): Promise<void>;
 }
 
 export class InMemorySigningKeyStore implements SigningKeyStore {
-  readonly records = new Map<string, SigningKeyRecord>();
+  readonly records = new Map<string, KeyRecord>();
 
-  async upsert(record: SigningKeyRecord) {
+  async upsert(record: KeyRecord) {
     this.records.set(record.kid, { ...this.records.get(record.kid), ...record });
   }
 
@@ -90,7 +90,7 @@ export class KeyRing {
     // existence, and recording the second on every republication would bury it.
     const known = await this.store.findByKid(kid);
 
-    const record: SigningKeyRecord = {
+    const record: KeyRecord = {
       realmId,
       tenantId,
       keyId: `key-${kid.slice(0, 16)}`,
@@ -100,7 +100,7 @@ export class KeyRing {
       publicKeyPem,
       keySize: (createPublicKey(publicKeyPem).asymmetricKeyDetails?.modulusLength) ?? undefined,
       status: 'active',
-      provider: this.provider.name as SigningKeyRecord['provider'],
+      provider: this.provider.name as KeyRecord['provider'],
       // Only the modes with node custody claim an instance: a KMS key belongs to no replica.
       ...(this.provider.externalCustody ? {} : { instanceId: config.keys.instanceId }),
       leaseExpiresAt: this.leaseUntil(),

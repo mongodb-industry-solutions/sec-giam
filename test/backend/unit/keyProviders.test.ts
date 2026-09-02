@@ -18,7 +18,7 @@ import {
 } from '../../../backend/src/modules/keys/providers/sharedStore.provider';
 import { KmsKeyProvider } from '../../../backend/src/modules/keys/providers/kms.provider';
 import { KeyRing, InMemorySigningKeyStore } from '../../../backend/src/modules/keys/services/keyRing.service';
-import { assertNoPlaintextPrivateKey } from '../../../backend/src/modules/keys/models/signingKey.model';
+import { assertNoPlaintextPrivateKey } from '../../../backend/src/modules/keys/models/key.model';
 
 const REALM = 'realm-under-test';
 const temporaryDirs: string[] = [];

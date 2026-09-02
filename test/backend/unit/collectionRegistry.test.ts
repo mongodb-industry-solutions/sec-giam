@@ -11,13 +11,13 @@ import { buildEncryptedFieldsMaps } from '../../../backend/src/vendors/encryptio
 
 /** Every collection the data model specifies, by the section that specifies it. */
 const SPECIFIED: Record<string, string[]> = {
-  'realm and federation': ['realm', 'identityProvider'],
-  directory: ['identity', 'credential', 'agent', 'tool', 'mcpServer'],
-  oauth: ['client', 'apiKey', 'authorizationRequest', 'token', 'signingKey'],
-  authorization: ['resourceServer', 'permission', 'role', 'roleAssignment', 'policy'],
-  'session and consent': ['session', 'grant', 'delegation'],
-  audit: ['securityEvent'],
-  infrastructure: ['domainEvent'],
+  'realm and its authentication paths': ['realm', 'domain'],
+  directory: ['principal', 'credential'],
+  oauth: ['authRequest', 'key'],
+  authorization: ['resource', 'role', 'policy'],
+  'session and consent': ['session', 'grant'],
+  audit: ['audit'],
+  infrastructure: ['eventbus'],
 };
 
 /**
@@ -32,6 +32,18 @@ const DEFERRED: Record<string, string> = {
   counters: 'P0, removed: one index, no caller, identifiers are randomUUID',
   idempotencyKey: 'P0, removed: two indexes, no writer',
   tenant: 'P0, removed: tenantId survives as a field on every scoped collection',
+  // v40: absorbed rather than removed. Each names the collection that now carries it, so a reader
+  // looking for one finds where it went instead of assuming it was forgotten.
+  agent: 'P2, absorbed: principal.agent sub document',
+  roleAssignment: 'P2, absorbed: principal.roles[] with an optional expiry',
+  client: 'P3, absorbed: credential of type oauth_client',
+  apiKey: 'P3, absorbed: credential of type api_key',
+  tool: 'P4, absorbed: resource of kind tool',
+  mcpServer: 'P4, absorbed: resource of kind mcp_server',
+  resourceServer: 'P4, absorbed: resource of kind api',
+  permission: 'P5, absorbed: a permission is the string resource:action, not a row',
+  token: 'P6, absorbed: nothing redeemable is stored, session carries the fact of access',
+  delegation: 'P7, absorbed: a delegation is a grant with a purpose',
   group: 'P8+, SCIM Groups',
   provisioningTarget: 'P8+, outbound provisioning',
   provisioningJob: 'P8+, outbound provisioning',
@@ -82,8 +94,16 @@ describe('v39 P1.1: the collection registry matches the data model', () => {
     })).sort();
     const marked = encryptedCollections().map((spec) => spec.name).sort();
     // A collection marked encrypted with no map would be created plain, and nothing at runtime would
-    // complain: the field would simply be stored in the clear.
-    expect(mapped).toEqual(marked);
+    // complain: the field would simply be stored in the clear. So every marked collection must be
+    // mapped. The converse is allowed only while a collection is mid-absorption: apiKey still has a
+    // map until P3 folds it into credential and drops the entry, because encrypting a one-way hash
+    // buys no control and would make credential an encrypted collection on its hot lookup path.
+    for (const name of marked) {
+      expect(mapped, `${name} is marked encrypted but has no encryptedFields map`).toContain(name);
+    }
+    const transitional = ['apiKey'];
+    const unexpected = mapped.filter((n) => !marked.includes(n) && !transitional.includes(n));
+    expect(unexpected, `mapped but not marked encrypted: ${unexpected.join(', ')}`).toEqual([]);
   });
 
   it('marks nothing encrypted whose only sensitive value is already a one-way hash', () => {
@@ -91,6 +111,12 @@ describe('v39 P1.1: the collection registry matches the data model', () => {
     for (const name of ['credential', 'client']) {
       expect(collectionSpec(name)?.encrypted, `${name} should not be encrypted`).toBeFalsy();
     }
+  });
+
+  it('registers exactly the thirteen collections the target model names', () => {
+    // The number is the point of the refactor, so it is asserted rather than described. A
+    // fourteenth is either a decision recorded in the ADR or a collection that crept back.
+    expect(GIAM_COLLECTIONS).toHaveLength(13);
   });
 
   it('keeps the registry free of duplicates', () => {

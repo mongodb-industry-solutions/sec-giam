@@ -1,6 +1,6 @@
 import { Db } from 'mongodb';
-import { SIGNING_KEY_COLLECTION } from '../../../shared/models/collections';
-import { SigningKeyRecord, assertNoPlaintextPrivateKey } from '../models/signingKey.model';
+import { KEY_COLLECTION } from '../../../shared/models/collections';
+import { KeyRecord, assertNoPlaintextPrivateKey } from '../models/key.model';
 import { SigningKeyStore } from './keyRing.service';
 
 /**
@@ -19,10 +19,10 @@ export class MongoSigningKeyStore implements SigningKeyStore {
   }
 
   private get collection() {
-    return this.db.collection<SigningKeyRecord>(SIGNING_KEY_COLLECTION);
+    return this.db.collection<KeyRecord>(KEY_COLLECTION);
   }
 
-  async upsert(record: SigningKeyRecord): Promise<void> {
+  async upsert(record: KeyRecord): Promise<void> {
     // Checked on the write path as well as in validation: this is the last point at which a private
     // key could reach the database, and after it there is nothing left to catch it.
     assertNoPlaintextPrivateKey(record);
@@ -30,11 +30,11 @@ export class MongoSigningKeyStore implements SigningKeyStore {
     await this.collection.updateOne({ kid }, { $set: rest, $setOnInsert: { kid } }, { upsert: true });
   }
 
-  async findByKid(kid: string): Promise<SigningKeyRecord | null> {
+  async findByKid(kid: string): Promise<KeyRecord | null> {
     return this.collection.findOne({ kid }, { projection: { _id: 0 } });
   }
 
-  async listByRealm(realmId: string): Promise<SigningKeyRecord[]> {
+  async listByRealm(realmId: string): Promise<KeyRecord[]> {
     return this.collection.find({ realmId }, { projection: { _id: 0 } }).toArray();
   }
 

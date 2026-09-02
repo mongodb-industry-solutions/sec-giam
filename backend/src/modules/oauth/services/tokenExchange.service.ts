@@ -4,7 +4,7 @@ import { ClientRecord } from '../models/client.model';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { IdentityRecord, canAuthenticate } from '../../directory/models/identity.model';
+import { PrincipalRecord, canAuthenticate } from '../../directory/models/principal.model';
 import { ActorClaim } from '../models/token.model';
 
 /**
@@ -38,7 +38,7 @@ export interface ExchangeRefusal {
 }
 
 export interface ExchangeSubject {
-  identity: IdentityRecord;
+  identity: PrincipalRecord;
   actor: ActorClaim;
 }
 

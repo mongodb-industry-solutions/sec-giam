@@ -1,4 +1,4 @@
-import { DOMAIN_EVENT_COLLECTION } from '@leafypay/eventbus';
+import { EVENTBUS_COLLECTION } from '@leafypay/eventbus';
 import { RETIRED_CLIENT_FIELDS } from '../../modules/oauth/models/client.model';
 
 /**
@@ -8,6 +8,11 @@ import { RETIRED_CLIENT_FIELDS } from '../../modules/oauth/models/client.model';
  * and must never disagree: setup creates from it, validateSetup checks against it, and the day-one
  * invariant test asserts the partition key on it. A collection that exists and is absent here is an
  * undocumented ownership, and the test says so rather than a reviewer noticing.
+ *
+ * Thirteen collections, per ADR-001. The boundary that decided each merge: a flow is transient and
+ * is discarded, a fact is durable and is kept. Nothing is stored that can be derived, so there are
+ * no issued tokens, no revocation entries, no duplicated permissions and no second level of
+ * organisation.
  */
 
 export type CollectionKind = 'standard' | 'timeseries' | 'infrastructure';
@@ -31,59 +36,59 @@ export interface CollectionSpec {
   retiredFields?: readonly string[];
 }
 
-// Realm and federation.
+// Realm and the authentication paths into it.
 export const REALM_COLLECTION = 'realm';
-export const IDENTITY_PROVIDER_COLLECTION = 'identityProvider';
+export const DOMAIN_COLLECTION = 'domain';
 
-// Directory: principals of every kind, and their credentials.
-export const IDENTITY_COLLECTION = 'identity';
+// Directory: every subject that acts, and everything that identifies one.
+export const PRINCIPAL_COLLECTION = 'principal';
 export const CREDENTIAL_COLLECTION = 'credential';
-export const AGENT_COLLECTION = 'agent';
-export const TOOL_COLLECTION = 'tool';
-export const MCP_SERVER_COLLECTION = 'mcpServer';
 
-// OAuth: clients, pending authorizations, issued tokens, keys.
-export const CLIENT_COLLECTION = 'client';
-export const API_KEY_COLLECTION = 'apiKey';
-export const AUTHORIZATION_REQUEST_COLLECTION = 'authorizationRequest';
-export const TOKEN_COLLECTION = 'token';
-export const SIGNING_KEY_COLLECTION = 'signingKey';
+// OAuth: pending authorizations and the published key set.
+export const AUTH_REQUEST_COLLECTION = 'authRequest';
+export const KEY_COLLECTION = 'key';
 
-// Authorization: what a resource server declares and what GIAM grants.
-export const RESOURCE_SERVER_COLLECTION = 'resourceServer';
-export const PERMISSION_COLLECTION = 'permission';
+// Authorization: what a resource declares and what GIAM grants over it.
+export const RESOURCE_COLLECTION = 'resource';
 export const ROLE_COLLECTION = 'role';
-export const ROLE_ASSIGNMENT_COLLECTION = 'roleAssignment';
 export const POLICY_COLLECTION = 'policy';
 
 // Authentication and consent.
 export const SESSION_COLLECTION = 'session';
 export const GRANT_COLLECTION = 'grant';
-export const DELEGATION_COLLECTION = 'delegation';
 
 // Audit.
-export const SECURITY_EVENT_COLLECTION = 'securityEvent';
+export const AUDIT_COLLECTION = 'audit';
+
+export { EVENTBUS_COLLECTION };
+
+/**
+ * Collections the target model absorbs, still named by code that has not been merged yet.
+ *
+ * Deliberately NOT in `GIAM_COLLECTIONS`: the registry states the target, so setup stops creating
+ * them and validation reports them as unknown. These constants exist only so the compiler stays
+ * usable between P1 and P7, and each is deleted by the phase that absorbs it. If one survives past
+ * its phase, that is an unmerged write path and P11.6 fails on it.
+ */
+export const AGENT_COLLECTION = 'agent';                      // P2, into principal.agent
+export const ROLE_ASSIGNMENT_COLLECTION = 'roleAssignment';   // P2, into principal.roles[]
+export const CLIENT_COLLECTION = 'client';                    // P3, into credential
+export const API_KEY_COLLECTION = 'apiKey';                   // P3, into credential
+export const TOOL_COLLECTION = 'tool';                        // P4, into resource
+export const MCP_SERVER_COLLECTION = 'mcpServer';             // P4, into resource
+export const RESOURCE_SERVER_COLLECTION = 'resourceServer';   // P4, into resource
+export const PERMISSION_COLLECTION = 'permission';            // P5, into a permission string
+export const TOKEN_COLLECTION = 'token';                      // P6, into session
+export const DELEGATION_COLLECTION = 'delegation';            // P7, into grant
 
 export const GIAM_COLLECTIONS: CollectionSpec[] = [
   {
-    name: REALM_COLLECTION,
-    module: 'realm',
-    purpose: 'trust and key boundary: issuer, token policy, password policy, branding, registration',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: IDENTITY_PROVIDER_COLLECTION,
-    module: 'realm',
-    purpose: 'upstream federation inside a realm: protocol, config, claim mappings',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: IDENTITY_COLLECTION,
+    name: PRINCIPAL_COLLECTION,
     module: 'directory',
-    // The one principal record. A person and a workload are the same kind of record on purpose.
-    purpose: 'every principal: human, workload, agent, application, service',
+    // Every subject that acts, on purpose: a person, a workload, an agent and a service are the
+    // same kind of record. Roles are embedded because issuing a token is the hottest read in the
+    // system and embedded makes it one.
+    purpose: 'every subject that acts: person, workload, agent, service, with its roles embedded',
     scoped: true,
     kind: 'standard',
     encrypted: true,
@@ -91,68 +96,31 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
   {
     name: CREDENTIAL_COLLECTION,
     module: 'directory',
-    purpose: 'every authentication factor, discriminated by type, with its assurance level',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: AGENT_COLLECTION,
-    module: 'directory',
-    // Distinct from a workload on purpose: one approved agent has many runtimes over its life.
-    purpose: 'the logical agent definition: owner, purpose, configuration digest, allowed tools',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: TOOL_COLLECTION,
-    module: 'directory',
-    purpose: 'a callable capability exposed to agents, with normalized action names',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: MCP_SERVER_COLLECTION,
-    module: 'directory',
-    purpose: 'a Model Context Protocol tool or context server and the tools it exposes',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: CLIENT_COLLECTION,
-    module: 'oauth',
-    purpose: 'the OAuth client registry: credentials, redirect URIs, grants, scope, token policy',
+    // A client_id plus client_secret authenticates a party to this server, which is structurally a
+    // username plus password, so an OAuth client registration is a credential and not its own kind.
+    purpose: 'everything that identifies a principal: password, MFA, API key, certificate, OAuth client',
     scoped: true,
     kind: 'standard',
     retiredFields: RETIRED_CLIENT_FIELDS,
   },
   {
-    name: API_KEY_COLLECTION,
-    module: 'oauth',
-    purpose: 'integration keys by hash, never an agent identity',
+    name: REALM_COLLECTION,
+    module: 'realm',
+    purpose: 'issuance boundary: issuer, key references, token lifetimes, branding, registration',
     scoped: true,
     kind: 'standard',
-    encrypted: true,
   },
   {
-    name: AUTHORIZATION_REQUEST_COLLECTION,
-    module: 'oauth',
-    // One collection because an authorization code and a backchannel request are the same thing:
-    // a short-lived pending authorization awaiting a user action.
-    purpose: 'pending authorizations: authorization code and backchannel, one TTL for both',
+    name: DOMAIN_COLLECTION,
+    module: 'realm',
+    // One configured way to authenticate into a realm. The local directory is one domain among
+    // others rather than a special case, which is what lets GIAM sit in front of an upstream.
+    purpose: 'one authentication path into a realm, local or federated, with its session policy',
     scoped: true,
     kind: 'standard',
-    ttlField: 'expiresAt',
   },
   {
-    name: TOKEN_COLLECTION,
-    module: 'oauth',
-    purpose: 'issued and revoked tokens by jti, with the delegation chain that produced them',
-    scoped: true,
-    kind: 'standard',
-    ttlField: 'expiresAt',
-  },
-  {
-    name: SIGNING_KEY_COLLECTION,
+    name: KEY_COLLECTION,
     module: 'keys',
     // Public material and a reference only. An unwrapped private PEM here is a compromise.
     purpose: 'the published key set per realm: public material, custody mode, lease, publication grace',
@@ -160,31 +128,9 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
     kind: 'standard',
   },
   {
-    name: RESOURCE_SERVER_COLLECTION,
-    module: 'authorization',
-    purpose: 'a protected application, its audience, its catalog version and its validation mode',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: PERMISSION_COLLECTION,
-    module: 'authorization',
-    purpose: 'the enforcement points a resource server declares in its own code',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
     name: ROLE_COLLECTION,
     module: 'authorization',
-    purpose: 'named permission sets, composable through parent roles',
-    scoped: true,
-    kind: 'standard',
-  },
-  {
-    name: ROLE_ASSIGNMENT_COLLECTION,
-    module: 'authorization',
-    // A permanent role has no expiry; an elevation has one, which is what replaces an escalation token.
-    purpose: 'subject times role, and the vehicle for time-bound privilege elevation',
+    purpose: 'a named bundle of permissions, composable through parent roles',
     scoped: true,
     kind: 'standard',
   },
@@ -192,14 +138,35 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
     name: POLICY_COLLECTION,
     module: 'authorization',
     // Identity context only. A condition naming an amount or a business threshold is a defect.
-    purpose: 'conditional statements evaluated after roles, deny wins',
+    purpose: 'permissions over a resource under conditions, with an effect. Deny by default',
+    scoped: true,
+    kind: 'standard',
+  },
+  {
+    name: RESOURCE_COLLECTION,
+    module: 'authorization',
+    // A tool and an API are the same kind of protected object, so an agent calling a tool goes
+    // through the same decision function as a person reading an account. One engine, no special case.
+    purpose: 'every protected object and the action catalog it declares, including tools and servers',
     scoped: true,
     kind: 'standard',
   },
   {
     name: SESSION_COLLECTION,
     module: 'authentication',
-    purpose: 'the platform session, so single logout and session listing are possible',
+    // Active sessions only: the ABSENCE of the document is the revocation signal, which needs
+    // nothing compared and no entry kept alive until the last affected token expires.
+    purpose: 'the fact that access is still live, and the generation that detects a refresh replay',
+    scoped: true,
+    kind: 'standard',
+    ttlField: 'expiresAt',
+  },
+  {
+    name: AUTH_REQUEST_COLLECTION,
+    module: 'oauth',
+    // The one place state must be written: an authorization code is a claim ticket handed over in
+    // one channel and redeemed in another, so the PKCE challenge has to be remembered to be compared.
+    purpose: 'a pending authorization awaiting a user action, seconds to minutes, TTL bounded',
     scoped: true,
     kind: 'standard',
     ttlField: 'expiresAt',
@@ -207,30 +174,26 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
   {
     name: GRANT_COLLECTION,
     module: 'consent',
-    purpose: 'a principal consenting to a client\'s scopes',
+    // A delegation is a grant with a purpose, not a separate concept.
+    purpose: 'a subject consenting, optionally purpose bound and constrained',
     scoped: true,
     kind: 'standard',
   },
   {
-    name: DELEGATION_COLLECTION,
-    module: 'consent',
-    // Not a grant: a human authorising an agent to act carries purpose, constraints and an expiry.
-    purpose: 'a principal authorising an agent to act on their behalf, purpose bound and revocable',
-    scoped: true,
-    kind: 'standard',
-    ttlField: 'expiresAt',
-  },
-  {
-    name: SECURITY_EVENT_COLLECTION,
+    name: AUDIT_COLLECTION,
     module: 'audit',
-    purpose: 'append-only authentication, authorization, token and delegation evidence',
+    // Evidence, not plumbing and not application logs. A collection named for logs accumulates
+    // stdout within a year, and then regulatory evidence lives mixed with noise.
+    purpose: 'append-only authentication, authorization, token and consent evidence, long retention',
     scoped: true,
     kind: 'timeseries',
   },
   {
-    name: DOMAIN_EVENT_COLLECTION,
+    name: EVENTBUS_COLLECTION,
     module: 'system',
-    purpose: 'GIAM\'s own domain event store',
+    // Not merged with audit: it needs idempotency by eventId, which needs a unique index, and a
+    // time series collection does not support one.
+    purpose: 'the durable trail behind the event bus: fan out, deduplication, replay',
     scoped: false,
     kind: 'infrastructure',
   },

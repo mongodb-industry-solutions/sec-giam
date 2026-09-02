@@ -13,7 +13,7 @@ import type { KeyProviderName } from '../../../config';
  * active public key and every replica publishes an identical set. A token signed by one therefore
  * verifies at any other, and at every resource server, with no shared secret anywhere.
  */
-export interface SigningKeyRecord extends Scoped {
+export interface KeyRecord extends Scoped {
   keyId: string;
   /** RFC 7638 thumbprint of the public JWK. Deterministic, so a restart republishes the same kid. */
   kid: string;
@@ -64,7 +64,7 @@ export interface JwkSet {
 }
 
 /** Refuses a document that would put private material in the database in the clear. */
-export function assertNoPlaintextPrivateKey(record: Pick<SigningKeyRecord, 'publicKeyPem' | 'wrappedPrivateKey'>): void {
+export function assertNoPlaintextPrivateKey(record: Pick<KeyRecord, 'publicKeyPem' | 'wrappedPrivateKey'>): void {
   const suspect = `${record.publicKeyPem ?? ''}${record.wrappedPrivateKey ?? ''}`;
   if (/-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----/.test(suspect)) {
     throw new Error('A signing key record must never carry an unwrapped private key');

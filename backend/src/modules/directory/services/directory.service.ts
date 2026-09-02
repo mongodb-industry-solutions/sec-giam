@@ -1,6 +1,6 @@
 import { Db } from 'mongodb';
-import { IDENTITY_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord, canAuthenticate } from '../models/identity.model';
+import { PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord, canAuthenticate } from '../models/principal.model';
 import { CredentialRecord, CredentialType, isUsable } from '../models/credential.model';
 
 /**
@@ -14,14 +14,14 @@ export class DirectoryService {
   constructor(private readonly db: Db) {}
 
   private get identities() {
-    return this.db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+    return this.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   }
 
   private get credentials() {
     return this.db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
   }
 
-  async findBySubjectId(subjectId: string): Promise<IdentityRecord | null> {
+  async findBySubjectId(subjectId: string): Promise<PrincipalRecord | null> {
     return this.identities.findOne({ subjectId }, { projection: { _id: 0 } });
   }
 
@@ -33,11 +33,11 @@ export class DirectoryService {
    * application ask about a person it knows by its own identifier without holding a copy of the
    * mapping, and without this service learning what the identifier means.
    */
-  async findByAccountHolderRef(realmId: string, accountHolderRef: string): Promise<IdentityRecord | null> {
+  async findByAccountHolderRef(realmId: string, accountHolderRef: string): Promise<PrincipalRecord | null> {
     return this.identities.findOne({ realmId, accountHolderRef }, { projection: { _id: 0 } });
   }
 
-  async findByUserName(realmId: string, userName: string): Promise<IdentityRecord | null> {
+  async findByUserName(realmId: string, userName: string): Promise<PrincipalRecord | null> {
     return this.identities.findOne({ realmId, userName }, { projection: { _id: 0 } });
   }
 
@@ -47,7 +47,7 @@ export class DirectoryService {
    * The user name first, then the email. Both are ways of naming the same person, and asking someone
    * to remember which one a system wants is an avoidable failure.
    */
-  async findByLogin(realmId: string, login: string): Promise<IdentityRecord | null> {
+  async findByLogin(realmId: string, login: string): Promise<PrincipalRecord | null> {
     const trimmed = login.trim();
     if (!trimmed) return null;
     const byUserName = await this.findByUserName(realmId, trimmed);
@@ -69,7 +69,7 @@ export class DirectoryService {
   }
 
   /** The roster the sign-in screen offers, in a deterministic order so the demo is repeatable. */
-  async demoRoster(realmId: string): Promise<IdentityRecord[]> {
+  async demoRoster(realmId: string): Promise<PrincipalRecord[]> {
     return this.identities
       .find({ realmId, demoFeatured: true }, { projection: { _id: 0 } })
       .sort({ userName: 1 })

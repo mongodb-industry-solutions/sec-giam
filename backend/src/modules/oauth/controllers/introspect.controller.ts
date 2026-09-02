@@ -6,7 +6,7 @@ import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { JwtTokenFormat } from '../services/jwtTokenFormat';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { canAuthenticate } from '../../directory/models/identity.model';
+import { canAuthenticate } from '../../directory/models/principal.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { oauthError } from '../../../shared/models/problem';
 import { RESOURCE_SERVER_COLLECTION } from '../../../shared/models/collections';
