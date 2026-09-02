@@ -1,4 +1,5 @@
 import * as dotenv from 'dotenv';
+import { hostname } from 'os';
 import { resolve } from 'path';
 
 // The repo root .env, or backend/.env. Several candidates because this file runs both from source
@@ -40,12 +41,24 @@ function enforcementMode(value: string | undefined): ClientEnforcementMode {
   return value?.trim().toLowerCase() === 'soft' ? 'soft' : 'strict';
 }
 
-// A stable per-process identity, so a replica can claim and renew a lease on its own signing key.
-function resolveInstanceId(): string {
+/**
+ * A stable per-REPLICA identity, so a replica can claim and renew a lease on its own signing key.
+ *
+ * Stable is the whole requirement, and the process id is the one thing here that is not. Keying on it
+ * made every restart a new replica that mints a new key and leaves the old one published forever, so a
+ * laptop accumulated one phantom replica per `npm run dev` and no amount of stopping the process could
+ * clear them, because they live in the database rather than in the process table.
+ *
+ * On a cluster the pod name is the right answer and arrives in the environment. Off one, the host and
+ * the port are what actually distinguish one deployment from another on the same machine.
+ */
+function resolveInstanceId(port: string): string {
   return giamEnv('INSTANCE_ID')
     ?? env('HOSTNAME')
-    ?? `local-${process.pid}`;
+    ?? `local-${hostname().toLowerCase()}-${port}`;
 }
+
+const serverPort = giamEnv('PORT', '8085')!;
 
 export const config = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -53,7 +66,7 @@ export const config = {
   server: {
     host: env('HOST', '0.0.0.0')!,
     // Own port, chosen not to collide with the other services in this deployment.
-    port: parseInt(giamEnv('PORT', '8085')!, 10),
+    port: parseInt(serverPort, 10),
     // Private, service to service. What a resource server resolves discovery against.
     baseUrl: giamEnv('BASE_URL', 'http://127.0.0.1:8085')!,
     // Public, browser facing. Empty when a deployment does not publish GIAM.
@@ -91,7 +104,7 @@ export const config = {
   keys: {
     // Per-instance keys with one shared published key set. Correct on one replica and on twenty.
     provider: (giamEnv('KEY_PROVIDER', 'instance-local')!) as KeyProviderName,
-    instanceId: resolveInstanceId(),
+    instanceId: resolveInstanceId(serverPort),
     // Where instance-local and filesystem hold their private material.
     storeDir: giamEnv('KEY_STORE_DIR', './keys')!,
     // A replica renews this while it lives; when it lapses the key stops signing but stays published.

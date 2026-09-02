@@ -10,6 +10,7 @@ import { buildApp } from '../src/app';
 import { appendLog } from '../src/shared/services/logBuffer';
 import { configurationReport, readinessReport, formatReport } from '../src/shared/services/startupReport';
 import { buildPostureReport, postureBanner } from '../src/modules/admin/services/posture.service';
+import { startKeyCustodian } from '../src/modules/keys/services/keyCustodian.service';
 import { config } from '../src/config';
 
 // Async errors thrown outside a request never reach the onError hook, so mirror them too.
@@ -54,6 +55,16 @@ async function start() {
     if (posture.status === 'ok') {
       appendLog(`[${new Date().toISOString()}] POSTURE ok, key custody ${posture.keyCustody.provider}`);
     }
+
+    // Renews this replica's leases and retires the keys of replicas that stopped. Started here rather
+    // than in `buildApp`, so importing the app for a test does not also start a timer against a real
+    // database.
+    // Its timer is unref'd, so there is nothing to unwind on shutdown: a process whose only remaining
+    // work is a heartbeat has no work, and it does not hold the event loop open.
+    startKeyCustodian(app.dbError === null ? app.db : undefined, (message) => {
+      console.log(`  · ${message}`);
+      appendLog(`[${new Date().toISOString()}] KEYS ${message}`);
+    });
   } catch (err) {
     app.log.error(err);
     process.exit(1);

@@ -141,6 +141,23 @@ export class KeyRing {
   }
 
   /**
+   * Renews the lease on every key in a realm that THIS replica holds. Returns how many.
+   *
+   * Ownership is read from the record rather than from the provider, because an externally-held key
+   * carries no instance at all and must not be renewed by whoever happens to be running: its custody
+   * is somebody else's, and claiming liveness on its behalf would be a lie the sweep then trusts.
+   */
+  async renewOwnLeases(realmId: string): Promise<number> {
+    const mine = (await this.store.listByRealm(realmId)).filter((record) => (
+      record.instanceId === config.keys.instanceId
+      && record.status === 'active'
+      && !record.notAfter
+    ));
+    for (const record of mine) await this.renewLease(record.kid);
+    return mine.length;
+  }
+
+  /**
    * Replaces this replica's key, and eases the outgoing one out rather than dropping it.
    *
    * The order is what makes rotation safe: the new key is published BEFORE the old one stops

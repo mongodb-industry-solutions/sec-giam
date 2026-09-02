@@ -105,11 +105,23 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
     });
 
     // A realm with no published key can mint nothing and verify nothing.
-    const keys = await db.collection(SIGNING_KEY_COLLECTION).countDocuments({ status: 'active' });
+    //
+    // Reported as two numbers because they answer different questions and only one of them is a
+    // health check. Signing keys are what this replica can mint with; published keys include every
+    // key still trusted for verification, which legitimately outnumbers them after a rotation or a
+    // scale-down. A single count of everything `active` conflated the two and read as a leak.
+    const signingKeys = await db.collection(SIGNING_KEY_COLLECTION).countDocuments({
+      status: 'active',
+      signingEligible: true,
+      instanceId: config.keys.instanceId,
+    });
+    const published = await db.collection(SIGNING_KEY_COLLECTION).countDocuments({ status: 'active' });
     lines.push({
       label: 'published keys',
-      value: keys > 0 ? `${keys} active in the key set` : 'none active: no token can be signed or verified',
-      level: keys > 0 ? 'info' : 'warn',
+      value: published > 0
+        ? `${signingKeys} signing here, ${published} trusted for verification`
+        : 'none active: no token can be signed or verified',
+      level: published > 0 ? 'info' : 'warn',
     });
   } catch (err) {
     lines.push({
