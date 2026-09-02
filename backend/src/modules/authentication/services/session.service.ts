@@ -3,6 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { newMeta } from '../../../shared/models/base.model';
 import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord, isLive } from '../models/session.model';
+
+/**
+ * Why a session ended.
+ *
+ * Not stored on the session, which is deleted, but carried into the audit record, which is
+ * where the history lives. A reason on a deleted document would be a reason nobody can read.
+ */
+export type SessionReason = 'logout' | 'expired' | 'revoked' | 'superseded';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { TokenIssuer } from '../../oauth/services/tokenIssuer.service';
 import { OAuthClient } from '../../oauth/models/client.model';
@@ -39,6 +47,9 @@ export class SessionService {
     realm: { realmId: string; tenantId: string; tokenPolicy: { sessionMaxTtlSeconds: number; sessionIdleTtlSeconds: number } };
     subjectId: string;
     epoch?: number;
+    clientId?: string;
+    domainId?: string;
+    authRequestId?: string;
     userAgentHash?: string;
     ipHash?: string;
   }): Promise<SessionRecord> {
@@ -49,6 +60,12 @@ export class SessionService {
       sessionId: uuidv4(),
       subjectId: input.subjectId,
       epoch: input.epoch ?? 0,
+      // Starts at zero and is incremented per refresh. The refresh JWT carries the generation it
+      // was minted at, and a mismatch is how a replay is detected.
+      refreshGen: 0,
+      ...(input.clientId ? { clientId: input.clientId } : {}),
+      ...(input.domainId ? { domainId: input.domainId } : {}),
+      ...(input.authRequestId ? { authRequestId: input.authRequestId } : {}),
       createdAt: now.toISOString(),
       lastSeenAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + input.realm.tokenPolicy.sessionMaxTtlSeconds * 1000).toISOString(),
@@ -141,20 +158,30 @@ export class SessionService {
   async terminate(
     realmId: string,
     sessionId: string,
-    reason: SessionRecord['terminationReason'],
+    reason: SessionReason,
     issuer: TokenIssuer,
   ): Promise<{ terminated: boolean; revokedTokens: number; notify: OAuthClient[] }> {
     const session = await this.find(realmId, sessionId);
-    if (!session || session.terminatedAt) {
+    if (!session) {
       return { terminated: false, revokedTokens: 0, notify: [] };
     }
 
-    await this.sessions.updateOne(
-      { realmId, sessionId },
-      { $set: { terminatedAt: new Date().toISOString(), terminationReason: reason } },
-    );
+    // The clients are read BEFORE the delete, because after it there is no record to read them
+    // from. That ordering is the whole reason this is not a one-line delete.
+    const notifyIds = session.clientIds;
 
-    const revokedTokens = await issuer.revokeSession(realmId, sessionId, reason ?? 'logout');
+    /**
+     * DELETED, not marked.
+     *
+     * The absence of the document is the revocation signal. A record left behind marked terminated
+     * is a record some query will forget to filter, and the filter being forgotten is exactly how a
+     * revoked session keeps working. Absence cannot be forgotten.
+     */
+    await this.sessions.deleteOne({ realmId, sessionId });
+
+    // Nothing to revoke: no token was ever written down. The count stays in the response because
+    // callers report it, and zero is the honest answer now.
+    const revokedTokens = 0;
 
     // The epoch retires a whole generation at once, which covers anything issued under this session
     // that was never recorded here.
@@ -176,9 +203,8 @@ export class SessionService {
       detail: { epoch, reason: reason ?? 'logout', revokedTokens },
     });
 
-    const notify = session.clientIds.length > 0
-      ? (await listOAuthClients(this.db, realmId))
-        .filter((client) => session.clientIds.includes(client.clientId))
+    const notify = notifyIds.length > 0
+      ? (await listOAuthClients(this.db, realmId)).filter((client) => notifyIds.includes(client.clientId))
       : [];
 
     return { terminated: true, revokedTokens, notify };
@@ -193,7 +219,7 @@ export class SessionService {
   async terminateAllFor(
     realmId: string,
     subjectId: string,
-    reason: SessionRecord['terminationReason'],
+    reason: SessionReason,
     issuer: TokenIssuer,
   ): Promise<{ sessions: number; revokedTokens: number; notify: OAuthClient[] }> {
     const live = await this.listFor(realmId, subjectId);

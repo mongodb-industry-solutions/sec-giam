@@ -1,8 +1,9 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
-import { TOKEN_COLLECTION, RESOURCE_COLLECTION, REALM_COLLECTION } from '../../../shared/models/collections';
+import { RESOURCE_COLLECTION, REALM_COLLECTION, SESSION_COLLECTION } from '../../../shared/models/collections';
 import { DecisionService } from '../../authorization/services/decision.service';
-import { TokenRecord, ActorClaim } from '../models/token.model';
+import { ActorClaim } from '../models/actor.model';
+import { SessionRecord, RefreshClaims, isLive } from '../../authentication/models/session.model';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { OAuthClient } from '../models/client.model';
 import { JwtTokenFormat } from './jwtTokenFormat';
@@ -69,20 +70,10 @@ export class TokenIssuer {
     private readonly options: { reducedAuthority?: boolean } = {},
   ) {}
 
-  private get tokens() {
-    return this.db.collection<TokenRecord>(TOKEN_COLLECTION);
+  private get sessions() {
+    return this.db.collection<SessionRecord>(SESSION_COLLECTION);
   }
 
-  /**
-   * The resource servers a token from this realm is addressed to.
-   *
-   * Taken from what is registered rather than configured per client, because a resource server is
-   * the thing that knows its own name and registers it. A client may narrow this by declaring its
-   * own audience; most never need to.
-   *
-   * The authority's own surface is excluded deliberately. A token for a business API must not also
-   * open the administrative one just because both live in the same realm.
-   */
   private async audienceFor(realm: RealmRecord, client: OAuthClient): Promise<string[]> {
     const declared = (client as OAuthClient & { audience?: string[] }).audience;
     if (declared?.length) return declared;
@@ -132,28 +123,6 @@ export class TokenIssuer {
       access: client.tokenPolicy?.accessTokenTtlSeconds ?? realm.tokenPolicy.accessTokenTtlSeconds,
       refresh: client.tokenPolicy?.refreshTokenTtlSeconds ?? realm.tokenPolicy.refreshTokenTtlSeconds,
     };
-  }
-
-  private async record(
-    realm: RealmRecord,
-    client: OAuthClient,
-    input: { jti: string; type: TokenRecord['type']; subjectId?: string; scope: string; expiresAt: Date; sessionId?: string; actor?: ActorClaim },
-  ): Promise<void> {
-    await this.tokens.insertOne({
-      realmId: realm.realmId,
-      tenantId: realm.tenantId,
-      tokenId: `tok-${input.jti}`,
-      jti: input.jti,
-      type: input.type,
-      ...(input.subjectId ? { subjectId: input.subjectId } : {}),
-      clientId: client.clientId,
-      scope: input.scope,
-      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-      issuedAt: new Date().toISOString(),
-      expiresAt: input.expiresAt.toISOString(),
-      ...(input.actor ? { actor: input.actor } : {}),
-      meta: newMeta('Token'),
-    } as TokenRecord);
   }
 
   async issue(request: IssueTokensInput): Promise<TokenResponse> {
@@ -221,15 +190,6 @@ export class TokenIssuer {
     };
 
     const access_token = await format.issue(accessClaims, kid);
-    await this.record(realm, client, {
-      jti: accessJti,
-      type: 'access',
-      subjectId: input.subjectId,
-      scope,
-      expiresAt: new Date((now + ttl.access) * 1000),
-      sessionId: input.sessionId,
-      actor: input.actor,
-    });
 
     const response: TokenResponse = {
       access_token,
@@ -238,19 +198,35 @@ export class TokenIssuer {
       scope,
     };
 
-    if (input.includeRefreshToken) {
-      const refreshJti = uuidv4();
-      // Opaque rather than a JWT: nothing verifies a refresh token locally, it is always redeemed
-      // here, so giving it a readable payload would disclose claims for no benefit at all.
-      response.refresh_token = `${refreshJti}.${uuidv4().replace(/-/g, '')}`;
-      await this.record(realm, client, {
-        jti: refreshJti,
-        type: 'refresh',
-        subjectId: input.subjectId,
-        scope,
-        expiresAt: new Date((now + ttl.refresh) * 1000),
-        sessionId: input.sessionId,
-      });
+    /**
+     * The refresh token, as a JWT over the session's current generation. NOTHING IS STORED.
+     *
+     * It carries `sid` and `gen`, which is everything redemption needs: the session says whether
+     * access is still live, and the generation is what makes a replay detectable. Signed, so it
+     * cannot be forged, and a readable payload discloses nothing its holder does not already know.
+     *
+     * A session is REQUIRED. Without one there is nothing to rotate against, and a refresh token
+     * that rotates against nothing is a long-lived bearer credential with extra steps. That is also
+     * what makes `client_credentials` refresh-free without a special case: it creates no session.
+     */
+    if (input.includeRefreshToken && input.sessionId) {
+      const session = await this.sessions.findOne(
+        { realmId: realm.realmId, sessionId: input.sessionId },
+        { projection: { _id: 0, refreshGen: 1 } },
+      );
+      const refreshFormat = new JwtTokenFormat(this.ring, realm.realmId, 'JWT');
+      response.refresh_token = await refreshFormat.issue({
+        iss: realm.issuer,
+        // Addressed to the issuer itself: this token is redeemed here and accepted nowhere else.
+        aud: realm.issuer,
+        sub: input.subjectId ?? client.clientId,
+        sid: input.sessionId,
+        gen: session?.refreshGen ?? 0,
+        client_id: client.clientId,
+        jti: uuidv4(),
+        iat: now,
+        exp: now + ttl.refresh,
+      }, kid);
     }
 
     if (input.includeIdToken && input.subjectId) {
@@ -266,44 +242,119 @@ export class TokenIssuer {
         ...(input.nonce ? { nonce: input.nonce } : {}),
         ...(input.idTokenClaims ?? {}),
       }, kid);
-      await this.record(realm, client, {
-        jti: idJti,
-        type: 'id',
-        subjectId: input.subjectId,
-        scope,
-        expiresAt: new Date((now + ttl.access) * 1000),
-        sessionId: input.sessionId,
-      });
     }
 
     return response;
   }
 
-  /** Looks a refresh token up by the identifier embedded in its opaque form. */
-  async findRefreshToken(realmId: string, presented: string): Promise<TokenRecord | null> {
-    const jti = presented.split('.')[0];
-    if (!jti) return null;
-    return this.tokens.findOne({ realmId, jti, type: 'refresh' }, { projection: { _id: 0 } });
-  }
+  /**
+   * Redeems a refresh token: verifies it, checks the generation, and rotates.
+   *
+   * The generation check IS the reuse detection RFC 9700 asks for, and it needs one integer rather
+   * than a stored copy of every token. Three outcomes, and the third is the one that matters:
+   *
+   * - the generation matches, so this is the current token: incremented, and the caller may mint.
+   * - no session, so access is not live: refused, and there is nothing to clean up.
+   * - the generation is LOWER, so a token that was already rotated has been presented again. The
+   *   legitimate holder cannot do that, so the assumption is theft and the WHOLE SESSION is
+   *   deleted. Refusing just this one would leave the thief's next attempt equally cheap.
+   */
+  async redeemRefresh(
+    realmId: string,
+    presented: string,
+  ): Promise<
+    | { ok: true; sessionId: string; subjectId?: string; clientId: string; generation: number }
+    | { ok: false; cause: 'invalid' | 'expired' | 'no_session' | 'reuse_detected'; sessionId?: string; subjectId?: string }
+  > {
+    const format = new JwtTokenFormat(this.ring, realmId, 'JWT');
+    const realm = await this.db
+      .collection<{ realmId: string; issuer: string }>(REALM_COLLECTION)
+      .findOne({ realmId }, { projection: { _id: 0, issuer: 1 } });
+    if (!realm) return { ok: false, cause: 'invalid' };
 
-  async findByJti(realmId: string, jti: string): Promise<TokenRecord | null> {
-    return this.tokens.findOne({ realmId, jti }, { projection: { _id: 0 } });
-  }
+    // Verified, not merely decoded. A refresh token is redeemed here and nowhere else, so this is
+    // the only place its signature is ever checked, which makes skipping it unrecoverable.
+    const verified = await format.verify(presented, { issuer: realm.issuer, audience: realm.issuer });
+    if (!verified) return { ok: false, cause: 'invalid' };
+    const claims = verified as unknown as RefreshClaims & { exp?: number };
+    if (!claims.sid || typeof claims.gen !== 'number') return { ok: false, cause: 'invalid' };
+    if (claims.exp && claims.exp * 1000 <= Date.now()) {
+      return { ok: false, cause: 'expired', sessionId: claims.sid, subjectId: claims.sub };
+    }
 
-  async revoke(realmId: string, jti: string, reason: string): Promise<boolean> {
-    const result = await this.tokens.updateOne(
-      { realmId, jti, revokedAt: { $exists: false } },
-      { $set: { revokedAt: new Date().toISOString(), revocationReason: reason } },
+    /**
+     * Guarded on the generation, so the check and the increment are ONE atomic operation.
+     *
+     * Reading then writing would leave a window in which two concurrent refreshes both see the
+     * current generation and both succeed, which is precisely the replay this exists to detect.
+     */
+    const rotated = await this.sessions.findOneAndUpdate(
+      { realmId, sessionId: claims.sid, refreshGen: claims.gen },
+      { $inc: { refreshGen: 1 }, $set: { lastSeenAt: new Date().toISOString() } },
+      { returnDocument: 'after', projection: { _id: 0, refreshGen: 1, subjectId: 1, clientId: 1 } },
     );
-    return result.modifiedCount > 0;
+    if (rotated) {
+      return {
+        ok: true,
+        sessionId: claims.sid,
+        subjectId: rotated.subjectId,
+        clientId: claims.client_id,
+        generation: rotated.refreshGen,
+      };
+    }
+
+    // The guard failed. Either the session is gone, which is a refusal and nothing more, or it is
+    // there at a different generation, which is a replay.
+    const session = await this.sessions.findOne(
+      { realmId, sessionId: claims.sid },
+      { projection: { _id: 0, refreshGen: 1, subjectId: 1 } },
+    );
+    if (!session) {
+      return { ok: false, cause: 'no_session', sessionId: claims.sid, subjectId: claims.sub };
+    }
+
+    await this.sessions.deleteOne({ realmId, sessionId: claims.sid });
+    return {
+      ok: false,
+      cause: 'reuse_detected',
+      sessionId: claims.sid,
+      subjectId: session.subjectId ?? claims.sub,
+    };
   }
 
-  /** Revokes everything issued under a session, which is what a logout has to do. */
-  async revokeSession(realmId: string, sessionId: string, reason: string): Promise<number> {
-    const result = await this.tokens.updateMany(
-      { realmId, sessionId, revokedAt: { $exists: false } },
-      { $set: { revokedAt: new Date().toISOString(), revocationReason: reason } },
+  /**
+   * Revocation, all four shapes, and every one of them is a delete.
+   *
+   * The absence of the session document is the revocation signal, so there is no status to set and
+   * no entry to keep alive until the last affected token expires.
+   */
+  /** Whether access under this session is still live. The one read introspection needs. */
+  async sessionIsLive(realmId: string, sessionId: string): Promise<boolean> {
+    const session = await this.sessions.findOne(
+      { realmId, sessionId },
+      { projection: { _id: 0, expiresAt: 1, idleExpiresAt: 1 } },
     );
-    return result.modifiedCount;
+    // Absence is revocation. The expiry checks cover the window before the TTL sweep notices.
+    return Boolean(session) && isLive(session as SessionRecord);
+  }
+
+  async revokeSession(realmId: string, sessionId: string): Promise<number> {
+    const outcome = await this.sessions.deleteOne({ realmId, sessionId });
+    return outcome.deletedCount;
+  }
+
+  async revokeSubject(realmId: string, subjectId: string): Promise<number> {
+    const outcome = await this.sessions.deleteMany({ realmId, subjectId });
+    return outcome.deletedCount;
+  }
+
+  async revokeClient(realmId: string, clientId: string): Promise<number> {
+    const outcome = await this.sessions.deleteMany({ realmId, clientId });
+    return outcome.deletedCount;
+  }
+
+  async revokeRealm(realmId: string): Promise<number> {
+    const outcome = await this.sessions.deleteMany({ realmId });
+    return outcome.deletedCount;
   }
 }

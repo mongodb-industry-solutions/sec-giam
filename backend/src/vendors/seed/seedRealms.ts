@@ -43,13 +43,17 @@ interface RealmFixture {
 
 /**
  * Defaults an operator rarely changes, in one place so a fixture states only what is specific to it.
- *
- * Fifteen minutes on an access token is the revocation window the decentralised validation model
- * trades for its independence. It is short deliberately: it bounds how long a revoked token stays
- * usable when the revocation stream has not reached a resource server yet.
  */
 const DEFAULT_TOKEN_POLICY: RealmRecord['tokenPolicy'] = {
-  accessTokenTtlSeconds: 900,
+  /**
+   * Five minutes, and this number IS the revocation objective.
+   *
+   * An access token is verified against the published key set without touching the database, which
+   * is what keeps this authority off the hot path. The cost is that revoking a session cannot reach
+   * a token already issued, so the worst case propagation is exactly this lifetime. Fifteen minutes
+   * made that window three times longer for no benefit that was ever written down.
+   */
+  accessTokenTtlSeconds: 300,
   refreshTokenTtlSeconds: 2_592_000,
   codeTtlSeconds: 120,
   sessionIdleTtlSeconds: 3_600,
