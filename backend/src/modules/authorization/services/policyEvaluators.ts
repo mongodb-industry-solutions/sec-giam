@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import type { PolicyEvaluator, AuthorizationRequest, AuthorizationDecision } from '../../../shared/ports';
 import { POLICY_COLLECTION } from '../../../shared/models/collections';
-import { PolicyRecord, PolicyStatement, matchesPattern } from '../models/policy.model';
+import { PolicyRecord, PolicyCondition, matchesPattern, isInEffect } from '../models/policy.model';
 import { DecisionService } from './decision.service';
 
 /**
@@ -52,57 +52,63 @@ export const abacEvaluator: PolicyEvaluator = {
   async evaluate(request: AuthorizationRequest): Promise<AuthorizationDecision | null> {
     const policies = await database()
       .collection<PolicyRecord>(POLICY_COLLECTION)
-      .find({ realmId: request.realmId, tenantId: request.tenantId, enabled: true }, { projection: { _id: 0 } })
+      .find({ realmId: request.realmId, tenantId: request.tenantId, status: 'active' }, { projection: { _id: 0 } })
       .toArray();
 
     let allow: AuthorizationDecision | null = null;
 
     for (const policy of policies) {
-      for (const [index, statement] of policy.statements.entries()) {
-        if (!appliesTo(statement, request)) continue;
-        const deciding = {
-          policyId: policy.policyId,
-          name: policy.name,
-          version: policy.version,
-          statementIndex: index,
-          effect: statement.effect,
-        };
-        if (statement.effect === 'deny') {
-          // Returned immediately. Nothing later can overturn it, and evaluating on would only cost
-          // time to reach the same answer.
-          return {
-            effect: 'deny',
-            reason: statement.reason ?? `denied by policy ${policy.name}`,
-            source: `${policy.name}@${policy.version}`,
-            policy: deciding,
-          };
-        }
-        allow ??= {
-          effect: 'allow',
-          reason: statement.reason ?? `allowed by policy ${policy.name}`,
+      // Status and the effective date are both checked here rather than only in the query, so a
+      // policy approved for next Monday cannot decide anything today.
+      if (!isInEffect(policy)) continue;
+      if (!appliesTo(policy, request)) continue;
+      const deciding = {
+        policyId: policy.policyId,
+        name: policy.name,
+        version: policy.version,
+        effect: policy.effect,
+      };
+      if (policy.effect === 'deny') {
+        // Returned immediately. Nothing later can overturn it, and evaluating on would only cost
+        // time to reach the same answer.
+        return {
+          effect: 'deny',
+          reason: policy.reason ?? `denied by policy ${policy.name}`,
           source: `${policy.name}@${policy.version}`,
           policy: deciding,
         };
       }
+      allow ??= {
+        effect: 'allow',
+        reason: policy.reason ?? `allowed by policy ${policy.name}`,
+        source: `${policy.name}@${policy.version}`,
+        policy: deciding,
+      };
     }
 
-    // Null rather than deny: this evaluator has no opinion unless a statement matched, and an
-    // opinion-free evaluator must not override the one that does have an opinion.
+    // Null rather than deny: this evaluator has no opinion unless a policy matched, and an
+    // opinion-free evaluator must not override the one that does have an opinion. Default deny is
+    // applied by `combineDecisions`, once, so it cannot be forgotten here.
     return allow;
   },
 };
 
-function appliesTo(statement: PolicyStatement, request: AuthorizationRequest): boolean {
-  if (statement.principals?.length && !statement.principals.some((p) => matchesPattern(p, request.subjectId))) {
+function appliesTo(policy: PolicyRecord, request: AuthorizationRequest): boolean {
+  if (policy.principals?.length && !policy.principals.some((p) => matchesPattern(p, request.subjectId))) {
     return false;
   }
-  if (statement.actions?.length && !statement.actions.some((a) => matchesPattern(a, request.action))) {
+  // The permission the request is asking about, as the one string every side spells the same way.
+  const asked = `${request.resource}:${request.action}`;
+  if (policy.permissions?.length && !policy.permissions.some((p) => matchesPattern(p, asked))) {
     return false;
   }
-  if (statement.resources?.length && !statement.resources.some((r) => matchesPattern(r, request.resource))) {
-    return false;
-  }
-  return conditionHolds(statement.condition, request.context);
+  // The resource type narrows first, then the pattern narrows within it.
+  if (policy.resource?.type && !matchesPattern(policy.resource.type, request.resource)) return false;
+  if (policy.resource?.pattern && !matchesPattern(policy.resource.pattern, asked)) return false;
+
+  // EVERY condition must hold. Any-of would mean adding a condition could WIDEN a policy, which is
+  // the opposite of what somebody writing one down expects.
+  return (policy.conditions ?? []).every((condition) => conditionHolds(condition, request.context));
 }
 
 /**
@@ -113,7 +119,7 @@ function appliesTo(statement: PolicyStatement, request: AuthorizationRequest): b
  * must not blur.
  */
 function conditionHolds(
-  condition: PolicyStatement['condition'],
+  condition: PolicyCondition | undefined,
   context: Record<string, unknown>,
 ): boolean {
   if (!condition) return true;

@@ -6,7 +6,6 @@ import { authorityAccess, refusal } from '../services/authorityAccess';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
-import { PolicyStatement } from '../models/policy.model';
 
 /**
  * Conditional statements, and the endpoint that shows what they actually decide.
@@ -62,32 +61,62 @@ export async function policyController(fastify: FastifyInstance) {
     },
   } as const;
 
-  const statementSchema = {
+  /** What a policy obliges the ENFORCING side to do. Carried here, acted on there. */
+  const obligationSchema = {
     type: 'object',
     additionalProperties: false,
-    required: ['effect'],
+    required: ['type'],
     properties: {
-      effect: { type: 'string', enum: ['allow', 'deny'], description: 'Deny wins over every allow, absolutely.' },
-      principals: { type: 'array', items: { type: 'string' }, description: 'Subject patterns. `*` alone, or a trailing `*` for a prefix.' },
-      actions: { type: 'array', items: { type: 'string' } },
-      resources: { type: 'array', items: { type: 'string' } },
-      condition: conditionSchema,
-      reason: { type: 'string', description: 'Carried into the decision. A decision a log cannot explain is not auditable.' },
+      type: { type: 'string' },
+      severity: { type: 'string', enum: ['low', 'medium', 'high'] },
     },
+  } as const;
+
+  /** The resource a policy governs: the type, and the pattern an object must match within it. */
+  const resourceSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['type', 'pattern'],
+    properties: {
+      type: { type: 'string', minLength: 1 },
+      pattern: { type: 'string', minLength: 1, description: '`*` alone, or a trailing `*` for a prefix. Never a regular expression.' },
+    },
+  } as const;
+
+  const policyBody = {
+    effect: { type: 'string', enum: ['allow', 'deny'], description: 'Deny wins over every allow, absolutely.' },
+    permissions: {
+      type: 'array',
+      minItems: 1,
+      items: { type: 'string' },
+      description: 'Full permission strings, `resource:action`. The same spelling a role and a token use.',
+    },
+    resource: resourceSchema,
+    principals: { type: 'array', items: { type: 'string' }, description: 'Subject patterns. `*` alone, or a trailing `*` for a prefix.' },
+    conditions: {
+      type: 'array',
+      items: conditionSchema,
+      description: 'ALL must hold. Any-of would mean adding a condition could widen a policy.',
+    },
+    obligations: { type: 'array', items: obligationSchema },
+    approvedBy: { type: 'string' },
+    effectiveFrom: { type: 'string', description: 'Written down and not yet in force until this moment passes.' },
+    reason: { type: 'string', description: 'Carried into the decision. A decision a log cannot explain is not auditable.' },
   } as const;
 
   const policySummary = {
     type: 'object',
     additionalProperties: false,
-    required: ['policyId', 'name', 'version', 'enabled', 'statementCount', 'denyCount', 'conditionCount', 'attachedTo'],
+    required: ['policyId', 'name', 'version', 'status', 'effect', 'permissionCount', 'conditionCount', 'inEffect', 'attachedTo'],
     properties: {
       policyId: { type: 'string' },
       name: { type: 'string' },
       version: { type: 'string' },
-      enabled: { type: 'boolean' },
-      statementCount: { type: 'integer' },
-      denyCount: { type: 'integer', description: 'How many statements prohibit. The first thing a reviewer wants to know.' },
+      status: { type: 'string', enum: ['draft', 'active', 'retired'] },
+      effect: { type: 'string', enum: ['allow', 'deny'], description: 'Whether this policy prohibits. The first thing a reviewer wants to know.' },
+      permissionCount: { type: 'integer' },
       conditionCount: { type: 'integer' },
+      inEffect: { type: 'boolean', description: 'False while drafted, retired, or dated ahead.' },
       attachedTo: { type: 'array', items: { type: 'string' } },
       created: { type: 'string' },
       lastModified: { type: 'string' },
@@ -96,10 +125,11 @@ export async function policyController(fastify: FastifyInstance) {
       policyId: '2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2',
       name: 'administration-requires-strong-authentication',
       version: '1',
-      enabled: true,
-      statementCount: 1,
-      denyCount: 1,
+      status: 'active',
+      effect: 'deny',
+      permissionCount: 1,
       conditionCount: 1,
+      inEffect: true,
       attachedTo: [],
     }],
   } as const;
@@ -107,8 +137,8 @@ export async function policyController(fastify: FastifyInstance) {
   const policyDetail = {
     type: 'object',
     additionalProperties: false,
-    required: [...policySummary.required, 'statements'],
-    properties: { ...policySummary.properties, statements: { type: 'array', items: statementSchema } },
+    required: [...policySummary.required, 'permissions', 'resource', 'conditions'],
+    properties: { ...policySummary.properties, ...policyBody },
     examples: [{
       ...policySummary.examples[0],
       statements: [{
@@ -240,19 +270,19 @@ export async function policyController(fastify: FastifyInstance) {
       params: realmParam,
       body: {
         type: 'object',
-        required: ['name', 'statements'],
+        required: ['name', 'effect', 'permissions', 'resource'],
         additionalProperties: false,
         properties: {
           name: { type: 'string', minLength: 1, pattern: '^[a-zA-Z0-9._-]+$' },
-          version: { type: 'string', default: '1' },
-          statements: { type: 'array', minItems: 1, items: statementSchema },
+          ...policyBody,
           attachedTo: { type: 'array', items: { type: 'string' } },
-          enabled: { type: 'boolean', default: true },
+          status: { type: 'string', enum: ['draft', 'active', 'retired'], default: 'active' },
+          version: { type: 'integer', minimum: 1, default: 1 },
         },
       },
       response: {
         201: { ...policyDetail, description: 'The policy as stated.' },
-        400: { $ref: 'Problem#', description: 'A statement names a condition this authority cannot evaluate.' },
+        400: { $ref: 'Problem#', description: 'The policy names a condition this authority cannot evaluate.' },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
         404: { $ref: 'Problem#', description: 'No such realm.' },
@@ -267,12 +297,12 @@ export async function policyController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, caller.subjectId, 'policies', 'manage');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    const body = request.body as { name: string; statements: PolicyStatement[] };
+    const body = request.body as Parameters<PolicyAdminService['create']>[2];
     const outcome = await new PolicyAdminService(fastify.db).create(realm.realmId, realm.tenantId, body);
     if (isPolicyRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
 
     audit(realm, 'authorization.policy.created', caller.subjectId, {
-      policyId: outcome.policyId, name: outcome.name, denyCount: outcome.denyCount,
+      policyId: outcome.policyId, name: outcome.name, effect: outcome.effect,
     });
     return reply.status(201).send(outcome);
   });
@@ -294,15 +324,15 @@ export async function policyController(fastify: FastifyInstance) {
         type: 'object',
         additionalProperties: false,
         properties: {
-          version: { type: 'string' },
-          statements: { type: 'array', minItems: 1, items: statementSchema },
+          ...policyBody,
           attachedTo: { type: 'array', items: { type: 'string' } },
-          enabled: { type: 'boolean' },
+          status: { type: 'string', enum: ['draft', 'active', 'retired'] },
+          version: { type: 'integer', minimum: 1 },
         },
       },
       response: {
         200: { ...policyDetail, description: 'The policy, as it now stands.' },
-        400: { $ref: 'Problem#', description: 'A statement names a condition this authority cannot evaluate.' },
+        400: { $ref: 'Problem#', description: 'The policy names a condition this authority cannot evaluate.' },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
         404: { $ref: 'Problem#', description: 'No such policy in this realm.' },
@@ -322,7 +352,7 @@ export async function policyController(fastify: FastifyInstance) {
     if (isPolicyRefusal(outcome)) return reply.status(outcome.status as 400).send(problem(outcome.status, outcome.title, outcome.detail));
 
     audit(realm, 'authorization.policy.updated', caller.subjectId, {
-      policyId, fields: Object.keys(request.body ?? {}), enabled: outcome.enabled,
+      policyId, fields: Object.keys(request.body ?? {}), status: outcome.status,
     });
     return reply.send(outcome);
   });
@@ -473,8 +503,7 @@ export async function policyController(fastify: FastifyInstance) {
                   properties: {
                     policyId: { type: 'string' },
                     name: { type: 'string' },
-                    version: { type: 'string' },
-                    statementIndex: { type: 'integer', description: 'Position in that policy\'s statement list, from zero.' },
+                              statementIndex: { type: 'integer', description: 'Position in that policy\'s statement list, from zero.' },
                     effect: { type: 'string', enum: ['allow', 'deny'] },
                   },
                 },

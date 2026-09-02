@@ -55,7 +55,7 @@ export interface AuditRecord extends Scoped {
   transactionId?: string;
   toolId?: string;
   normalizedAction?: string;
-  policyVersion?: string;
+  policyVersion?: number;
   decision?: 'allow' | 'deny';
   enforcementResult?: string;
 }
