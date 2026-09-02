@@ -2,9 +2,9 @@ import { Db, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import {
   GIAM_COLLECTIONS, collectionSpec,
   REALM_COLLECTION, DOMAIN_COLLECTION,
-  PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
+  PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
   AUTH_REQUEST_COLLECTION, TOKEN_COLLECTION,
-  KEY_COLLECTION, RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
+  KEY_COLLECTION, RESOURCE_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
   POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
   AUDIT_COLLECTION,
@@ -79,15 +79,11 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, type: 1 }, options: { name: 'realm_type' } },
     // Which registrations a principal administers, for the self-service listing and its limit.
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, 'administrators.kind': 1, 'administrators.ref': 1 }, options: { name: 'realm_administrators', sparse: true } },
-    { collection: CREDENTIAL_COLLECTION, keys: { ownerSubjectId: 1 }, options: { name: 'ownerSubjectId', sparse: true } },
+    { collection: CREDENTIAL_COLLECTION, keys: { ownerId: 1 }, options: { name: 'ownerId', sparse: true } },
     // RFC 8705: locating the credential bound to a presented certificate.
     { collection: CREDENTIAL_COLLECTION, keys: { 'metadata.mtls.certificateThumbprint': 1 }, options: { name: 'mtls_thumbprint', sparse: true } },
 
-    { collection: TOOL_COLLECTION, keys: { toolId: 1 }, options: { name: 'toolId_unique', unique: true } },
-    { collection: TOOL_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
 
-    { collection: MCP_SERVER_COLLECTION, keys: { mcpServerId: 1 }, options: { name: 'mcpServerId_unique', unique: true } },
-    { collection: MCP_SERVER_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
 
     // OAuth.
     // Resolving a client from a record that owns it. Multikey, because ownership is a set: this is
@@ -125,11 +121,17 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: KEY_COLLECTION, keys: { leaseExpiresAt: 1 }, options: { name: 'leaseExpiresAt', sparse: true } },
 
     // Authorization.
-    { collection: RESOURCE_SERVER_COLLECTION, keys: { resourceServerId: 1 }, options: { name: 'resourceServerId_unique', unique: true } },
-    { collection: RESOURCE_SERVER_COLLECTION, keys: { realmId: 1, audience: 1 }, options: { name: 'realm_audience_unique', unique: true } },
+    // One collection for an API, a tool and a Model Context Protocol server: they are the same kind
+    // of thing, something a decision is made ABOUT.
+    { collection: RESOURCE_COLLECTION, keys: { realmId: 1, resourceId: 1 }, options: { name: 'realm_resourceId_unique', unique: true } },
+    { collection: RESOURCE_COLLECTION, keys: { realmId: 1, kind: 1 }, options: { name: 'realm_kind' } },
+    // What a token names in `aud`. Sparse: only an api carries one, a tool is reached through its server.
+    { collection: RESOURCE_COLLECTION, keys: { realmId: 1, audience: 1 }, options: { name: 'realm_audience', sparse: true } },
+    // A resource may contain resources, so a server exposing tools needs no collection of its own.
+    { collection: RESOURCE_COLLECTION, keys: { realmId: 1, parentResourceId: 1 }, options: { name: 'realm_parentResourceId', sparse: true } },
 
     { collection: PERMISSION_COLLECTION, keys: { permissionId: 1 }, options: { name: 'permissionId_unique', unique: true } },
-    { collection: PERMISSION_COLLECTION, keys: { realmId: 1, resourceServerId: 1, resource: 1, action: 1 }, options: { name: 'realm_server_resource_action_unique', unique: true } },
+    { collection: PERMISSION_COLLECTION, keys: { realmId: 1, resourceId: 1, resource: 1, action: 1 }, options: { name: 'realm_server_resource_action_unique', unique: true } },
 
     { collection: ROLE_COLLECTION, keys: { roleId: 1 }, options: { name: 'roleId_unique', unique: true } },
     { collection: ROLE_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },

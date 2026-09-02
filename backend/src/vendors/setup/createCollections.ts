@@ -1,6 +1,7 @@
 import { Db } from 'mongodb';
 import { GIAM_COLLECTIONS, AUDIT_COLLECTION } from '../../shared/models/collections';
 import { buildEncryptedFieldsMaps, GiamDeks } from '../encryption/encryptedFieldsMaps';
+import { config } from '../../config';
 
 /**
  * Creates every collection from the canonical registry.
@@ -15,6 +16,33 @@ import { buildEncryptedFieldsMaps, GiamDeks } from '../encryption/encryptedField
 export async function createCollections(db: Db, deks: GiamDeks, reset = false): Promise<void> {
   const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
   const maps = buildEncryptedFieldsMaps(deks);
+
+  /**
+   * On `--reset`, drop collections the registry NO LONGER NAMES as well as the ones it does.
+   *
+   * Without this the loop below only ever touches registered collections, so a collection the model
+   * has dropped or renamed away survives every reset forever. That is not a cosmetic leftover: its
+   * `encryptedFields` still reference DEKs the rebuilt vault no longer holds, so validation reports
+   * a stale DEK on a collection nothing reads, and "rebuild with --reset" does not fix it because
+   * the reset is exactly what skips it.
+   *
+   * Guarded to `reset`, so an ordinary setup run never removes anything.
+   */
+  if (reset) {
+    const registered = new Set<string>(GIAM_COLLECTIONS.map((spec) => spec.name));
+    for (const name of existing) {
+      if (registered.has(name)) continue;
+      // The driver's own encrypted-state collections go with their parent, not on their own.
+      if (name.startsWith('enxcol_.')) continue;
+      // The server's own namespaces, including the view a time series collection creates. Dropping
+      // one is not permitted and is not ours to attempt.
+      if (name.startsWith('system.')) continue;
+      if (name === config.mongodb.keyVaultCollection) continue;
+      await db.collection(name).drop();
+      existing.delete(name);
+      console.log(`  dropped: ${name} (the model no longer names it)`);
+    }
+  }
 
   for (const spec of GIAM_COLLECTIONS) {
     if (existing.has(spec.name) && !reset) {

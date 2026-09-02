@@ -74,10 +74,10 @@ async function registeredClient(overrides: Partial<OAuthClient> = {}): Promise<C
     credentialId: 'cred-orders-web',
     subjectId: flat.clientId as string,
     type: 'oauth_client',
-    ownerSubjectId: 'subject-1',
+    ownerId: 'subject-1',
     clientId: flat.clientId as string,
     ...(overrides.clientSecretHash === undefined
-      ? { secretHash: await bcrypt.hash(KNOWN_SECRET, 4) }
+      ? { hash: await bcrypt.hash(KNOWN_SECRET, 4) }
       : {}),
     metadata: clientMetadata(flat),
     status: (overrides.status ?? 'active') as CredentialRecord['status'],

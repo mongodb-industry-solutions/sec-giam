@@ -1,16 +1,17 @@
 import { Db } from 'mongodb';
 import { v5 as uuidv5 } from 'uuid';
 import {
-  RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
+  RESOURCE_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
   PRINCIPAL_COLLECTION, REALM_COLLECTION,
 } from '../../shared/models/collections';
 import {
-  ResourceServerRecord, PermissionRecord, RoleRecord, RolePermission, DenialRationale,
+  PermissionRecord, RoleRecord, RolePermission, DenialRationale,
 } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
+import { ResourceRecord } from '../../modules/authorization/models/resource.model';
 
 /**
  * Roles, the permissions they hold, and who holds them.
@@ -58,7 +59,7 @@ interface IdentityFixture {
 /** The authority's own resource server, so administering it is a permission like any other. */
 const AUTHORITY_RESOURCE_SERVER = 'authority';
 
-function resourceServerId(realmId: string, name: string): string {
+function resourceId(realmId: string, name: string): string {
   return uuidv5(`resource-server:${realmId}:${name}`, AUTHORIZATION_NAMESPACE);
 }
 
@@ -92,7 +93,7 @@ export async function seedAuthorization(
     .toArray() as unknown as Array<{ realmId: string; name: string }>;
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
 
-  const servers = db.collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION);
+  const servers = db.collection<ResourceRecord>(RESOURCE_COLLECTION);
   const permissions = db.collection<PermissionRecord>(PERMISSION_COLLECTION);
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
   const principals = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
@@ -103,22 +104,27 @@ export async function seedAuthorization(
   let roleCount = 0;
 
   async function ensureServer(realmId: string, name: string, audience: string): Promise<string> {
-    const id = resourceServerId(realmId, name);
+    const id = resourceId(realmId, name);
     if (seenServers.has(id)) return id;
     seenServers.add(id);
-    await upsertSeed<ResourceServerRecord>(
+    await upsertSeed<ResourceRecord>(
       servers,
-      { resourceServerId: id },
+      { resourceId: id },
       {
         name,
         audience,
-        permissionCatalogVersion: '0',
+        kind: 'api',
+        catalogVersion: 0,
+        // Filled in P5 from the permissions this resource declares: the catalog is what a policy
+        // naming this resource is validated against.
+        actions: [],
+        status: 'active',
         // Verify locally on every request, consult the authority where the decision is expensive to
-        // get wrong. Neither model is right in general, so the choice is the resource server's.
+        // get wrong. Neither model is right in general, so the choice is the resource's.
         validationMode: 'hybrid',
-        registeredAt: now,
+        registeredAt: SEED_GRANTED_AT,
       },
-      { resourceServerId: id, realmId, tenantId: DEFAULT_TENANT_ID },
+      { resourceId: id, realmId, tenantId: DEFAULT_TENANT_ID },
       'ResourceServer',
     );
     return id;
@@ -137,12 +143,12 @@ export async function seedAuthorization(
       permissions,
       { permissionId: id },
       {
-        resourceServerId: serverId,
+        resourceId: serverId,
         resource,
         action,
         description: `${action} on ${resource}`,
       },
-      { permissionId: id, resourceServerId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
+      { permissionId: id, resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
       'Permission',
     );
   }
@@ -158,13 +164,13 @@ export async function seedAuthorization(
     for (const [resource, actions] of Object.entries(fixture.permissions)) {
       for (const action of actions) {
         await ensurePermission(realmId, applicationServer, resource, action);
-        held.push({ resourceServerId: applicationServer, resource, action });
+        held.push({ resourceId: applicationServer, resource, action });
       }
     }
     for (const [resource, actions] of Object.entries(fixture.authorityPermissions ?? {})) {
       for (const action of actions) {
         await ensurePermission(realmId, authorityServer, resource, action);
-        held.push({ resourceServerId: authorityServer, resource, action });
+        held.push({ resourceId: authorityServer, resource, action });
       }
     }
 
@@ -283,7 +289,7 @@ export async function seedAuthorization(
     for (const [resource, actions] of Object.entries(ADMINISTRATOR_PERMISSIONS)) {
       for (const action of actions) {
         await ensurePermission(realmId, authorityServer, resource, action);
-        held.push({ resourceServerId: authorityServer, resource, action });
+        held.push({ resourceId: authorityServer, resource, action });
       }
     }
 

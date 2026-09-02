@@ -526,7 +526,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     /**
      * The registration IS a credential, of type `oauth_client`.
      *
-     * `ownerSubjectId` is the principal it acts as and answers for, which is a token subject and so
+     * `ownerId` is the principal it acts as and answers for, which is a token subject and so
      * is singular. `administrators` is who may manage it, which is a set. The two are separate
      * fields because a `client_credentials` token has exactly one `sub`.
      */
@@ -537,10 +537,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       // A credential belongs to the subject it authenticates, which for a client is the client.
       subjectId: clientId,
       type: 'oauth_client',
-      ownerSubjectId: caller.subjectId ?? (body.owner_ref as string),
+      ownerId: caller.subjectId ?? (body.owner_ref as string),
       administrators: owners as CredentialRecord['administrators'],
       clientId,
-      ...(hash ? { secretHash: hash } : {}),
+      ...(hash ? { hash: hash } : {}),
       ...(prefix ? { secretPrefix: prefix } : {}),
       metadata: clientMetadata({
         clientName: body.client_name,
@@ -748,10 +748,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       credentialId: randomUUID(),
       subjectId: clientId,
       type: 'oauth_client',
-      ownerSubjectId: caller.subjectId ?? clientId,
+      ownerId: caller.subjectId ?? clientId,
       ...(existing.owners ? { administrators: existing.owners } : {}),
       clientId,
-      secretHash: hash,
+      hash: hash,
       secretPrefix: prefix,
       // The same registration metadata: this is a second secret for one client, not a second client.
       metadata: clientMetadata(existing),
@@ -817,7 +817,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
         // The hash is dropped as well as the status changed. A revoked client whose secret is still
         // stored is a credential waiting for somebody to reactivate the record.
         $set: { status: 'revoked', 'meta.lastModified': new Date().toISOString() },
-        $unset: { secretHash: '' },
+        $unset: { hash: '' },
       },
     );
 

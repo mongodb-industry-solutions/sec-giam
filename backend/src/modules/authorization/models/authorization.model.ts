@@ -10,26 +10,6 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  */
 
 /** A protected application, registering itself and the audience its tokens carry. */
-export interface ResourceServerRecord extends Scoped {
-  resourceServerId: string;
-  name: string;
-  /** What a token must name in `aud` to be accepted here. */
-  audience: string;
-  /** Bumped by the application when its catalog changes, so drift is visible rather than silent. */
-  permissionCatalogVersion: string;
-  /**
-   * How this application verifies a token.
-   *
-   * Local verification against the published key set costs nothing per request and keeps the
-   * application serving when the authority is unreachable. Introspection is authoritative about
-   * revocation and current status. Neither is right in general, so the choice belongs to the
-   * resource server, per operation.
-   */
-  validationMode: 'local-jwks' | 'introspection' | 'hybrid';
-  registeredAt: string;
-  meta: Meta;
-}
-
 /**
  * One enforcement point.
  *
@@ -38,7 +18,7 @@ export interface ResourceServerRecord extends Scoped {
  */
 export interface PermissionRecord extends Scoped {
   permissionId: string;
-  resourceServerId: string;
+  resourceId: string;
   resource: string;
   action: string;
   description: string;
@@ -49,7 +29,7 @@ export interface PermissionRecord extends Scoped {
 
 /** A permission a role holds, named by the resource server that defined it. */
 export interface RolePermission {
-  resourceServerId: string;
+  resourceId: string;
   resource: string;
   action: string;
 }

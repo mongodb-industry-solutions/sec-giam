@@ -101,8 +101,10 @@ describe('v39 P1.1: the collection registry matches the data model', () => {
   });
 
   it('marks nothing encrypted whose only sensitive value is already a one-way hash', () => {
-    // Encrypting a bcrypt hash buys nothing and blocks the lookup that verifies it.
-    for (const name of ['credential', 'client']) {
+    // Encrypting a bcrypt hash buys nothing and blocks the lookup that verifies it. credential now
+    // carries the client registrations too, so this is also what keeps the hottest lookup in the
+    // system off an encrypted collection.
+    for (const name of ['credential']) {
       expect(collectionSpec(name)?.encrypted, `${name} should not be encrypted`).toBeFalsy();
     }
   });

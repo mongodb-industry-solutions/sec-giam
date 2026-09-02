@@ -114,7 +114,7 @@ export async function registrationController(fastify: FastifyInstance) {
       credentialId: `cred-${randomUUID()}`,
       subjectId,
       type: 'password',
-      secretHash: issued?.secretHash as string,
+      hash: issued?.hash as string,
       status: 'active',
       assurance: { level: 'aal1', method: 'password', verifiedAt: now },
       meta: newMeta('Credential'),

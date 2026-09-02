@@ -237,8 +237,8 @@ export class ClientAuthService {
       // secret was the right one.
       let matched: CredentialRecord | null = null;
       for (const registration of usable) {
-        if (!registration.secretHash) continue;
-        const valid = await bcrypt.compare(presented.clientSecret, registration.secretHash);
+        if (!registration.hash) continue;
+        const valid = await bcrypt.compare(presented.clientSecret, registration.hash);
         if (valid && !matched) matched = registration;
       }
       if (!matched) return { error: 'invalid_client', description: 'invalid client_secret' };

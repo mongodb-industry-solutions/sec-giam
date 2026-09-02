@@ -46,7 +46,7 @@ interface CredentialFixture {
   credentialId: string;
   subjectId: string;
   type: CredentialRecord['type'];
-  secretHash?: string;
+  hash?: string;
   publicKeyPem?: string;
   algorithm?: CredentialRecord['algorithm'];
   signCount?: number;
@@ -115,7 +115,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
       {
         subjectId: fixture.subjectId,
         type: fixture.type,
-        ...(fixture.secretHash ? { secretHash: fixture.secretHash } : {}),
+        ...(fixture.hash ? { hash: fixture.hash } : {}),
         ...(fixture.publicKeyPem ? { publicKeyPem: fixture.publicKeyPem } : {}),
         ...(fixture.algorithm ? { algorithm: fixture.algorithm } : {}),
         ...(fixture.signCount !== undefined ? { signCount: fixture.signCount } : {}),

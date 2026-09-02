@@ -5,7 +5,7 @@ import { problem } from '../../../shared/models/problem';
 import {
   REALM_COLLECTION, DOMAIN_COLLECTION, PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
   ROLE_COLLECTION, POLICY_COLLECTION,
-  PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
+  PERMISSION_COLLECTION, RESOURCE_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
   GRANT_COLLECTION,
 } from '../../../shared/models/collections';
 
@@ -82,7 +82,7 @@ const VIEWS: Record<string, ConsoleView> = {
     collection: CREDENTIAL_COLLECTION,
     filter: { type: 'oauth_client' },
     projection: {
-      _id: 0, realmId: 1, clientId: 1, status: 1, ownerSubjectId: 1, administrators: 1,
+      _id: 0, realmId: 1, clientId: 1, status: 1, ownerId: 1, administrators: 1,
       secretPrefix: 1, createdAt: 1, metadata: 1,
     },
     realmScoped: true,
@@ -117,14 +117,14 @@ const VIEWS: Record<string, ConsoleView> = {
   },
   permissions: {
     collection: PERMISSION_COLLECTION,
-    projection: { _id: 0, realmId: 1, resourceServerId: 1, resource: 1, action: 1, description: 1 },
+    projection: { _id: 0, realmId: 1, resourceId: 1, resource: 1, action: 1, description: 1 },
     realmScoped: true,
     sort: { resource: 1 },
     summary: 'Every permission a resource server has declared',
   },
   'resource-servers': {
-    collection: RESOURCE_SERVER_COLLECTION,
-    projection: { _id: 0, realmId: 1, resourceServerId: 1, name: 1, displayName: 1, registeredAt: 1 },
+    collection: RESOURCE_COLLECTION,
+    projection: { _id: 0, realmId: 1, resourceId: 1, name: 1, displayName: 1, registeredAt: 1 },
     realmScoped: true,
     sort: { name: 1 },
     summary: 'The applications that enforce this authority decisions',

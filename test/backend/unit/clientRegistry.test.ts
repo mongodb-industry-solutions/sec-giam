@@ -12,13 +12,13 @@ import {
 
 describe('v40 P3: a client field maps to exactly one credential path', () => {
   it('keeps the identifiers and the lifecycle first class', () => {
-    for (const field of ['realmId', 'tenantId', 'clientId', 'status', 'credentialId', 'ownerSubjectId']) {
+    for (const field of ['realmId', 'tenantId', 'clientId', 'status', 'credentialId', 'ownerId']) {
       expect(credentialPath(field), field).toBe(field);
     }
   });
 
   it('renames the fields the credential already had its own name for', () => {
-    expect(credentialPath('clientSecretHash')).toBe('secretHash');
+    expect(credentialPath('clientSecretHash')).toBe('hash');
     expect(credentialPath('clientSecretPrefix')).toBe('secretPrefix');
     // Who may administer the registration, which is NOT the principal it acts as.
     expect(credentialPath('owners')).toBe('administrators');
