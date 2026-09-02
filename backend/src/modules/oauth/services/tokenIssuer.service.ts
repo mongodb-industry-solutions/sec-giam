@@ -1,6 +1,6 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
-import { TOKEN_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION } from '../../../shared/models/collections';
+import { TOKEN_COLLECTION, RESOURCE_COLLECTION, REALM_COLLECTION } from '../../../shared/models/collections';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { TokenRecord, ActorClaim } from '../models/token.model';
 import { RealmRecord } from '../../realm/models/realm.model';
@@ -82,7 +82,7 @@ export class TokenIssuer {
     if (declared?.length) return declared;
 
     const servers = await this.db
-      .collection<{ name: string; audience: string }>(RESOURCE_SERVER_COLLECTION)
+      .collection<{ name: string; audience: string }>(RESOURCE_COLLECTION)
       .find({ realmId: realm.realmId }, { projection: { _id: 0, name: 1, audience: 1 } })
       .toArray();
 

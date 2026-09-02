@@ -4,18 +4,18 @@ import { v5 as uuidv5 } from 'uuid';
 import { clientSecretFor } from '@leafypay/platform-links';
 import {
   CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION,
-  PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
+  PERMISSION_COLLECTION, RESOURCE_COLLECTION,
 } from '../../shared/models/collections';
 import { OAuthClient } from '../../modules/oauth/models/client.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import {
-  RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
-} from '../../modules/authorization/models/authorization.model';
+  RoleRecord, RolePermission, PermissionRecord, } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { CredentialRecord } from '../../modules/directory/models/credential.model';
 import { clientMetadata } from '../../modules/oauth/models/client.model';
 import { readSeedFile } from './readSeedFile';
+import { ResourceRecord } from '../../modules/authorization/models/resource.model';
 
 /**
  * OAuth clients, and the service identities behind the machine ones.
@@ -129,13 +129,13 @@ export async function seedClients(db: Db): Promise<void> {
         type: 'oauth_client',
         clientId: fixture.clientId,
         // The principal the client acts as. A service client is its own subject.
-        ownerSubjectId: fixture.clientId,
+        ownerId: fixture.clientId,
         // The fixture says WHETHER a client is confidential and never what its secret is: a literal
         // in a checked-in file is indistinguishable from a leaked credential, to a scanner and to a
         // reader. What is STORED is the hash either way.
         ...(clientSecret
           ? {
-            secretHash: await bcrypt.hash(clientSecret, 12),
+            hash: await bcrypt.hash(clientSecret, 12),
             secretPrefix: clientSecret.slice(0, 8),
           }
           : {}),
@@ -179,12 +179,21 @@ export async function seedClients(db: Db): Promise<void> {
     // The resource server, if the roles seeder has not already created it. A permission pointing at a
     // server that does not exist is unenforceable and invisible: the decision point could not scope
     // it to an audience, so it would silently travel in every token instead of one.
-    await upsertSeed<ResourceServerRecord>(
-      db.collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION),
-      { resourceServerId: serverId },
-      { name: serverName, audience: serverName, permissionCatalogVersion: '0', validationMode: 'hybrid', registeredAt: now },
-      { resourceServerId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
-      'ResourceServer',
+    await upsertSeed<ResourceRecord>(
+      db.collection<ResourceRecord>(RESOURCE_COLLECTION),
+      { resourceId: serverId },
+      {
+        name: serverName,
+        audience: serverName,
+        kind: 'api',
+        catalogVersion: 0,
+        actions: [],
+        status: 'active',
+        validationMode: 'hybrid',
+        registeredAt: SEED_GRANTED_AT,
+      },
+      { resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
+      'Resource',
     );
 
     const held: RolePermission[] = [];
@@ -194,11 +203,11 @@ export async function seedClients(db: Db): Promise<void> {
         await upsertSeed<PermissionRecord>(
           db.collection<PermissionRecord>(PERMISSION_COLLECTION),
           { permissionId },
-          { resourceServerId: serverId, resource, action, description: `${action} on ${resource}` },
-          { permissionId, resourceServerId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
+          { resourceId: serverId, resource, action, description: `${action} on ${resource}` },
+          { permissionId, resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
           'Permission',
         );
-        held.push({ resourceServerId: serverId, resource, action });
+        held.push({ resourceId: serverId, resource, action });
       }
     }
 

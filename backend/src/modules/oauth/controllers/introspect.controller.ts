@@ -9,7 +9,7 @@ import { DirectoryService } from '../../directory/services/directory.service';
 import { canAuthenticate } from '../../directory/models/principal.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { oauthError } from '../../../shared/models/problem';
-import { RESOURCE_SERVER_COLLECTION } from '../../../shared/models/collections';
+import { RESOURCE_COLLECTION } from '../../../shared/models/collections';
 
 /**
  * Introspection and revocation: the centralised half of token validation.
@@ -155,7 +155,7 @@ export async function introspectController(fastify: FastifyInstance) {
      */
     const audience = (Array.isArray(claims.aud) ? claims.aud : [claims.aud]).map(String);
     const servers = await fastify.db
-      .collection<{ audience: string }>(RESOURCE_SERVER_COLLECTION)
+      .collection<{ audience: string }>(RESOURCE_COLLECTION)
       .find({ realmId: realm.realmId }, { projection: { _id: 0, audience: 1 } })
       .toArray();
     const addressable = new Set([outcome.client.clientId, ...servers.map((server) => server.audience)]);

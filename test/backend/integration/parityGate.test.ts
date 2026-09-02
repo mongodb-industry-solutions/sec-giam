@@ -28,7 +28,7 @@ interface IdentityFixture {
 interface CredentialFixture {
   subjectId: string;
   type: string;
-  secretHash?: string;
+  hash?: string;
 }
 
 const identities = JSON.parse(readFileSync(resolve(DATA, 'identities.json'), 'utf8')) as IdentityFixture[];
@@ -54,9 +54,9 @@ beforeAll(async () => {
 
   realmName = identities[0].realm;
 
-  const sample = credentials.find((credential) => credential.type === 'password' && credential.secretHash);
+  const sample = credentials.find((credential) => credential.type === 'password' && credential.hash);
   for (const candidate of CANDIDATES) {
-    if (sample?.secretHash && await bcrypt.compare(candidate, sample.secretHash)) {
+    if (sample?.hash && await bcrypt.compare(candidate, sample.hash)) {
       demoPassword = candidate;
       break;
     }

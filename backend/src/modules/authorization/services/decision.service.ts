@@ -1,11 +1,12 @@
 import { Db } from 'mongodb';
 import {
-  ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_COLLECTION, REALM_COLLECTION,
 } from '../../../shared/models/collections';
 import {
-  RoleRecord, ResourceServerRecord, EffectivePermission, permissionKey,
+  RoleRecord, EffectivePermission, permissionKey,
   AdministrableRealm, holdingAppliesIn, REALM_SCOPE_KIND,
 } from '../models/authorization.model';
+import { ResourceRecord } from '../models/resource.model';
 import {
   PrincipalRecord, RoleHolding, activeHoldings,
 } from '../../directory/models/principal.model';
@@ -104,8 +105,8 @@ export class DecisionService {
     targetRealmId: string,
   ): Promise<{ permissions: EffectivePermission[]; roles: string[]; scopeKind: 'self' | 'all' }> {
     const server = await this.db
-      .collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION)
-      .findOne({ realmId: homeRealmId, audience }, { projection: { _id: 0, resourceServerId: 1 } });
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .findOne({ realmId: homeRealmId, audience }, { projection: { _id: 0, resourceId: 1 } });
 
     const held = await this.liveHoldings(homeRealmId, subjectId);
     const assignments = held.filter((assignment) => holdingAppliesIn(assignment, homeRealmId, targetRealmId));
@@ -121,7 +122,7 @@ export class DecisionService {
     const unique = new Map<string, EffectivePermission>();
     for (const role of composed) {
       for (const permission of role.permissions ?? []) {
-        if (server && permission.resourceServerId !== server.resourceServerId) continue;
+        if (server && permission.resourceId !== server.resourceId) continue;
         unique.set(permissionKey(permission), { resource: permission.resource, action: permission.action });
       }
     }

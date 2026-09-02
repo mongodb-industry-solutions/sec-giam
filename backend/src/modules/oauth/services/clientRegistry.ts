@@ -17,12 +17,12 @@ import { CredentialRecord } from '../../directory/models/credential.model';
 /** Fields that stay first class on the credential, under the same name. */
 const FIRST_CLASS = new Set([
   'realmId', 'tenantId', 'clientId', 'status', 'credentialId', 'type',
-  'ownerSubjectId', 'domainId', 'createdAt', 'lastUsedAt', 'expiresAt', 'meta',
+  'ownerId', 'domainId', 'createdAt', 'lastUsedAt', 'expiresAt', 'meta',
 ]);
 
 /** Fields renamed on the way in, because the credential already had its own name for them. */
 const RENAMED: Record<string, string> = {
-  clientSecretHash: 'secretHash',
+  clientSecretHash: 'hash',
   clientSecretPrefix: 'secretPrefix',
   // A set of administrators, which is not the same thing as the principal the credential acts as.
   owners: 'administrators',

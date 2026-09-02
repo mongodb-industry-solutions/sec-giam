@@ -86,7 +86,7 @@ export interface CredentialRecord extends Scoped {
    * exactly one subject, so the identity a credential acts as cannot be a set; who may administer
    * the registration can be, and conflating the two is what makes the question look unanswerable.
    */
-  ownerSubjectId: string;
+  ownerId: string;
 
   /**
    * Who may administer this credential. A SET, because two people sharing one integration is normal.
@@ -116,7 +116,7 @@ export interface CredentialRecord extends Scoped {
   metadata?: OAuthClientMetadata;
 
   /** bcrypt, for `password`, `client_secret`, `api_key` and `oauth_client`. Salted, so it is verified rather than looked up. */
-  secretHash?: string;
+  hash?: string;
 
   /** For `public_key`: what the authenticator registered. Public material only, by definition. */
   publicKeyPem?: string;

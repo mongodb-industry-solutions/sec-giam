@@ -129,7 +129,7 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
     realmId: credential.realmId,
     tenantId: credential.tenantId,
     clientId: credential.clientId as string,
-    ...(credential.secretHash ? { clientSecretHash: credential.secretHash } : {}),
+    ...(credential.hash ? { clientSecretHash: credential.hash } : {}),
     ...(credential.secretPrefix ? { clientSecretPrefix: credential.secretPrefix } : {}),
     clientName: metadata.clientName ?? (credential.clientId as string),
     clientType: metadata.clientType ?? 'public',
@@ -149,8 +149,8 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
     ...(metadata.mtls ? { mtls: metadata.mtls as OAuthClient['mtls'] } : {}),
     ...(metadata.claimMappings ? { claimMappings: metadata.claimMappings } : {}),
     // Who may administer the registration. Distinct from the principal it acts as, which is
-    // `ownerSubjectId` and is a token subject rather than a set of people.
-    owners: credential.administrators ?? [{ kind: 'principal', ref: credential.ownerSubjectId } as OwnerRef],
+    // `ownerId` and is a token subject rather than a set of people.
+    owners: credential.administrators ?? [{ kind: 'principal', ref: credential.ownerId } as OwnerRef],
     status: credential.status,
     meta: credential.meta,
   };

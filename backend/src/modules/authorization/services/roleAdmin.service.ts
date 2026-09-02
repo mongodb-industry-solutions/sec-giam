@@ -1,16 +1,16 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ROLE_COLLECTION, PRINCIPAL_COLLECTION, PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, PERMISSION_COLLECTION, RESOURCE_COLLECTION,
 } from '../../../shared/models/collections';
 import {
-  RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
-  permissionKey,
+  RoleRecord, RolePermission, PermissionRecord, permissionKey,
 } from '../models/authorization.model';
 import {
   PrincipalRecord, RoleHolding, isHoldingActive, MAX_ROLE_HOLDINGS,
 } from '../../directory/models/principal.model';
 import { newMeta, touchMeta } from '../../../shared/models/base.model';
+import { ResourceRecord } from '../models/resource.model';
 
 /**
  * Administering roles: what they grant, what they inherit, and who holds them.
@@ -102,10 +102,10 @@ export class RoleAdminService {
   /** Resource server ids to names, so a permission reads as text rather than as an identifier. */
   private async serverNames(realmId: string): Promise<Map<string, string>> {
     const servers = await this.db
-      .collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION)
-      .find({ realmId }, { projection: { _id: 0, resourceServerId: 1, name: 1 } })
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId }, { projection: { _id: 0, resourceId: 1, name: 1 } })
       .toArray();
-    return new Map(servers.map((server) => [server.resourceServerId, server.name]));
+    return new Map(servers.map((server) => [server.resourceId, server.name]));
   }
 
   /** Every permission a resource server in this realm has actually declared. */
@@ -240,7 +240,7 @@ export class RoleAdminService {
     const describe = (permission: RolePermission, via: RoleRecord): ResolvedPermission => ({
       resource: permission.resource,
       action: permission.action,
-      resourceServer: names.get(permission.resourceServerId) ?? permission.resourceServerId,
+      resourceServer: names.get(permission.resourceId) ?? permission.resourceId,
       via: via.name,
       inherited: via.roleId !== roleId,
       // A permission no resource server declares is enforceable by nothing, which is worth showing
@@ -302,7 +302,7 @@ export class RoleAdminService {
     if (wanted.length === 0) return [];
     const declared = await this.db
       .collection<PermissionRecord>(PERMISSION_COLLECTION)
-      .find({ realmId }, { projection: { _id: 0, resourceServerId: 1, resource: 1, action: 1 } })
+      .find({ realmId }, { projection: { _id: 0, resourceId: 1, resource: 1, action: 1 } })
       .toArray();
     const byKey = new Map(declared.map((permission) => [permissionKey(permission), permission]));
 
@@ -314,7 +314,7 @@ export class RoleAdminService {
         unknown.push(permissionKey(permission));
         continue;
       }
-      bound.push({ resourceServerId: match.resourceServerId, resource: match.resource, action: match.action });
+      bound.push({ resourceId: match.resourceId, resource: match.resource, action: match.action });
     }
     if (unknown.length > 0) {
       return {
@@ -635,7 +635,7 @@ export class RoleAdminService {
       resource: permission.resource,
       action: permission.action,
       description: permission.description,
-      resourceServer: names.get(permission.resourceServerId) ?? permission.resourceServerId,
+      resourceServer: names.get(permission.resourceId) ?? permission.resourceId,
       deprecated: Boolean(permission.deprecated),
     }));
   }
