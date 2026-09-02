@@ -54,11 +54,14 @@ export function signNotice(body: string): string {
 /**
  * The clients registered to receive provisioning notices.
  *
- * NOTE: `provisioning.endpoint` is declared by no model, here or before this change, so this has
- * always matched nothing and no provisioning notice has ever been delivered. Carried over
- * faithfully rather than silently repaired, because repairing it means inventing a field and a wire
- * contract that nobody specified. Recorded for the P11.10 obsolete-resource sweep: either the
- * receiver registration gets a declared field, or this path and its callers go.
+ * `metadata.provisioning.endpoint` is a DECLARED field as of v40. It was queried here and declared
+ * nowhere, so this matched nothing and no notice had ever been delivered: a filter on an undeclared
+ * field reads as a working feature and fails silently forever. The field now exists on the
+ * credential, the projection carries it, and the path translator knows it, so the same class of
+ * mistake fails at the call site instead.
+ *
+ * Opt-in: absent means this client receives nothing, because a notice sent to an application that
+ * never asked for one is an unsolicited push of identity data.
  */
 async function receivers(realmId: string): Promise<OAuthClient[]> {
   if (!boundDb) return [];
@@ -103,7 +106,7 @@ export const webhookProvisioningTarget: ProvisioningTarget = {
     const signature = signNotice(body);
 
     await Promise.all(targets.map(async (client) => {
-      const endpoint = (client as OAuthClient & { provisioning?: { endpoint?: string } }).provisioning?.endpoint;
+      const endpoint = client.provisioning?.endpoint;
       if (!endpoint) return;
       try {
         const response = await fetch(endpoint, {

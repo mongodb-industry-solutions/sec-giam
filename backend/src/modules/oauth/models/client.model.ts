@@ -84,6 +84,12 @@ export interface OAuthClient extends Scoped {
     certificateThumbprint: string;
   };
 
+  /** Where to send identity lifecycle notices, when this application asked for them. */
+  provisioning?: {
+    endpoint: string;
+    events?: Array<'create' | 'update' | 'deactivate'>;
+  };
+
   status: 'active' | 'suspended' | 'revoked';
 
   /**
@@ -147,6 +153,7 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
     ...(metadata.firstParty !== undefined ? { firstParty: metadata.firstParty } : {}),
     ...(metadata.backchannel ? { backchannel: metadata.backchannel as OAuthClient['backchannel'] } : {}),
     ...(metadata.mtls ? { mtls: metadata.mtls as OAuthClient['mtls'] } : {}),
+    ...(metadata.provisioning ? { provisioning: metadata.provisioning } : {}),
     ...(metadata.claimMappings ? { claimMappings: metadata.claimMappings } : {}),
     // Who may administer the registration. Distinct from the principal it acts as, which is
     // `ownerId` and is a token subject rather than a set of people.
@@ -176,6 +183,7 @@ export function clientMetadata(client: Partial<OAuthClient>): OAuthClientMetadat
     ...(client.firstParty !== undefined ? { firstParty: client.firstParty } : {}),
     ...(client.backchannel ? { backchannel: client.backchannel as Record<string, unknown> } : {}),
     ...(client.mtls ? { mtls: client.mtls } : {}),
+    ...(client.provisioning ? { provisioning: client.provisioning } : {}),
     ...(client.claimMappings ? { claimMappings: client.claimMappings } : {}),
   };
 }
