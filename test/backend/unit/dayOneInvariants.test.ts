@@ -9,7 +9,7 @@ import { resolve, relative, sep } from 'path';
 import {
   GIAM_COLLECTIONS, scopedCollections,
   IDENTITY_COLLECTION, AGENT_COLLECTION, DELEGATION_COLLECTION, GRANT_COLLECTION,
-  SECURITY_EVENT_COLLECTION, TENANT_COLLECTION,
+  SECURITY_EVENT_COLLECTION,
 } from '../../../backend/src/shared/models/collections';
 import { plannedIndexes } from '../../../backend/src/vendors/setup/createIndexes';
 
@@ -128,8 +128,12 @@ describe('v39 P0.6: the four doors that cannot be reopened cheaply', () => {
     expect(DELEGATION_COLLECTION).not.toBe(GRANT_COLLECTION);
   });
 
-  it('models a tenant as a boundary inside a realm rather than as another realm', () => {
-    expect(GIAM_COLLECTIONS.map((s) => s.name)).toContain(TENANT_COLLECTION);
+  it('keeps the tenant partition as a field rather than as a collection', () => {
+    // v40: no tenant exists distinct from its realm, so the collection is paid-for complexity.
+    // tenantId stays on every scoped record, which is what preserves the partition key, the index
+    // prefix and the option of a real second tenant later.
+    expect(GIAM_COLLECTIONS.map((s) => s.name)).not.toContain('tenant');
+    expect(scopedCollections().length).toBeGreaterThan(0);
   });
 
   it('stores security events in a time series rather than an ordinary collection', () => {

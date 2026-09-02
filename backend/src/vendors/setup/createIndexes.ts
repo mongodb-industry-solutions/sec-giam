@@ -1,13 +1,13 @@
 import { Db, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import {
   GIAM_COLLECTIONS, collectionSpec,
-  REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION, TENANT_COLLECTION,
+  REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION,
   IDENTITY_COLLECTION, CREDENTIAL_COLLECTION, AGENT_COLLECTION, TOOL_COLLECTION, MCP_SERVER_COLLECTION,
   CLIENT_COLLECTION, API_KEY_COLLECTION, AUTHORIZATION_REQUEST_COLLECTION, TOKEN_COLLECTION,
   SIGNING_KEY_COLLECTION, RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, ROLE_COLLECTION,
-  ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION, RELATIONSHIP_COLLECTION,
+  ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION, DELEGATION_COLLECTION,
-  SECURITY_EVENT_COLLECTION, COUNTERS_COLLECTION, IDEMPOTENCY_COLLECTION,
+  SECURITY_EVENT_COLLECTION,
 } from '../../shared/models/collections';
 
 export interface IndexPlan {
@@ -38,13 +38,6 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: IDENTITY_PROVIDER_COLLECTION, keys: { realmId: 1, tenantId: 1, name: 1 }, options: { name: 'realm_tenant_name_unique', unique: true } },
     // Home-realm discovery resolves an entered email domain to a provider.
     { collection: IDENTITY_PROVIDER_COLLECTION, keys: { realmId: 1, 'config.emailDomains': 1 }, options: { name: 'realm_emailDomains', sparse: true } },
-
-    // Unique per REALM, not globally. A tenant is a boundary inside a realm, so the pair is its
-    // identity; a global unique would force every realm to prefix its tenant names and would make the
-    // partition key redundant with itself.
-    { collection: TENANT_COLLECTION, keys: { realmId: 1, tenantId: 1 }, options: { name: 'realm_tenantId_unique', unique: true } },
-    { collection: TENANT_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
-    { collection: TENANT_COLLECTION, keys: { realmId: 1, parentTenantId: 1 }, options: { name: 'realm_parent', sparse: true } },
 
     // Directory.
     { collection: IDENTITY_COLLECTION, keys: { subjectId: 1 }, options: { name: 'subjectId_unique', unique: true } },
@@ -151,12 +144,6 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: POLICY_COLLECTION, keys: { realmId: 1, tenantId: 1, enabled: 1 }, options: { name: 'realm_tenant_enabled' } },
     { collection: POLICY_COLLECTION, keys: { realmId: 1, attachedTo: 1 }, options: { name: 'realm_attachedTo' } },
 
-    // Both directions: "what does this subject relate to" and "who relates to this object".
-    { collection: RELATIONSHIP_COLLECTION, keys: { relationshipId: 1 }, options: { name: 'relationshipId_unique', unique: true } },
-    { collection: RELATIONSHIP_COLLECTION, keys: { realmId: 1, subjectRef: 1, relation: 1 }, options: { name: 'realm_subject_relation' } },
-    { collection: RELATIONSHIP_COLLECTION, keys: { realmId: 1, objectRef: 1, relation: 1 }, options: { name: 'realm_object_relation' } },
-    { collection: RELATIONSHIP_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0, sparse: true } },
-
     // Sessions and consent.
     { collection: SESSION_COLLECTION, keys: { sessionId: 1 }, options: { name: 'sessionId_unique', unique: true } },
     { collection: SESSION_COLLECTION, keys: { realmId: 1, subjectId: 1, terminatedAt: 1 }, options: { name: 'realm_subject_terminated' } },
@@ -186,11 +173,6 @@ export function plannedIndexes(): IndexPlan[] {
       keys: { realmId: 1, stakeholderSubjectIds: 1, ts: -1 },
       options: { name: 'realm_stakeholders_ts' },
     },
-
-    // Infrastructure.
-    { collection: COUNTERS_COLLECTION, keys: { _id: 1 }, options: { name: '_id_' } },
-    { collection: IDEMPOTENCY_COLLECTION, keys: { key: 1 }, options: { name: 'key_unique', unique: true } },
-    { collection: IDEMPOTENCY_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0 } },
   ];
 
   return plans;

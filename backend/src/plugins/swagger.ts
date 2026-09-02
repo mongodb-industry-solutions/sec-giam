@@ -46,7 +46,7 @@ Every operation declares its category:
 | Category | Meaning |
 |---|---|
 | **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |
-| **No applicable standard** | Plain REST: plural resources, correct verb semantics, \`PATCH\` for partial updates, RFC 9457 \`application/problem+json\` errors, \`ETag\` and \`If-Match\` on mutable resources, cursor pagination, \`Idempotency-Key\` on unsafe operations. |
+| **No applicable standard** | Plain REST: plural resources, correct verb semantics, \`PATCH\` for partial updates, RFC 9457 \`application/problem+json\` errors, \`ETag\` and \`If-Match\` on mutable resources, cursor pagination. |
 
 Public protocol endpoints live under a realm's issuer path; administrative ones live under
 \`/api/v1/admin/\`, so a reader can tell them apart from the URL alone.
