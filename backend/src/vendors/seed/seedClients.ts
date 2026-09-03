@@ -47,6 +47,8 @@ interface ClientFixture {
   status: OAuthClient['status'];
   backchannel?: OAuthClient['backchannel'];
   demoRoster?: string[];
+  /** Which resource servers a token for this client is addressed to. Declared, never inferred. */
+  audience?: string[];
   /** Only the authority's own console. Absent means the client asks for consent. */
   firstParty?: boolean;
   /** A set: every owner administers the registration equally, and there is never zero of them. */
@@ -115,6 +117,7 @@ export async function seedClients(db: Db): Promise<void> {
           ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
           ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
           ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),
+          ...(fixture.audience ? { audience: fixture.audience } : {}),
           ...(fixture.firstParty ? { firstParty: fixture.firstParty } : {}),
         }),
         ...(fixture.owners?.length ? { administrators: fixture.owners } : {}),

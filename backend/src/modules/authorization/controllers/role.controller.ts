@@ -331,9 +331,21 @@ export async function roleController(fastify: FastifyInstance) {
     const realm = await realmOf((request.params as { realm: string }).realm);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const gate = await administers(realm.realmId, request.principal!.subjectId, 'permissions', 'view');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
-
+    /**
+     * Readable by ANY authenticated principal, and deliberately not narrowed.
+     *
+     * Two wrong answers were tried first. Requiring `permissions:view` refused it to almost every
+     * caller, and a resource server must expand the roles in a presented token on every request, so
+     * an analyst or a card officer resolved nothing and was then refused every guarded route.
+     * Narrowing the response to the caller's own roles fixed that and broke something worse: this
+     * endpoint exists to be CACHED, which is why it carries a version, and a response that depends
+     * on who asked means the first caller's narrow view is served to everybody afterwards.
+     *
+     * So it is the whole catalog, to anybody holding a valid token for this realm. What it contains
+     * is role names and permission names: the authorization MODEL, with no personal data, no
+     * secret, and nothing about who holds what. That is the same category of thing as a discovery
+     * document, and it is what "published" was always meant to mean.
+     */
     return reply.send(await new RoleAdminService(fastify.db).publishedCatalog(realm.realmId));
   });
 

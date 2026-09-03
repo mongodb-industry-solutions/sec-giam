@@ -25,7 +25,17 @@ interface IdentityFixture {
   lifecycleState?: string;
 }
 
-const identities = JSON.parse(readFileSync(resolve(DATA, 'identities.json'), 'utf8')) as IdentityFixture[];
+/**
+ * BOTH fixtures, because the realm holds both populations now (ADR-003).
+ *
+ * The bank's people are declared in their own file and live in the shared realm. Reading only one
+ * file made the roster look as though it named ten personas nobody had declared, when in fact the
+ * declaration was simply in the file this test was not reading.
+ */
+const identities = [
+  ...JSON.parse(readFileSync(resolve(DATA, 'identities.json'), 'utf8')) as IdentityFixture[],
+  ...JSON.parse(readFileSync(resolve(DATA, 'bankIdentities.json'), 'utf8')) as IdentityFixture[],
+];
 const realms = JSON.parse(readFileSync(resolve(DATA, 'realms.json'), 'utf8')) as Array<{
   name: string;
   displayName: string;

@@ -59,6 +59,8 @@ export interface OAuthClientMetadata {
   logoUri?: string;
   clientUri?: string;
   demoRoster?: string[];
+  /** Resource servers a token for this client is addressed to. Declared, never inferred. */
+  audience?: string[];
   firstParty?: boolean;
   backchannel?: Record<string, unknown>;
   /** RFC 8705: the certificate a client is bound to, when it authenticates with one. */

@@ -52,7 +52,10 @@
         "ref": "m0000001-0000-4000-8000-000000000001",
         "displayName": "Espresso Works"
       }
-    }
+    },
+    "audience": [
+      "leafypay"
+    ]
   },
   {
     "realm": "leafypay",
@@ -91,6 +94,9 @@
     ],
     "demoRoster": [
       "customer"
+    ],
+    "audience": [
+      "leafypay"
     ]
   },
   {
@@ -134,10 +140,13 @@
       "level2_investigator",
       "security_auditor",
       "merchant_officer"
+    ],
+    "audience": [
+      "leafypay"
     ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "leafypay-psp",
     "clientName": "LeafyPay, as a registered third party",
     "clientType": "confidential",
@@ -173,10 +182,13 @@
           "CBPII"
         ]
       }
-    }
+    },
+    "audience": [
+      "bankcore"
+    ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "bankcore-backend",
     "clientName": "BankCore backend service",
     "clientType": "confidential",
@@ -192,7 +204,7 @@
     "serviceIdentity": {
       "kind": "service",
       "userName": "BankCore backend service",
-      "roleName": "platform_service",
+      "roleName": "bank_platform_service",
       "owner": {
         "kind": "application",
         "ref": "bankcore",
@@ -207,10 +219,13 @@
           "view"
         ]
       }
-    }
+    },
+    "audience": [
+      "bankcore"
+    ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "bankcore-console",
     "clientName": "BankCore administration console",
     "clientType": "public",
@@ -237,6 +252,9 @@
       "bank_operations",
       "bank_card_officer",
       "bank_customer"
+    ],
+    "audience": [
+      "bankcore"
     ]
   },
   {
@@ -270,6 +288,9 @@
       "operations_officer",
       "client_administrator",
       "customer"
+    ],
+    "audience": [
+      "leafypay"
     ]
   },
   {
@@ -300,7 +321,10 @@
       "client_administrator",
       "customer"
     ],
-    "firstParty": true
+    "firstParty": true,
+    "audience": [
+      "leafypay"
+    ]
   },
   {
     "realm": "leafypay",
@@ -341,10 +365,13 @@
       "level2_investigator",
       "security_auditor",
       "merchant_officer"
+    ],
+    "audience": [
+      "leafypay"
     ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "another-tpp",
     "clientName": "Another Provider",
     "clientType": "confidential",
@@ -379,6 +406,9 @@
           "PISP"
         ]
       }
-    }
+    },
+    "audience": [
+      "bankcore"
+    ]
   }
 ]

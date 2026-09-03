@@ -1,6 +1,6 @@
 [
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0001-operations",
     "userName": "Marta Oliveira",
     "kind": "human",
@@ -16,7 +16,7 @@
     "roleName": "bank_operations"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0002-cardofficer",
     "userName": "Tomas Reyes",
     "kind": "human",
@@ -32,7 +32,7 @@
     "roleName": "bank_card_officer"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0003-compliance",
     "userName": "Ingrid Larsen",
     "kind": "human",
@@ -48,7 +48,7 @@
     "roleName": "bank_compliance"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0004-admin",
     "userName": "Samuel Adeyemi",
     "kind": "human",
@@ -64,7 +64,7 @@
     "roleName": "bank_admin"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-cus-0001-holder",
     "userName": "Elena Duarte",
     "kind": "human",
@@ -81,7 +81,7 @@
     "accountHolderRef": "hld00001-0000-4000-8000-000000000001"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0006-operations",
     "userName": "Nadia Haddad",
     "kind": "human",
@@ -97,7 +97,7 @@
     "roleName": "bank_operations"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0007-cards",
     "userName": "Petra Novak",
     "kind": "human",
@@ -113,7 +113,7 @@
     "roleName": "bank_card_officer"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0008-compliance",
     "userName": "Owen Bradley",
     "kind": "human",
@@ -129,7 +129,7 @@
     "roleName": "bank_compliance"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-emp-0009-admin",
     "userName": "Ruth Nakamura",
     "kind": "human",
@@ -145,7 +145,7 @@
     "roleName": "bank_admin"
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "subjectId": "bank-cus-0010-holder",
     "userName": "Viktor Ilyin",
     "kind": "human",

@@ -47,7 +47,7 @@ describe('v39: the sign-in roster is scoped per application', () => {
 
   it('offers at least two personas per role, so a screen shows a role and not a person', async () => {
     if (!live) return;
-    for (const realm of ['leafypay', 'bankcore']) {
+    for (const realm of ['leafypay']) {
       const entries = await roster(realm);
       const counts = new Map<string, number>();
       for (const entry of entries) {
@@ -83,7 +83,7 @@ describe('v39: the sign-in roster is scoped per application', () => {
 
   it("the bank offers its own people and its own account holders, and no provider role at all", async () => {
     if (!live) return;
-    const offered = roles(await roster('bankcore', 'bankcore-console'));
+    const offered = roles(await roster('leafypay', 'bankcore-console'));
     expect(offered).toEqual([
       'bank_admin', 'bank_card_officer', 'bank_compliance', 'bank_customer', 'bank_operations',
     ]);

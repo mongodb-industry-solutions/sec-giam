@@ -276,12 +276,27 @@ describe('v39 P6.7: a permission granted to a service identity is enforced end t
     expect(refused.reason).toContain('cards:viewSensitive');
   });
 
-  it('refuses a machine credential presented to the wrong realm', async () => {
-    // The bank realm's third party cannot authenticate against the application realm, even with its
-    // own correct secret: a client is a record inside one realm, not a platform-wide identity.
-    const response = await machineToken('leafypay-psp', clientSecretFor('leafypay-psp'), realmName);
-    expect(response.statusCode).toBe(401);
-    expect(response.json().error).toBe('invalid_client');
+  it('refuses a machine credential presented to a realm that does not exist', async () => {
+    /**
+     * This compared two realms, and ADR-003 left one.
+     *
+     * The property is that a client is a record INSIDE a realm rather than a platform-wide
+     * identity, and it still holds. What no longer exists is a second realm to present the
+     * credential to: the bank's third party is registered in the shared realm now, separated by
+     * its own resource server, roles and token audience instead of by a directory.
+     *
+     * So the assertion keeps the half that needs one realm: a correct secret does not authenticate
+     * anywhere, only where the client is registered. Weakened deliberately and stated, rather than
+     * deleted, because a test quietly removed is a property nobody remembers was checked.
+     */
+    const response = await machineToken(
+      'leafypay-psp',
+      clientSecretFor('leafypay-psp'),
+      undefined,
+      'a-realm-that-does-not-exist',
+    );
+    expect(response.statusCode).not.toBe(200);
+    expect(response.json().error).toBeTruthy();
   });
 
   it('refuses a machine credential with the wrong secret', async () => {

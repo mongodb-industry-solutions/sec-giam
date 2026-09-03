@@ -87,23 +87,5 @@
         ]
       }
     ]
-  },
-  {
-    "realmId": "d1a2b3c4-0004-0004-0004-000000000004",
-    "name": "bankcore",
-    "displayName": "BankCore",
-    "aliases": [],
-    "enabled": true,
-    "demoMode": false,
-    "registration": {
-      "selfServiceEnabled": false,
-      "autoApprove": false
-    },
-    "branding": {
-      "displayName": "BankCore",
-      "primaryColor": "#001E2B",
-      "backgroundStyle": "plain"
-    },
-    "providers": []
   }
 ]
