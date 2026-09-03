@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requireAuthority } from '../../../vendors/middleware/authorityAuth';
-import { PRINCIPAL_COLLECTION } from '../../../shared/models/collections';
+import { PRINCIPAL_COLLECTION, ROLE_COLLECTION } from '../../../shared/models/collections';
 import { PrincipalRecord } from '../models/principal.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { provisioningTargets } from '../../../shared/ports';
@@ -83,6 +83,26 @@ export async function scimController(fastify: FastifyInstance) {
     return fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   }
 
+  /**
+   * roleId to role name, for the whole response.
+   *
+   * Read ONCE per request rather than per principal: a page of a hundred people holding the same
+   * handful of roles would otherwise be a hundred lookups of the same few documents. Empty on
+   * failure, which publishes the ids rather than dropping the roles: an opaque value a reader can
+   * still resolve is better than a person appearing to hold nothing.
+   */
+  async function roleNames(realmId: string): Promise<Map<string, string>> {
+    try {
+      const roles = await fastify.db
+        .collection<{ roleId: string; name: string }>(ROLE_COLLECTION)
+        .find({ realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
+        .toArray();
+      return new Map(roles.map((role) => [role.roleId, role.name]));
+    } catch {
+      return new Map();
+    }
+  }
+
   fastify.get(`${base}/Users`, {
     preHandler: requireAuthority('identities', 'view'),
     schema: {
@@ -152,9 +172,10 @@ export async function scimController(fastify: FastifyInstance) {
       identities().countDocuments(query),
     ]);
 
+    const names = await roleNames(realm.realmId);
     return reply
       .header('content-type', 'application/scim+json')
-      .send(toScimList(records.map((record) => toScimUser(record, location(realmName))), total, from));
+      .send(toScimList(records.map((record) => toScimUser(record, location(realmName), names)), total, from));
   });
 
   fastify.get(`${base}/Users/:id`, {
@@ -185,7 +206,7 @@ export async function scimController(fastify: FastifyInstance) {
     const record = await identities().findOne({ realmId: realm.realmId, subjectId: id }, { projection: { _id: 0 } });
     if (!record) return reply.status(404).send(scimError(404, 'No such principal'));
 
-    return reply.header('content-type', 'application/scim+json').send(toScimUser(record, location(realmName)));
+    return reply.header('content-type', 'application/scim+json').send(toScimUser(record, location(realmName), await roleNames(realm.realmId)));
   });
 
   fastify.post(`${base}/Users`, {
@@ -283,7 +304,7 @@ export async function scimController(fastify: FastifyInstance) {
     return reply
       .status(201)
       .header('content-type', 'application/scim+json')
-      .send(toScimUser(record, location(realmName)));
+      .send(toScimUser(record, location(realmName), await roleNames(realm.realmId)));
   });
 
   fastify.patch(`${base}/Users/:id`, {
@@ -376,7 +397,7 @@ export async function scimController(fastify: FastifyInstance) {
     const updated = await identities().findOne({ subjectId: id }, { projection: { _id: 0 } });
     return reply
       .header('content-type', 'application/scim+json')
-      .send(toScimUser(updated as PrincipalRecord, location(realmName)));
+      .send(toScimUser(updated as PrincipalRecord, location(realmName), await roleNames(realm.realmId)));
   });
 
   fastify.delete(`${base}/Users/:id`, {

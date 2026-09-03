@@ -1263,7 +1263,6 @@
     },
     "active": true,
     "lifecycleState": "active",
-    "demoFeatured": true,
     "roleName": "client_administrator",
     "phone": "+1 323 555 0102"
   }
