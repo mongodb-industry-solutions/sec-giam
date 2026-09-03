@@ -13,7 +13,7 @@ import { buildEncryptedFieldsMaps } from '../../../backend/src/vendors/encryptio
 const SPECIFIED: Record<string, string[]> = {
   'realm and its authentication paths': ['realm', 'domain'],
   directory: ['principal', 'credential'],
-  oauth: ['authRequest', 'key'],
+  oauth: ['state', 'key'],
   authorization: ['resource', 'role', 'policy'],
   'session and consent': ['session', 'grant'],
   audit: ['audit'],

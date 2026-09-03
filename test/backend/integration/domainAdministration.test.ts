@@ -154,10 +154,17 @@ describe('ADR-002: administering authentication paths', () => {
     const response = await fetch(`${GIAM}/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
     expect(response.status).toBe(200);
 
-    const { items, total } = await response.json() as { items: Array<{ name: string }>; total: number };
+    const { items, total } = await response.json() as { items: Array<{ name: string; protocol: string }>; total: number };
     expect(total).toBeGreaterThan(0);
-    // The realm's own directory is always present: ADR-001 guarantees exactly one per realm.
-    expect(items.map((item) => item.name)).toContain('local');
+    /**
+     * The realm's own directory is always present: ADR-001 guarantees exactly one per realm.
+     *
+     * Asserted by PROTOCOL rather than by slug. The slug is a label an operator may change, and it
+     * was changed from `local` to `atlas-id`; what must hold is that exactly one internal path
+     * exists, which is the actual guarantee.
+     */
+    const internal = items.filter((item) => item.protocol === 'internal');
+    expect(internal).toHaveLength(1);
   });
 
   it('publishes NO secret and NO reference to one', async () => {
