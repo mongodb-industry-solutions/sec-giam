@@ -41,6 +41,17 @@ export interface OAuthClient extends Scoped {
   tokenEndpointAuthMethod: 'client_secret_basic' | 'client_secret_post' | 'private_key_jwt' | 'tls_client_auth' | 'none';
   applicationType?: 'web' | 'native' | 'service';
 
+  /**
+   * Which resource servers a token for this client is addressed to. RFC 9068 `aud`.
+   *
+   * DECLARED, because the fallback cannot be correct once a realm holds more than one application.
+   * It names every resource server registered in the realm, so with a payment service and a bank in
+   * one realm every token was addressed to both, and audience stopped separating anything.
+   *
+   * A token that names one audience is refused by the other, which is the whole point of the claim.
+   */
+  audience?: string[];
+
   /** Overrides the realm default when present. */
   tokenPolicy?: {
     accessTokenTtlSeconds?: number;
@@ -150,6 +161,7 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
     ...(metadata.logoUri ? { logoUri: metadata.logoUri } : {}),
     ...(metadata.clientUri ? { clientUri: metadata.clientUri } : {}),
     ...(metadata.demoRoster ? { demoRoster: metadata.demoRoster } : {}),
+    ...(metadata.audience ? { audience: metadata.audience } : {}),
     ...(metadata.firstParty !== undefined ? { firstParty: metadata.firstParty } : {}),
     ...(metadata.backchannel ? { backchannel: metadata.backchannel as OAuthClient['backchannel'] } : {}),
     ...(metadata.mtls ? { mtls: metadata.mtls as OAuthClient['mtls'] } : {}),
@@ -180,6 +192,7 @@ export function clientMetadata(client: Partial<OAuthClient>): OAuthClientMetadat
     ...(client.logoUri ? { logoUri: client.logoUri } : {}),
     ...(client.clientUri ? { clientUri: client.clientUri } : {}),
     ...(client.demoRoster ? { demoRoster: client.demoRoster } : {}),
+    ...(client.audience ? { audience: client.audience } : {}),
     ...(client.firstParty !== undefined ? { firstParty: client.firstParty } : {}),
     ...(client.backchannel ? { backchannel: client.backchannel as Record<string, unknown> } : {}),
     ...(client.mtls ? { mtls: client.mtls } : {}),

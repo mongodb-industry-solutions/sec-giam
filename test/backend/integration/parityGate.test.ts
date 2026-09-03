@@ -195,15 +195,25 @@ describe('v39 P5.8: every seeded principal signs in with today credentials', () 
     expect(unknown.json()).toEqual(wrong.json());
   });
 
-  it('refuses a principal from another realm', async () => {
-    // Realm isolation at the authentication step, before any token exists: a principal seeded in one
-    // realm is simply not present in another, and that is what makes the boundary structural.
-    const otherRealm = realmName === 'leafypay' ? 'bankcore' : 'leafypay';
+  it('refuses a sign-in addressed to a realm that does not exist', async () => {
+    /**
+     * This asserted realm ISOLATION, and ADR-003 left it nothing to isolate from.
+     *
+     * The property was that a principal seeded in one realm is simply not present in another. It is
+     * still true of the model and it is no longer demonstrable here, because the group runs one
+     * realm: the bank is a client in it, separated by its own resource server, roles and token
+     * audience rather than by a directory of its own. A second bank would restore the case.
+     *
+     * What remains testable is the half that does not need two realms: credentials are resolved
+     * WITHIN a named realm, so a sign-in addressed to a realm that does not exist cannot succeed on
+     * the strength of a valid password. Weakened deliberately and said so, rather than deleted,
+     * because a test quietly removed is a property nobody remembers was checked.
+     */
     const response = await app.inject({
       method: 'POST',
-      url: `/realms/${otherRealm}/login`,
+      url: '/realms/a-realm-that-does-not-exist/login',
       payload: { login: identities[0].userName, password: demoPassword as string },
     });
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(404);
   });
 });

@@ -85,7 +85,7 @@ export class TokenIssuer {
   }
 
   private async audienceFor(realm: RealmRecord, client: OAuthClient): Promise<string[]> {
-    const declared = (client as OAuthClient & { audience?: string[] }).audience;
+    const declared = client.audience;
     if (declared?.length) return declared;
 
     const servers = await this.db

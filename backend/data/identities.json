@@ -88,14 +88,7 @@
     "lifecycleState": "active",
     "demoFeatured": true,
     "roleName": "security_auditor",
-    "accountHolderRef": "b0000053-0000-4000-8000-000000000053",
-    "realmGrants": [
-      {
-        "realm": "bankcore",
-        "roleName": "security_auditor",
-        "justification": "Oversight of both realms, read only in the realm that is not their own."
-      }
-    ]
+    "accountHolderRef": "b0000053-0000-4000-8000-000000000053"
   },
   {
     "realm": "leafypay",

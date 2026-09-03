@@ -36,9 +36,9 @@ const MATRIX: Expectation[] = [
   { label: 'manager', realm: 'leafypay', login: 'Alex Rivera', ...PLATFORM, views: 'all', manageable: 'all-but-keys', identities: 200 },
   { label: 'security auditor', realm: 'leafypay', login: 'Diego Sans', ...PLATFORM, views: 'all', manageable: 'none', identities: 200 },
   { label: 'customer', realm: 'leafypay', login: 'Luis Fernandez', ...PLATFORM, views: 'none', manageable: 'none', identities: 403 },
-  { label: 'bank administrator', realm: 'bankcore', login: 'Samuel Adeyemi', ...BANK, views: 'all', manageable: 'all-but-keys', identities: 200 },
-  { label: 'bank compliance', realm: 'bankcore', login: 'Ingrid Larsen', ...BANK, views: 'all', manageable: 'none', identities: 200 },
-  { label: 'bank customer', realm: 'bankcore', login: 'Elena Duarte', ...BANK, views: 'none', manageable: 'none', identities: 403 },
+  { label: 'bank administrator', realm: 'leafypay', login: 'Samuel Adeyemi', ...BANK, views: 'all', manageable: 'all-but-keys', identities: 200 },
+  { label: 'bank compliance', realm: 'leafypay', login: 'Ingrid Larsen', ...BANK, views: 'all', manageable: 'none', identities: 200 },
+  { label: 'bank customer', realm: 'leafypay', login: 'Elena Duarte', ...BANK, views: 'none', manageable: 'none', identities: 403 },
 ];
 
 async function reachable(): Promise<boolean> {
