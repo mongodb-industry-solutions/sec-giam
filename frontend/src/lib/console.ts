@@ -1,7 +1,7 @@
 'use client';
 
 import { apiUrl } from './env';
-import { PROFILE_KEY, storedHomeRealm, storedRealm, storedToken } from './session';
+import { PROFILE_KEY, storedHomeRealm, storedRealm, storedToken, storedUserName } from './session';
 
 /**
  * What the console knows about the signed-in principal, and how it talks to the authority.
@@ -132,7 +132,24 @@ export async function loadUserInfo(): Promise<UserInfo | null> {
 export function displayName(claims: Claims): string {
   const info = cachedUserInfo();
   const fromProfile = info && info.sub === claims.sub ? info.name || info.preferred_username : '';
-  return fromProfile || claims.name || claims.preferred_username || claims.sub;
+  /**
+   * A NAME, and never a subject id.
+   *
+   * The subject used to be the last resort here, and it was reached constantly: v40 slimmed the
+   * access token to the claims that carry authority, so `name` and `preferred_username` are simply
+   * not in it, and the profile read is asynchronous. Every header and menu therefore rendered
+   * `a1000070-0000-4000-8000-000000000070` on first paint, and permanently whenever UserInfo failed.
+   *
+   * An opaque identifier is not a name. It tells the person nothing they did not know, it is
+   * unreadable at a glance, and it is the wrong thing to put where somebody looks to confirm who
+   * they are signed in as. The identifier still matters, so it is shown on the profile screen where
+   * that level of detail belongs, and never as a substitute for a name.
+   */
+  return fromProfile
+    || claims.name
+    || claims.preferred_username
+    || storedUserName()
+    || 'Your account';
 }
 
 export function initials(claims: Claims): string {
