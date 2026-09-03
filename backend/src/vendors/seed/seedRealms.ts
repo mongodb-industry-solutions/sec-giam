@@ -82,8 +82,17 @@ const DEFAULT_LOCAL_AUTHENTICATION: NonNullable<DomainRecord['authentication']> 
   },
 };
 
-/** The slug every realm's own directory is registered under. */
-const LOCAL_DOMAIN_NAME = 'local';
+/**
+ * The slug every realm's own directory is registered under.
+ *
+ * `local` said where the directory was rather than what it is, and it read as a developer's word
+ * for "not the real one" on a screen a customer sees. This is the realm's OWN directory: the
+ * credentials it holds, the policy it enforces and the only path anybody can self-register into.
+ *
+ * Realm neutral on purpose. Every realm registers one of these, so a slug naming one product would
+ * be wrong in the other realm the moment there are two.
+ */
+const LOCAL_DOMAIN_NAME = 'atlas-id';
 
 export async function seedRealms(db: Db): Promise<void> {
   const fixtures = readSeedFile<RealmFixture[]>('realms.json');

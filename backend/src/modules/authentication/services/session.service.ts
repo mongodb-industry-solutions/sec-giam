@@ -70,7 +70,7 @@ export class SessionService {
     epoch?: number;
     clientId?: string;
     domainId?: string;
-    authRequestId?: string;
+    stateId?: string;
     userAgentHash?: string;
     ipHash?: string;
   }): Promise<SessionRecord | SessionLimitRefusal> {
@@ -86,7 +86,7 @@ export class SessionService {
       refreshGen: 0,
       ...(input.clientId ? { clientId: input.clientId } : {}),
       ...(input.domainId ? { domainId: input.domainId } : {}),
-      ...(input.authRequestId ? { authRequestId: input.authRequestId } : {}),
+      ...(input.stateId ? { stateId: input.stateId } : {}),
       createdAt: now.toISOString(),
       lastSeenAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + input.realm.tokenPolicy.sessionMaxTtlSeconds * 1000).toISOString(),

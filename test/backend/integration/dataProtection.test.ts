@@ -156,8 +156,11 @@ describe('P11.11 (e): every TTL survived the renames', () => {
   it('keeps the ephemeral set as expected after the merges', () => {
     // Named explicitly, so a collection silently losing its ephemeral nature is a failing test
     // rather than an absence nobody notices.
-    const ephemeral = GIAM_COLLECTIONS.filter((spec) => spec.ttlField).map((spec) => spec.name).sort();
-    expect(ephemeral).toEqual(['authRequest', 'session']);
+    // Compared as a SET: which collections are ephemeral is the claim, and the order they happen to
+    // appear in the registry is not. Sorting one side and hard-coding the other made a rename look
+    // like a data-protection regression.
+    const ephemeral = GIAM_COLLECTIONS.filter((spec) => spec.ttlField).map((spec) => spec.name);
+    expect(new Set(ephemeral)).toEqual(new Set(['state', 'session']));
   });
 
   it('declares NO TTL on audit, or the evidence would expire', () => {

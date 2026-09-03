@@ -1,8 +1,8 @@
 import { Db } from 'mongodb';
 import { randomBytes, createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { AUTH_REQUEST_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
-import { AuthRequestRecord } from '../../oauth/models/authRequest.model';
+import { STATE_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { StateRecord } from '../../oauth/models/state.model';
 import { CredentialRecord, isUsable } from '../../directory/models/credential.model';
 import { OAuthClient, scopesOf } from '../../oauth/models/client.model';
 import { RealmRecord } from '../../realm/models/realm.model';
@@ -69,7 +69,7 @@ export class BackchannelService {
   constructor(private readonly db: Db) {}
 
   private get requests() {
-    return this.db.collection<AuthRequestRecord>(AUTH_REQUEST_COLLECTION);
+    return this.db.collection<StateRecord>(STATE_COLLECTION);
   }
 
   private audit(realm: RealmRecord, input: {
@@ -185,7 +185,7 @@ export class BackchannelService {
       attemptCount: 0,
       expiresAt: new Date(Date.now() + lifetime * 1000).toISOString(),
       meta: newMeta('AuthorizationRequest'),
-    } as AuthRequestRecord);
+    } as StateRecord);
 
     this.audit(realm, {
       action: 'authentication.backchannel.initiated',
@@ -199,7 +199,7 @@ export class BackchannelService {
   }
 
   /** Loads a request, expiring it in passing so a stale one is never presented as live. */
-  private async active(realmId: string, authReqId: string): Promise<AuthRequestRecord | BackchannelFailure> {
+  private async active(realmId: string, authReqId: string): Promise<StateRecord | BackchannelFailure> {
     const request = await this.requests.findOne({ realmId, authReqId }, { projection: { _id: 0 } });
     if (!request) return refuse(404, 'invalid_grant', 'unknown auth_req_id');
     if (request.status === 'pending' && Date.parse(request.expiresAt) < Date.now()) {
@@ -345,7 +345,7 @@ export class BackchannelService {
     realm: RealmRecord,
     clientId: string,
     authReqId: string,
-  ): Promise<AuthRequestRecord | BackchannelFailure> {
+  ): Promise<StateRecord | BackchannelFailure> {
     if (!authReqId) return refuse(400, 'invalid_request', 'auth_req_id is required');
     const request = await this.requests.findOne({ realmId: realm.realmId, authReqId }, { projection: { _id: 0 } });
     // Unknown and foreign are the same answer: which of the two it was is not the caller's business.

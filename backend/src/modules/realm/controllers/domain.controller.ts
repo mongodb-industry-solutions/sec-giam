@@ -104,7 +104,7 @@ export async function domainController(fastify: FastifyInstance) {
     additionalProperties: true,
     example: {
       providerId: 'a4c610e1-65c0-5e4c-813c-4cb9712a8bcf',
-      name: 'local',
+      name: 'atlas-id',
       displayName: 'Acme directory',
       protocol: 'internal',
       adapter: 'internal',

@@ -19,7 +19,7 @@ export type AuthorizationFlow = 'authorization_code' | 'ciba' | 'par';
 
 export type AuthorizationStatus = 'pending' | 'approved' | 'denied' | 'consumed' | 'expired';
 
-export interface AuthRequestRecord extends Scoped {
+export interface StateRecord extends Scoped {
   requestId: string;
   flow: AuthorizationFlow;
   clientId: string;
@@ -107,7 +107,7 @@ export interface AuthRequestRecord extends Scoped {
  * different instance, and the PKCE challenge has to be remembered in order to be compared.
  */
 export function isRedeemable(
-  request: Pick<AuthRequestRecord, 'status' | 'expiresAt'>,
+  request: Pick<StateRecord, 'status' | 'expiresAt'>,
   now = new Date(),
 ): boolean {
   return request.status === 'approved' || request.status === 'pending'
