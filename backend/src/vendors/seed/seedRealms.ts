@@ -28,7 +28,8 @@ interface RealmFixture {
   enabled?: boolean;
   demoMode?: boolean;
   clientEnforcement?: RealmRecord['clientEnforcement'];
-  registration?: Partial<RealmRecord['registration']>;
+  /** Self-registration. Seeded onto the realm's own directory, which is the only path it can describe. */
+  registration?: Partial<NonNullable<DomainRecord['registration']>>;
   tokenPolicy?: Partial<RealmRecord['tokenPolicy']>;
   /** Overrides for the realm's own directory, which is a domain now rather than realm config. */
   localAuthentication?: Partial<NonNullable<DomainRecord['authentication']>>;
@@ -104,7 +105,6 @@ export async function seedRealms(db: Db): Promise<void> {
         enabled: fixture.enabled ?? true,
         aliases: fixture.aliases ?? [],
         ...(fixture.notice ? { notice: fixture.notice } : {}),
-        registration: { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
         tokenPolicy: { ...DEFAULT_TOKEN_POLICY, ...fixture.tokenPolicy },
         branding: { displayName: fixture.displayName, ...fixture.branding },
         demoMode: fixture.demoMode ?? false,
@@ -144,6 +144,13 @@ export async function seedRealms(db: Db): Promise<void> {
         // Unlimited by default: one session per subject produces constant eviction for a person
         // using a laptop, a phone and a tablet.
         session: { maxConcurrent: null, onExceed: 'evict-oldest' },
+        /**
+         * Self-registration lives HERE and not on the realm (ADR-002).
+         *
+         * Closed unless a fixture opens it. The internal directory is the only path anybody can
+         * join through, so it is the only one this can describe.
+         */
+        registration: { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
       },
       { providerId: localId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
       'Domain',

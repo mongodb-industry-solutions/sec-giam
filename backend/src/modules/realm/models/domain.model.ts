@@ -102,6 +102,22 @@ export interface DomainRecord extends Scoped {
     onExceed: 'evict-oldest' | 'refuse-new';
   };
 
+  /**
+   * Whether a person may join through this path on their own, and whether they are usable at once.
+   *
+   * ADR-002. This sat on the REALM, which described the internal directory while claiming to
+   * describe the realm: nobody self-registers into a federated upstream, because the upstream owns
+   * its own joining process. Beside the password policy, the lockout and the session limit, because
+   * it is the same kind of rule about the same path.
+   *
+   * Absent means no self-service, which is the safe reading for a federated path that has none.
+   */
+  registration?: {
+    selfServiceEnabled: boolean;
+    /** False holds a new principal at `pending` until somebody approves it. */
+    autoApprove: boolean;
+  };
+
   meta: Meta;
 }
 
@@ -173,5 +189,20 @@ export function concurrentSessionRule(
   return {
     limit: domain.session?.maxConcurrent ?? null,
     onExceed: domain.session?.onExceed ?? 'evict-oldest',
+  };
+}
+
+/**
+ * Whether this path lets people join on their own.
+ *
+ * Absent configuration is NOT self-service. A federated path carries none, and reading "unset" as
+ * "open" would turn a missing field into an open door.
+ */
+export function selfRegistration(
+  domain: Pick<DomainRecord, 'registration'> | null | undefined,
+): { selfServiceEnabled: boolean; autoApprove: boolean } {
+  return {
+    selfServiceEnabled: domain?.registration?.selfServiceEnabled === true,
+    autoApprove: domain?.registration?.autoApprove === true,
   };
 }

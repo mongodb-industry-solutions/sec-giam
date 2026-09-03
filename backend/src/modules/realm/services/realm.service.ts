@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import { REALM_COLLECTION, DOMAIN_COLLECTION } from '../../../shared/models/collections';
 import { RealmRecord, matchesRealmName } from '../models/realm.model';
-import { DomainRecord } from '../models/domain.model';
+import { DomainRecord, selfRegistration } from '../models/domain.model';
 
 /**
  * Resolving realms and the providers federated inside them.
@@ -60,6 +60,25 @@ export class RealmService {
       { realmId, protocol: 'internal' },
       { projection: { _id: 0 } },
     );
+  }
+
+  /**
+   * Whether this realm accepts self-registration, and whether it approves automatically.
+   *
+   * ADR-002 moved this off the realm and onto the path that does the proving, so it is resolved
+   * from the internal directory rather than read off the realm record. Nobody self-registers into
+   * a federated upstream, so a realm without an ENABLED internal path has nowhere for a
+   * self-registered credential to live and the answer is no.
+   *
+   * `enabled` is required here and deliberately not in `localDomain`: a disabled path still owns
+   * the password policy that describes it, and is still not somewhere to join.
+   */
+  async registration(realmId: string): Promise<{ selfServiceEnabled: boolean; autoApprove: boolean }> {
+    const local = await this.providers.findOne(
+      { realmId, protocol: 'internal', enabled: true },
+      { projection: { _id: 0, registration: 1 } },
+    );
+    return selfRegistration(local);
   }
 
   /**

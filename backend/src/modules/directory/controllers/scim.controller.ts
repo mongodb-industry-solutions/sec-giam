@@ -260,7 +260,10 @@ export async function scimController(fastify: FastifyInstance) {
 
     const primary = body.emails?.find((email) => email.primary) ?? body.emails?.[0];
     const now = new Date().toISOString();
-    const lifecycleState = provisionedLifecycleState(realm.registration.autoApprove);
+    // Provisioning lands in the internal directory, so it is that path's approval rule that
+    // decides whether the principal is usable at once (ADR-002).
+    const { autoApprove } = await new RealmService(fastify.db).registration(realm.realmId);
+    const lifecycleState = provisionedLifecycleState(autoApprove);
 
     const record = {
       realmId: realm.realmId,
