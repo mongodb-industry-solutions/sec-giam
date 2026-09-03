@@ -160,7 +160,7 @@ describe('P11.11 (e): every TTL survived the renames', () => {
     // appear in the registry is not. Sorting one side and hard-coding the other made a rename look
     // like a data-protection regression.
     const ephemeral = GIAM_COLLECTIONS.filter((spec) => spec.ttlField).map((spec) => spec.name);
-    expect(new Set(ephemeral)).toEqual(new Set(['state', 'session']));
+    expect(new Set(ephemeral)).toEqual(new Set(['ticket', 'session']));
   });
 
   it('declares NO TTL on audit, or the evidence would expire', () => {

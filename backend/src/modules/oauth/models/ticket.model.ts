@@ -19,7 +19,7 @@ export type AuthorizationFlow = 'authorization_code' | 'ciba' | 'par';
 
 export type AuthorizationStatus = 'pending' | 'approved' | 'denied' | 'consumed' | 'expired';
 
-export interface StateRecord extends Scoped {
+export interface TicketRecord extends Scoped {
   requestId: string;
   flow: AuthorizationFlow;
   clientId: string;
@@ -102,12 +102,13 @@ export interface StateRecord extends Scoped {
  * progress. The record then expires on its own TTL, in minutes, so the detection window costs
  * nothing durable.
  *
- * This is the one place in the model where state must be written at all: an authorization code is a
- * claim ticket handed over in one channel and redeemed in another, seconds later, possibly on a
- * different instance, and the PKCE challenge has to be remembered in order to be compared.
+ * This is the one place in the model where transient flow state must be written at all, and it is
+ * what the collection is named for: an authorization code is a claim TICKET, handed over in one
+ * channel and redeemed in another seconds later, possibly on a different instance, and the PKCE
+ * challenge has to be remembered in order to be compared.
  */
 export function isRedeemable(
-  request: Pick<StateRecord, 'status' | 'expiresAt'>,
+  request: Pick<TicketRecord, 'status' | 'expiresAt'>,
   now = new Date(),
 ): boolean {
   return request.status === 'approved' || request.status === 'pending'
