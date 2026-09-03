@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Bug, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { apiUrl } from '../lib/env';
-import { tokenFromSession } from '../lib/session';
+import { tokenFromSession, rememberUserName } from '../lib/session';
 import { BRAND } from '../config/brand';
 import { Tooltip } from './Tooltip';
 
@@ -123,6 +123,9 @@ export function SignInPanel({
         return;
       }
       const body = await response.json();
+      // Kept before anything else can fail: the name is in hand HERE, and every screen that names
+      // this person otherwise has to fetch it back or show a subject id instead.
+      rememberUserName(body.userName);
       // A token for the console itself, obtained the ordinary way. Failing here does not undo the
       // sign-in: the person IS signed in, and only the screens needing a token are affected.
       await tokenFromSession(realm, body.sessionId);

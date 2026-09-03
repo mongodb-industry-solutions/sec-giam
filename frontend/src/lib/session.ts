@@ -36,6 +36,18 @@ export const REALM_CHANGED_EVENT = 'giam:realm-changed';
 export const SESSION_CHANGED_EVENT = 'giam:session-changed';
 // Profile claims read from the UserInfo endpoint, kept beside the token they were read with.
 export const PROFILE_KEY = 'giam.userinfo';
+/**
+ * The name the sign-in itself returned.
+ *
+ * Kept because the console otherwise has NO synchronous source for it. An access token carries no
+ * profile claims by design (RFC 9068 keeps them out: the token is addressed to a resource server,
+ * not to whoever it describes), and this console stores no id token. So without this the only way
+ * to learn a name is the UserInfo round trip, and every screen showed a raw subject id until it
+ * came back, or forever if it failed.
+ *
+ * The sign-in response already carried it and it was being thrown away.
+ */
+const NAME_KEY = 'giam.userName';
 
 // The realm every console call is addressed to. Remembered at sign-in rather than guessed per page,
 // because a page that guesses wrong reads somebody else's realm or nothing at all.
@@ -57,6 +69,16 @@ export function storedToken(): string {
 
 export function storedSessionId(): string {
   return typeof window === 'undefined' ? '' : window.sessionStorage.getItem(SESSION_KEY) ?? '';
+}
+
+/** The name this session signed in as. Empty when unknown, never a subject id. */
+export function storedUserName(): string {
+  return typeof window === 'undefined' ? '' : window.sessionStorage.getItem(NAME_KEY) ?? '';
+}
+
+export function rememberUserName(userName: string): void {
+  if (typeof window === 'undefined' || !userName) return;
+  window.sessionStorage.setItem(NAME_KEY, userName);
 }
 
 /** The realm that authenticated this person and issued their token. Never changes while signed in. */
@@ -94,6 +116,7 @@ export function clearSession(): void {
   window.sessionStorage.removeItem(REALM_KEY);
   window.sessionStorage.removeItem(ACTIVE_REALM_KEY);
   window.sessionStorage.removeItem(PROFILE_KEY);
+  window.sessionStorage.removeItem(NAME_KEY);
   announceSessionChange();
 }
 

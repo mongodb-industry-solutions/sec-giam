@@ -157,7 +157,8 @@ export default function ConsoleOverviewPage() {
           <Tooltip text="The access token this console holds. Every screen here is authorized by it, and the authority checks its signature on each call." />
         </div>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <Fact label="Subject" value={claims.sub} mono />
+          {/* The subject id is on the profile screen, where that level of detail belongs. A
+              dashboard answers "what can I do here", and an opaque identifier answers nothing. */}
           <Fact label="Issuer" value={claims.iss ?? 'not stated'} mono />
           <Fact label="Scope" value={claims.scope ?? 'not stated'} />
           <Fact label="Expires" value={claims.exp ? when(new Date(claims.exp * 1000).toISOString()) : 'not stated'} />
