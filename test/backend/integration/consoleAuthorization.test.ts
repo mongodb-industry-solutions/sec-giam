@@ -64,22 +64,45 @@ async function tokenFor(expectation: Expectation): Promise<string> {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
 
-  const authorize = await fetch(`${GIAM}/realms/${expectation.realm}/protocol/openid-connect/auth`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_id: expectation.clientId,
-      redirect_uri: expectation.redirectUri,
-      response_type: 'code',
-      scope: 'openid profile email',
-      session_id: sessionId,
-      code_challenge: challenge,
-      code_challenge_method: 'S256',
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
+  /**
+   * Authorize, and ANSWER THE CONSENT QUESTION if it is asked.
+   *
+   * A first authorization for an application this person has not used before returns a consent
+   * prompt rather than a code, which is the documented two-step: show the scopes, then repeat the
+   * request with `consent_granted`. Doing only the first step made this helper depend on a grant
+   * happening to exist already, so it passed for whoever had signed in before and failed on a
+   * directory where nobody had. That is a defect in the test and not in the flow.
+   */
+  async function requestCode(consentGranted: boolean): Promise<Response> {
+    return fetch(`${GIAM}/realms/${expectation.realm}/protocol/openid-connect/auth`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        client_id: expectation.clientId,
+        redirect_uri: expectation.redirectUri,
+        response_type: 'code',
+        scope: 'openid profile email',
+        session_id: sessionId,
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        ...(consentGranted ? { consent_granted: true } : {}),
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+  }
+
+  let authorize = await requestCode(false);
   if (!authorize.ok) return '';
-  const { code } = await authorize.json() as { code: string };
+  let granted = await authorize.json() as { code?: string; consent_required?: boolean };
+
+  if (granted.consent_required) {
+    authorize = await requestCode(true);
+    if (!authorize.ok) return '';
+    granted = await authorize.json() as { code?: string; consent_required?: boolean };
+  }
+
+  const code = granted.code;
+  if (!code) return '';
 
   const token = await fetch(`${GIAM}/realms/${expectation.realm}/protocol/openid-connect/token`, {
     method: 'POST',
