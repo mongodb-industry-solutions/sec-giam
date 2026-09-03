@@ -2,15 +2,15 @@
 //
 // Two claims, and the second is the one that would fail silently. Merging delegation into grant is
 // visible the moment anything reads the wrong field. But "failed attempt analysis belongs in audit,
-// never in state" only fails at the TTL boundary, minutes later, when the record that was
+// never in ticket" only fails at the TTL boundary, minutes later, when the record that was
 // answering the question quietly stops existing. So that boundary is asserted directly.
 import { describe, it, expect } from 'vitest';
 import {
   covers, isDelegation, isExercisable, narrowScope, grantedScopes, chainDepth,
 } from '../../../backend/src/modules/consent/models/grant.model';
 import type { GrantRecord } from '../../../backend/src/modules/consent/models/grant.model';
-import { isRedeemable } from '../../../backend/src/modules/oauth/models/state.model';
-import type { StateRecord, AuthorizationFlow } from '../../../backend/src/modules/oauth/models/state.model';
+import { isRedeemable } from '../../../backend/src/modules/oauth/models/ticket.model';
+import type { TicketRecord, AuthorizationFlow } from '../../../backend/src/modules/oauth/models/ticket.model';
 import { GIAM_COLLECTIONS } from '../../../backend/src/shared/models/collections';
 import { plannedIndexes } from '../../../backend/src/vendors/setup/createIndexes';
 
@@ -103,7 +103,7 @@ describe('P7: a delegated hop may only narrow', () => {
 });
 
 describe('P7: a flow is transient, and the fact outlives it', () => {
-  const pending: Pick<StateRecord, 'status' | 'expiresAt'> = {
+  const pending: Pick<TicketRecord, 'status' | 'expiresAt'> = {
     status: 'pending',
     expiresAt: new Date(Date.now() + 120_000).toISOString(),
   };
@@ -116,13 +116,13 @@ describe('P7: a flow is transient, and the fact outlives it', () => {
     expect(isRedeemable({ ...pending, expiresAt: '2020-01-01T00:00:00.000Z' })).toBe(false);
   });
 
-  it('keeps the state TTL bounded, which is what makes it unfit for analysis', () => {
+  it('keeps the ticket TTL bounded, which is what makes it unfit for analysis', () => {
     // The reason failed-attempt analysis cannot live here: the record is gone in minutes. A TTL
     // index on the collection is the mechanism, so its presence is the assertion.
-    const spec = GIAM_COLLECTIONS.find((entry) => entry.name === 'state');
+    const spec = GIAM_COLLECTIONS.find((entry) => entry.name === 'ticket');
     expect(spec?.ttlField).toBe('expiresAt');
     const ttl = plannedIndexes().find(
-      (plan) => plan.collection === 'state' && plan.options.expireAfterSeconds !== undefined,
+      (plan) => plan.collection === 'ticket' && plan.options.expireAfterSeconds !== undefined,
     );
     expect(ttl).toBeTruthy();
     expect(ttl?.options.expireAfterSeconds).toBe(0);
@@ -132,7 +132,7 @@ describe('P7: a flow is transient, and the fact outlives it', () => {
     /**
      * The other half of the same claim, and the reason P7.6 exists.
      *
-     * A failed sign-in must still be answerable after the state record that carried it has expired.
+     * A failed sign-in must still be answerable after the ticket that carried it has expired.
      * That only holds if audit is a separate, long-retention collection with NO TTL, so the two
      * properties are asserted together: the flow expires, the evidence does not.
      */

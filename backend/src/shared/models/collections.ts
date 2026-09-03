@@ -45,7 +45,7 @@ export const PRINCIPAL_COLLECTION = 'principal';
 export const CREDENTIAL_COLLECTION = 'credential';
 
 // OAuth: pending authorizations and the published key set.
-export const STATE_COLLECTION = 'state';
+export const TICKET_COLLECTION = 'ticket';
 export const KEY_COLLECTION = 'key';
 
 // Authorization: what a resource declares and what GIAM grants over it.
@@ -152,10 +152,10 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
     ttlField: 'expiresAt',
   },
   {
-    name: STATE_COLLECTION,
+    name: TICKET_COLLECTION,
     module: 'oauth',
-    // The one place state must be written: an authorization code is a claim ticket handed over in
-    // one channel and redeemed in another, so the PKCE challenge has to be remembered to be compared.
+    // A claim ticket: issued in one channel, redeemed in another, single use and short lived. The
+    // PKCE challenge has to be remembered to be compared, which is why this is stored at all.
     purpose: 'a pending authorization awaiting a user action, seconds to minutes, TTL bounded',
     scoped: true,
     kind: 'standard',

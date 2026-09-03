@@ -37,7 +37,7 @@ export interface SessionRecord extends Scoped {
    * Closes the trail from "somebody pressed sign in" to "this session is live", which otherwise
    * has a gap exactly where an investigation needs to cross it.
    */
-  stateId?: string;
+  ticketId?: string;
 
   /**
    * The refresh generation, and the whole of reuse detection.

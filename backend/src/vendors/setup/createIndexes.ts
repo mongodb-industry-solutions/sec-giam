@@ -3,7 +3,7 @@ import {
   GIAM_COLLECTIONS, collectionSpec,
   REALM_COLLECTION, DOMAIN_COLLECTION,
   PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
-  STATE_COLLECTION,
+  TICKET_COLLECTION,
   KEY_COLLECTION, RESOURCE_COLLECTION, ROLE_COLLECTION,
   POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION,
@@ -99,13 +99,13 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: CREDENTIAL_COLLECTION, keys: { 'metadata.mtls.certificateThumbprint': 1 }, options: { name: 'mtls_thumbprint', sparse: true } },
 
     // OAuth.
-    { collection: STATE_COLLECTION, keys: { requestId: 1 }, options: { name: 'requestId_unique', unique: true } },
+    { collection: TICKET_COLLECTION, keys: { requestId: 1 }, options: { name: 'requestId_unique', unique: true } },
     // The code is stored hashed, and looked up by that hash on redemption.
-    { collection: STATE_COLLECTION, keys: { realmId: 1, codeHash: 1 }, options: { name: 'realm_codeHash', sparse: true } },
-    { collection: STATE_COLLECTION, keys: { authReqId: 1 }, options: { name: 'authReqId', sparse: true } },
-    { collection: STATE_COLLECTION, keys: { realmId: 1, subjectId: 1, status: 1 }, options: { name: 'realm_subject_status', sparse: true } },
+    { collection: TICKET_COLLECTION, keys: { realmId: 1, codeHash: 1 }, options: { name: 'realm_codeHash', sparse: true } },
+    { collection: TICKET_COLLECTION, keys: { authReqId: 1 }, options: { name: 'authReqId', sparse: true } },
+    { collection: TICKET_COLLECTION, keys: { realmId: 1, subjectId: 1, status: 1 }, options: { name: 'realm_subject_status', sparse: true } },
     // Expiry is the database's job: a cleanup job is a thing that fails silently.
-    { collection: STATE_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0 } },
+    { collection: TICKET_COLLECTION, keys: { expiresAt: 1 }, options: { name: 'expiresAt_ttl', expireAfterSeconds: 0 } },
 
     // No index for a revoked-token list, and no TTL with a grace beyond expiry to keep one
     // detectable. Both existed to serve the token collection, and nothing redeemable is stored now:
