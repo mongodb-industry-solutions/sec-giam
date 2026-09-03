@@ -165,15 +165,55 @@ export class ElevationService {
       expiresAt: new Date(now.getTime() + duration * 1000).toISOString(),
     };
 
-    // Guarded on the role being absent, so a second request cannot append a duplicate and so an
-    // elevation cannot be stacked on a role the subject already holds.
+    // A duplicate is the SAME role for the SAME scope, not merely the same role name. A subject who
+    // already holds a role bank-wide (or for a different case) can still ask for it again scoped to
+    // THIS case: that is a distinct, reviewable, time-boxed grant, not a repeat of the standing one.
+    // Comparing roleId alone would refuse the request that matters most: the standing L2 investigator
+    // approving their own case-scoped access, which is exactly the elevation this endpoint exists for.
+    const principal = await this.principals.findOne(
+      { realmId: realm.realmId, subjectId: input.subjectId },
+      { projection: { _id: 0, roles: 1 } },
+    );
+    const existingHoldings = principal?.roles ?? [];
+    const sameScope = (a?: { kind: string; ref: string }, b?: { kind: string; ref: string }) => {
+      if (!a && !b) return true;
+      if (!a || !b) return false;
+      return a.kind === b.kind && a.ref === b.ref;
+    };
+    const duplicate = existingHoldings.some(
+      (entry) => entry.roleId === role.roleId && sameScope(entry.scope, input.scope),
+    );
+    if (duplicate) {
+      this.audit(realm, {
+        action: input.requiresApproval ? 'privilege.requested' : 'privilege.granted',
+        outcome: 'failure',
+        subjectId: input.requestedBy,
+        cause: 'already_held_for_scope',
+        detail: { role: input.roleName, holder: input.subjectId },
+      });
+      return {
+        status: 409,
+        title: 'That principal already holds this role for this scope',
+        detail: 'An elevation adds authority the subject does not already have for this scope.',
+      };
+    }
+    if (existingHoldings.length >= MAX_ROLE_HOLDINGS) {
+      this.audit(realm, {
+        action: input.requiresApproval ? 'privilege.requested' : 'privilege.granted',
+        outcome: 'failure',
+        subjectId: input.requestedBy,
+        cause: 'role_cap_reached',
+        detail: { role: input.roleName, holder: input.subjectId },
+      });
+      return {
+        status: 409,
+        title: 'Role holding cap reached',
+        detail: 'This principal already holds the maximum number of role assignments.',
+      };
+    }
+
     const outcome = await this.principals.updateOne(
-      {
-        realmId: realm.realmId,
-        subjectId: input.subjectId,
-        'roles.roleId': { $ne: role.roleId },
-        $expr: { $lt: [{ $size: { $ifNull: ['$roles', []] } }, MAX_ROLE_HOLDINGS] },
-      },
+      { realmId: realm.realmId, subjectId: input.subjectId },
       { $push: { roles: holding } },
     );
     if (outcome.matchedCount === 0) {
