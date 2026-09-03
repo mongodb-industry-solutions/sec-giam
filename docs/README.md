@@ -97,7 +97,7 @@ entries, no duplicated permissions and no second level of organisation.
 | `principal` | Every subject that acts: person, workload, agent, service. Roles embedded, with expiry. | `identity`, `agent`, `roleAssignment` |
 | `credential` | Everything that identifies a principal: password, MFA, API key, certificate, OAuth client. | `apiKey`, `client` |
 | `realm` | Issuance boundary: issuer, key references, token lifetimes, branding. | `tenant` |
-| `domain` | One authentication path into a realm, local or federated, with its session policy. | `identityProvider` |
+| `domain` | One authentication path into a realm, local or federated, with the rules that govern proving identity on it: password policy, lockout, session limit and self-registration. | `identityProvider` |
 | `key` | The published key set per realm. Public material and references only. | `signingKey` |
 | `role` | A named bundle of permissions, composable through parent roles. | |
 | `policy` | One effect over one resource pattern, under conditions. Deny by default. | `permission` |

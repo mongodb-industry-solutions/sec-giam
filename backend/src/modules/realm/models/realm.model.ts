@@ -27,10 +27,13 @@ export interface RealmRecord extends Scoped {
   aliases: string[];
   /** Shown on the sign-in screen. Kept because the platform's domain notice is demo copy that matters. */
   notice?: string;
-  registration: {
-    selfServiceEnabled: boolean;
-    autoApprove: boolean;
-  };
+  /**
+   * Self-registration moved to `domain.registration` in ADR-002.
+   *
+   * It described the internal directory while sitting on the realm, and nobody self-registers into
+   * a federated upstream. Removed rather than deprecated: a setting readable from two places is one
+   * that will disagree with itself.
+   */
   /** Lifetimes, out of a service's hardcoding and onto the record an operator can edit. */
   tokenPolicy: {
     accessTokenTtlSeconds: number;

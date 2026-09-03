@@ -148,12 +148,17 @@ export async function rosterController(fastify: FastifyInstance) {
       return (offered && held.find((role) => offered.includes(role))) ?? held[0];
     };
 
+    // Which path accepts joiners, resolved once for the response.
+    const joining = await realmService.registration(realm.realmId);
+
     return reply.send({
       realm: realm.name,
       displayName: realm.displayName,
       issuer: realm.issuer,
       ...(realm.notice ? { notice: realm.notice } : {}),
-      registrationEnabled: realm.registration.selfServiceEnabled,
+      // Still one flag at the top level: a sign-in screen asks one question and should not have to
+      // reason about which path answers it. Resolved from the internal path (ADR-002).
+      registrationEnabled: joining.selfServiceEnabled,
       branding: realm.branding,
       providers: providers.map((provider) => ({
         name: provider.name,

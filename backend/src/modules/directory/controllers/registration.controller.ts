@@ -71,7 +71,9 @@ export async function registrationController(fastify: FastifyInstance) {
 
     const realm = await new RealmService(fastify.db).byName(realmName);
     if (!realm || !realm.enabled) return reply.status(404).send(problem(404, 'Unknown realm'));
-    if (!realm.registration.selfServiceEnabled) {
+    // Asked of the internal path, which is the only one anybody can join through (ADR-002).
+    const joining = await new RealmService(fastify.db).registration(realm.realmId);
+    if (!joining.selfServiceEnabled) {
       return reply.status(403).send(problem(403, 'Registration is closed', 'This realm does not offer self-service registration.'));
     }
 
@@ -107,9 +109,9 @@ export async function registrationController(fastify: FastifyInstance) {
 
     const subjectId = `sub-${randomUUID()}`;
     const now = new Date().toISOString();
-    // Approval is the realm's decision. A principal awaiting it exists and cannot authenticate,
+    // Approval is the path's decision. A principal awaiting it exists and cannot authenticate,
     // rather than not existing, so the person can be told where their request stands.
-    const lifecycleState = realm.registration.autoApprove ? 'active' : 'pending';
+    const lifecycleState = joining.autoApprove ? 'active' : 'pending';
 
     await fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION).insertOne({
       realmId: realm.realmId,
