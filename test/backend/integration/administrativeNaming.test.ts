@@ -19,12 +19,11 @@
  * Skipped unless the authority is listening.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createHash, randomBytes } from 'crypto';
+import { tokenFor } from './support/authorizationFlow';
 
 const GIAM = process.env.GIAM_BASE_URL ?? 'http://127.0.0.1:8085';
 const REALM = 'leafypay';
 const DEMO_PASSWORD = 'demo-password';
-const CONSOLE = { clientId: 'giam-console', redirectUri: 'http://localhost:8086/auth/callback' };
 
 async function reachable(): Promise<boolean> {
   try {
@@ -35,59 +34,15 @@ async function reachable(): Promise<boolean> {
   }
 }
 
-/** A real administrator token, through the whole flow including consent. */
+/**
+ * A real administrator token, through the whole flow.
+ *
+ * The flow itself lives in `support/authorizationFlow`, because this suite, the console
+ * authorization suite and the domain administration suite were each driving it and each had
+ * memorised the non-conforming shape it used to have.
+ */
 async function adminToken(): Promise<string> {
-  const session = await fetch(`${GIAM}/realms/${REALM}/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ login: 'alex.rivera', password: DEMO_PASSWORD }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!session.ok) return '';
-  const { sessionId } = await session.json() as { sessionId: string };
-
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-  const ask = (consentGranted: boolean) => fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_id: CONSOLE.clientId,
-      redirect_uri: CONSOLE.redirectUri,
-      response_type: 'code',
-      scope: 'openid profile email',
-      session_id: sessionId,
-      code_challenge: challenge,
-      code_challenge_method: 'S256',
-      ...(consentGranted ? { consent_granted: true } : {}),
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-
-  let authorize = await ask(false);
-  if (!authorize.ok) return '';
-  let granted = await authorize.json() as { code?: string; consent_required?: boolean };
-  if (granted.consent_required) {
-    authorize = await ask(true);
-    if (!authorize.ok) return '';
-    granted = await authorize.json() as { code?: string };
-  }
-  if (!granted.code) return '';
-
-  const token = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: granted.code,
-      redirect_uri: CONSOLE.redirectUri,
-      client_id: CONSOLE.clientId,
-      code_verifier: verifier,
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!token.ok) return '';
-  return (await token.json() as { access_token: string }).access_token;
+  return tokenFor(GIAM, REALM, 'alex.rivera', DEMO_PASSWORD);
 }
 
 /** The identifier the reports objected to, as a shape rather than a specific value. */

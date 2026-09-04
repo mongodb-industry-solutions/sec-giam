@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { clearSessionCookie } from '../services/sessionCookie';
 import { RealmService } from '../../realm/services/realm.service';
 import { SessionService } from '../services/session.service';
 import { LogoutNotifier } from '../services/logoutNotifier.service';
@@ -122,6 +123,16 @@ export async function logoutController(fastify: FastifyInstance) {
       subjectId: session?.subjectId,
       detail: { revokedTokens: outcome.revokedTokens },
     });
+
+    /**
+     * The cookie goes with the session, unconditionally.
+     *
+     * Cleared even when no session was found, which follows from the line below: the answer must not
+     * differ on whether the session existed, and neither must the headers. Leaving a stale cookie
+     * behind would also mean the next authorization attempt presents an identifier that resolves to
+     * nothing, which reads as an expiry rather than as a sign-out.
+     */
+    clearSessionCookie(request, reply);
 
     // 200 whether or not a session was found, for the same reason revocation does: reporting "no
     // such session" would confirm which session identifiers are real.
