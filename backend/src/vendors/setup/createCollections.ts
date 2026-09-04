@@ -73,16 +73,58 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
     if (spec.kind === 'timeseries') {
       // Append-only, high volume, queried by range. Seconds granularity: security events arrive in
       // bursts around a sign-in, and a coarser bucket would put a whole login flow in one document.
+      /**
+       * Retention, applied at creation, from configuration.
+       *
+       * A time series collection expires on its own time field, so this needs no TTL index. Zero
+       * disables it, for a deployment that archives externally and wants nothing removed here.
+       *
+       * Stated in the log because "long retention" was what the registry claimed while nothing
+       * implemented it, and a deployment could not say what its retention actually was.
+       */
+      const retentionDays = config.app.auditRetentionDays;
+      const expireAfterSeconds = retentionDays > 0 ? retentionDays * 86_400 : undefined;
       await db.createCollection(spec.name, {
         timeseries: { timeField: 'ts', metaField: 'meta', granularity: 'seconds' },
+        ...(expireAfterSeconds ? { expireAfterSeconds } : {}),
       });
-      console.log(`  created: ${spec.name} (time series) (${spec.purpose})`);
+      console.log(
+        `  created: ${spec.name} (time series, ${expireAfterSeconds ? `${retentionDays} day retention` : 'no expiry'})`
+        + ` (${spec.purpose})`,
+      );
       continue;
     }
 
     if (spec.encrypted) {
-      await db.createCollection(spec.name, { encryptedFields: maps[spec.name] as never });
-      console.log(`  created: ${spec.name} (QE) (${spec.purpose})`);
+      /**
+       * Created with the declared map, and DEGRADED if the driver cannot support it.
+       *
+       * `encryptedFieldsMaps` claims that on an older cluster the substring field "degrades to
+       * equality rather than failing setup". That was not true: the choice was made from a static
+       * configuration flag, so a deployment whose `crypt_shared` predates the substring query type
+       * failed here instead, leaving `principal` uncreated, unindexed and unencrypted. `setup:db`
+       * then reported `requires-reset` forever, because the reset is what had failed.
+       *
+       * The claim is now true. A refusal naming the query type is caught, the map is rebuilt with
+       * equality, and the loss of capability is stated rather than silent: administrative search by
+       * name FRAGMENT stops working, and somebody has to know that rather than discover it.
+       */
+      try {
+        await db.createCollection(spec.name, { encryptedFields: maps[spec.name] as never });
+        console.log(`  created: ${spec.name} (QE) (${spec.purpose})`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/queryType|substring/i.test(message)) throw err;
+
+        console.warn(
+          `  warn:    ${spec.name}: this driver refuses the declared query type, so the encrypted `
+          + 'name field falls back to equality. Search by name FRAGMENT will not work until '
+          + 'crypt_shared and the server support it.',
+        );
+        const degraded = buildEncryptedFieldsMaps(deks, { forceEquality: true });
+        await db.createCollection(spec.name, { encryptedFields: degraded[spec.name] as never });
+        console.log(`  created: ${spec.name} (QE, equality only) (${spec.purpose})`);
+      }
       continue;
     }
 

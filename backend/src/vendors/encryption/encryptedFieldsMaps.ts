@@ -40,12 +40,20 @@ export const DEK_ALT_NAMES = {
  *
  * The substring query type requires server 9.0+, which GA'd it and rejects the earlier
  * `substringPreview` name outright: a collection still carrying the old name fails EVERY encrypted
- * query on it, including the plain equality lookups on the other two fields. On an older cluster the
- * field degrades to equality rather than failing setup, which keeps it encrypted and exactly
- * searchable instead of trading the whole deployment for one query shape.
+ * query on it, including the plain equality lookups on the other two fields.
+ *
+ * On an older cluster the field degrades to equality rather than failing setup, which keeps it
+ * encrypted and exactly searchable instead of trading the whole deployment for one query shape.
+ * That degradation is `forceEquality`, and it is driven by what the DRIVER actually accepts:
+ * `createCollections` catches the refusal and rebuilds the map. It used to be driven by a static
+ * configuration flag, which meant the sentence above was false and a deployment on an older
+ * `crypt_shared` simply failed setup with `principal` left uncreated.
  */
-export function buildEncryptedFieldsMaps(deks: GiamDeks): Record<string, { fields: unknown[] }> {
-  const nameQueries = config.mongodb.textSearch
+export function buildEncryptedFieldsMaps(
+  deks: GiamDeks,
+  options: { forceEquality?: boolean } = {},
+): Record<string, { fields: unknown[] }> {
+  const nameQueries = config.mongodb.textSearch && !options.forceEquality
     ? {
       queryType: 'substring',
       contention: 8,

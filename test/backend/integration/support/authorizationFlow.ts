@@ -81,15 +81,52 @@ export async function tokenFor(
   url.searchParams.set('code_challenge', challenge);
   url.searchParams.set('code_challenge_method', 'S256');
 
-  const authorize = await fetch(url, {
+  const authorize = async () => fetch(url, {
     headers: { cookie: session.cookie },
     // Manual, because the redirect IS the answer: following it would fetch the console's callback
     // page and lose the code that is in the Location header.
     redirect: 'manual',
     signal: AbortSignal.timeout(TIMEOUT),
   });
-  const location = authorize.headers.get('location');
+
+  let location = (await authorize()).headers.get('location');
   if (!location) return '';
+
+  /**
+   * ANSWER THE CONSENT QUESTION when the authority asks it.
+   *
+   * A client that is not first party needs the person's approval before a code exists, and since
+   * v41 P5 that approval is recorded by the authority against the pending request rather than
+   * asserted in the authorization call. The flow therefore redirects to the consent page, and a
+   * helper that stopped at the first redirect would report "could not sign in" for every
+   * third-party client on a freshly seeded directory.
+   *
+   * The previous helper handled this too, in the shape the endpoint used to have. Dropping it when
+   * the endpoint became conforming left the same gap in a new form: this suite passed only for
+   * whoever already had a grant, which is the exact defect an earlier comment in it complained
+   * about.
+   */
+  if (location.includes('/auth/consent')) {
+    const requestId = new URL(location).searchParams.get('request_id');
+    if (!requestId) return '';
+
+    const decided = await fetch(`${giam}/realms/${realm}/protocol/openid-connect/auth/consent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: session.cookie },
+      // No `granted_scopes`, which means all of them: this helper exists to obtain a working token,
+      // and partial consent is asserted where it belongs, in `partialConsent.test.ts`.
+      body: JSON.stringify({ request_id: requestId, approved: true }),
+      signal: AbortSignal.timeout(TIMEOUT),
+    });
+    if (!decided.ok) return '';
+
+    const { continue: next } = await decided.json() as { continue: string };
+    const resumed = await fetch(next, {
+      headers: { cookie: session.cookie }, redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT),
+    });
+    location = resumed.headers.get('location');
+    if (!location) return '';
+  }
 
   const code = new URL(location).searchParams.get('code');
   // A redirect carrying `error` instead of `code` is a refusal delivered the way the specification
