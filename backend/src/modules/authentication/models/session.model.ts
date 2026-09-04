@@ -37,6 +37,9 @@ export interface SessionRecord extends Scoped, AuthenticationContext {
    *
    * Closes the trail from "somebody pressed sign in" to "this session is live", which otherwise
    * has a gap exactly where an investigation needs to cross it.
+   *
+   * NOT the source of the `txn` claim, though it looks like it should be: one session produces many
+   * flows, so this names whichever was most recent. The flow travels in the refresh token instead.
    */
   ticketId?: string;
 
@@ -99,4 +102,12 @@ export interface RefreshClaims {
   gen: number;
   sub?: string;
   client_id: string;
+  /**
+   * The flow this rotation chain belongs to, RFC 8417 2.2.
+   *
+   * Carried IN the token rather than looked up, because a session produces many flows and could not
+   * say which one minted this refresh token. This is what keeps every rotation of one chain filed
+   * under one flow with no stored state.
+   */
+  txn?: string;
 }

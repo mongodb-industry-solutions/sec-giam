@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import { trailHealth } from '../../modules/audit/services/securityEvent.service';
 import { existsSync } from 'fs';
 import { config, keyVaultNamespace, realmIssuer } from '../../config';
 import { REALM_COLLECTION, PRINCIPAL_COLLECTION, KEY_COLLECTION } from '../models/collections';
@@ -87,6 +88,23 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
   } catch (err) {
     return [{ label: 'directory', value: `ping failed: ${err instanceof Error ? err.message : String(err)}`, level: 'warn' }];
   }
+
+  /**
+   * The audit trail's own health. PCI DSS 10.7 requires that a failure to log be DETECTED.
+   *
+   * Reported before the record counts below, because a deployment whose trail is dropping writes has
+   * a problem that outranks how many realms it has. `warn` and not a hard failure: the trail is
+   * deliberately non-blocking, so a degraded trail is a serving deployment that an operator must
+   * know about rather than one that should stop.
+   */
+  const trail = trailHealth();
+  lines.push(trail.healthy
+    ? { label: 'audit trail', value: `${trail.written} event(s) written, no failures` }
+    : {
+      label: 'audit trail',
+      value: `DEGRADED: ${trail.failed} write(s) lost, last at ${trail.lastFailureAt}. Evidence is incomplete`,
+      level: 'warn',
+    });
 
   try {
     const realms = await db.collection(REALM_COLLECTION)
