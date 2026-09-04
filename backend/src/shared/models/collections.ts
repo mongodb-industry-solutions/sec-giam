@@ -177,6 +177,15 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
     purpose: 'append-only authentication, authorization, token and consent evidence, long retention',
     scoped: true,
     kind: 'timeseries',
+    /*
+     * Retention is CONFIGURED (`GIAM_AUDIT_RETENTION_DAYS`) and applied by setup as a time series
+     * collection option, not as a TTL index and not as `ttlField`.
+     *
+     * `ttlField` was tried here and is wrong on both counts. It marks a collection EPHEMERAL BY
+     * DESIGN, which a session and a ticket are and evidence is not, and it drives the creation of a
+     * TTL index, which a time series collection does not use because it expires on its own time
+     * field. Two invariant tests said so immediately, which is the registry earning its keep.
+     */
   },
   {
     name: EVENTBUS_COLLECTION,

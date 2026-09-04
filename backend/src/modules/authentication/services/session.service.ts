@@ -311,6 +311,36 @@ export class SessionService {
      * is a record some query will forget to filter, and the filter being forgotten is exactly how a
      * revoked session keeps working. Absence cannot be forgotten.
      */
+    /**
+     * Recorded BEFORE the delete, with WHY it ended, which is D39.
+     *
+     * A session simply vanishing was indistinguishable between three very different things: the
+     * person signed out, an administrator revoked it, or it reached its own expiry. Only the first
+     * left any trace, and the third leaves none by nature, because a TTL sweep is not an event.
+     *
+     * So the reason is carried into the record here, and `expiresAt` goes with it: an investigator
+     * comparing that to the timestamp can tell "it simply ran out" from "somebody ended it", which
+     * is the distinction the trail could not previously make at all.
+     */
+    void new SecurityEventService(this.db).record({
+      realmId: session.realmId,
+      tenantId: session.tenantId,
+      category: 'session',
+      action: 'authentication.session.ended',
+      outcome: 'success',
+      cause: reason,
+      subjectId: session.subjectId,
+      target: { type: 'session', ref: sessionId },
+      detail: {
+        reason,
+        createdAt: session.createdAt,
+        // Carried so a reader can see whether it was near its end anyway.
+        expiresAt: session.expiresAt,
+        idleExpiresAt: session.idleExpiresAt,
+        clients: notifyIds,
+      },
+    });
+
     await this.sessions.deleteOne({ realmId, sessionId });
 
     // Nothing to revoke: no token was ever written down. The count stays in the response because
