@@ -89,11 +89,7 @@ rely upon this value being unique". The identifier is `sub`.
 
 ---
 
-## How to verify
-
-Two ways, and neither is right in general, which is why both exist.
-
-### Narrowing what you receive
+## Narrowing what you receive
 
 Two request parameters, both narrowing only, and neither can widen anything.
 
@@ -106,6 +102,12 @@ Two request parameters, both narrowing only, and neither can widen anything.
   too many does not fail the whole request. The asymmetry with `resource` is deliberate: dropping
   keeps a narrow request worth making, while a wrong audience means you have the wrong idea of what
   you are talking to, and a token for the wrong API produces a 401 you cannot diagnose.
+
+---
+
+## How to verify
+
+Two ways, and neither is right in general, which is why both exist.
 
 **Locally, against the published key set** at `/realms/{realm}/protocol/openid-connect/certs`. Costs
 nothing per request and keeps you serving when the authority is unreachable. Answers "was this signed
