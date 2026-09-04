@@ -17,6 +17,8 @@ import { useRealmChange } from '../../../lib/realms';
  */
 
 interface Elevation {
+  /** The person behind the subject id. Absent when the record carries no name. */
+  userName?: string;
   assignmentId: string;
   subjectId: string;
   roleId: string;
@@ -150,7 +152,10 @@ export default function ElevationsPage() {
                           </Tooltip>
                         )}
                       </div>
-                      <p className="mt-0.5 font-mono text-xs text-gray-400">held by {elevation.subjectId}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        held by <span className="font-medium text-gray-700">{elevation.userName ?? elevation.subjectId}</span>
+                        {elevation.userName && <span className="ml-1.5 font-mono text-[10px] text-gray-400">{elevation.subjectId}</span>}
+                      </p>
 
                       {elevation.justification && (
                         <p className="mt-2 border-l-2 border-gray-200 pl-2.5 text-sm italic text-gray-600">

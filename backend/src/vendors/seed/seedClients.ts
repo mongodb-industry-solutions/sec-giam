@@ -216,7 +216,16 @@ export async function seedClients(db: Db): Promise<void> {
       }
     }
     for (const [type, actions] of actionsByType) {
-      const childId = uuidv5(`resource:${realmId}:${serverName}:${type}`, AUTHORIZATION_NAMESPACE);
+      /**
+       * Keyed on the server's ID, matching `seedAuthorization`.
+       *
+       * This derived from the server NAME while the roles seeder derived from its uuid, so the same
+       * logical resource was written twice under two different ids. The published catalog then
+       * listed five enforcement points twice, and worse, the two documents each owned their own
+       * `actions`: which verbs a resource declared depended on which of the two a reader happened
+       * to load. One derivation, in both places, or they drift again.
+       */
+      const childId = uuidv5(`resource:${realmId}:${serverId}:${type}`, AUTHORIZATION_NAMESPACE);
       await upsertSeed<ResourceRecord>(
         db.collection<ResourceRecord>(RESOURCE_COLLECTION),
         { resourceId: childId },
