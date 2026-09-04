@@ -281,14 +281,139 @@
         }
       }
     },
-    "/realms/{realm}/.well-known/oauth-authorization-server": {
+    "/.well-known/oauth-authorization-server/realms/{realm}": {
       "get": {
         "operationId": "getAuthorizationServerMetadata",
         "summary": "Authorization server metadata",
         "tags": [
           "discovery"
         ],
-        "description": "Standard-defined: RFC 8414. Path, document and member names follow the specification verbatim. Public by specification: it names endpoints, it discloses nothing.",
+        "description": "Standard-defined: RFC 8414 section 3.1. Path, document and member names follow the specification verbatim. Public by specification: it names endpoints, it discloses nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Authorization server metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Authorization server metadata.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "issuer",
+                    "jwks_uri"
+                  ],
+                  "properties": {
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "authorization_endpoint": {
+                      "type": "string"
+                    },
+                    "token_endpoint": {
+                      "type": "string"
+                    },
+                    "userinfo_endpoint": {
+                      "type": "string"
+                    },
+                    "jwks_uri": {
+                      "type": "string"
+                    },
+                    "introspection_endpoint": {
+                      "type": "string"
+                    },
+                    "revocation_endpoint": {
+                      "type": "string"
+                    },
+                    "end_session_endpoint": {
+                      "type": "string"
+                    },
+                    "backchannel_authentication_endpoint": {
+                      "type": "string"
+                    },
+                    "scopes_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "response_types_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "grant_types_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "subject_types_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "id_token_signing_alg_values_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "token_endpoint_auth_methods_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "code_challenge_methods_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "issuer": "https://giam.example/realms/acme",
+                  "jwks_uri": "https://giam.example/realms/acme/protocol/openid-connect/certs"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/.well-known/oauth-authorization-server": {
+      "get": {
+        "operationId": "getAuthorizationServerMetadataAtIssuerPath",
+        "summary": "Authorization server metadata",
+        "tags": [
+          "discovery"
+        ],
+        "description": "Standard-defined: RFC 8414, the OIDC-shaped location. Path, document and member names follow the specification verbatim. Public by specification: it names endpoints, it discloses nothing.",
         "parameters": [
           {
             "schema": {
@@ -1274,11 +1399,36 @@
                     "token_type": {
                       "type": "string"
                     },
+                    "aud": {
+                      "description": "What the token is addressed to. Compare it against your own."
+                    },
+                    "iss": {
+                      "type": "string"
+                    },
+                    "jti": {
+                      "type": "string",
+                      "description": "The identifier of this token, for one-time use or for naming it in an incident."
+                    },
+                    "nbf": {
+                      "type": "integer"
+                    },
+                    "username": {
+                      "type": "string",
+                      "description": "The login identifier, per SCIM. Not a display name."
+                    },
                     "entitlements": {
                       "type": "array",
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "grant_id": {
+                      "type": "string",
+                      "description": "The consent this token was issued under."
+                    },
+                    "txn": {
+                      "type": "string",
+                      "description": "The flow it belongs to, RFC 8417."
                     }
                   }
                 },

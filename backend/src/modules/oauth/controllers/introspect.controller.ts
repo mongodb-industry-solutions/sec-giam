@@ -9,7 +9,7 @@ import { DirectoryService } from '../../directory/services/directory.service';
 import { canAuthenticate } from '../../directory/models/principal.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { oauthError } from '../../../shared/models/problem';
-import { RESOURCE_COLLECTION } from '../../../shared/models/collections';
+import { RESOURCE_COLLECTION, GRANT_COLLECTION } from '../../../shared/models/collections';
 
 /**
  * Introspection and revocation: the centralised half of token validation.
@@ -68,7 +68,14 @@ export async function introspectController(fastify: FastifyInstance) {
             exp: { type: 'integer' },
             iat: { type: 'integer' },
             token_type: { type: 'string' },
+            aud: { description: 'What the token is addressed to. Compare it against your own.' },
+            iss: { type: 'string' },
+            jti: { type: 'string', description: 'The identifier of this token, for one-time use or for naming it in an incident.' },
+            nbf: { type: 'integer' },
+            username: { type: 'string', description: 'The login identifier, per SCIM. Not a display name.' },
             entitlements: { type: 'array', items: { type: 'string' } },
+            grant_id: { type: 'string', description: 'The consent this token was issued under.' },
+            txn: { type: 'string', description: 'The flow it belongs to, RFC 8417.' },
           },
           examples: [{ active: true, sub: 'ada', client_id: 'orders-web', scope: 'openid profile' }],
         },
@@ -154,6 +161,29 @@ export async function introspectController(fastify: FastifyInstance) {
     }
 
     /**
+     * The GRANT, which is the whole point of the centralised model.
+     *
+     * Revocation here was implemented as session deletion only, so a grant withdrawn while the
+     * session stayed live was reported `active: true` by the endpoint whose entire purpose is to
+     * be authoritative about revocation. A person could take an application's access away in the
+     * console and the application would keep working until the token expired.
+     *
+     * Only asked when the token names one: `client_credentials` and a first-party client carry no
+     * `grant_id`, and a lookup for a grant that was never meant to exist would be a read per
+     * introspection buying nothing.
+     */
+    const grantId = typeof claims.grant_id === 'string' ? claims.grant_id : undefined;
+    if (grantId) {
+      const grant = await fastify.db
+        .collection<{ grantId: string; status: string; expiresAt?: string }>(GRANT_COLLECTION)
+        .findOne({ realmId: realm.realmId, grantId }, { projection: { _id: 0, status: 1, expiresAt: 1 } });
+      if (!grant || grant.status !== 'active') return refused('grant_revoked', claims.sub);
+      if (grant.expiresAt && Date.parse(grant.expiresAt) <= Date.now()) {
+        return refused('grant_expired', claims.sub);
+      }
+    }
+
+    /**
      * A caller may introspect only tokens addressed to it. Otherwise introspection becomes a way for
      * any registered client to read the claims of anyone else's token.
      *
@@ -177,23 +207,40 @@ export async function introspectController(fastify: FastifyInstance) {
     // Current status, not status at issuance. This is the whole reason to ask.
     // A machine token's `sub` is its own owning principal, so comparing against the presenting
     // client's id is what tells a person's token apart from a service's without a stored row.
+    let username: string | undefined;
     if (claims.sub && claims.sub !== claims.client_id) {
       const identity = await new DirectoryService(fastify.db).findBySubjectId(String(claims.sub));
       if (!identity || !canAuthenticate(identity)) return refused('subject_cannot_authenticate', claims.sub);
+      username = identity.userName;
       if (typeof claims.session_epoch === 'number' && claims.session_epoch < identity.sessionEpoch) {
         return refused('session_epoch_raised', claims.sub);
       }
     }
 
+    /**
+     * RFC 7662 2.2. `aud` and `iss` are the members a resource server MUST compare, and they were
+     * both missing, so a resource server relying on introspection alone could not perform audience
+     * validation at all: it learned that a token was active without learning who it was for.
+     *
+     * `username` is the human-readable identifier the specification names, which is `userName` in
+     * SCIM terms and therefore a login rather than a display name.
+     */
     return reply.send({
       active: true,
       scope: claims.scope,
       client_id: claims.client_id,
       sub: claims.sub,
+      ...(claims.aud !== undefined ? { aud: claims.aud } : {}),
+      ...(claims.iss !== undefined ? { iss: claims.iss } : {}),
+      ...(claims.jti !== undefined ? { jti: claims.jti } : {}),
+      ...(claims.nbf !== undefined ? { nbf: claims.nbf } : {}),
+      ...(username ? { username } : {}),
       exp: claims.exp,
       iat: claims.iat,
       token_type: 'Bearer',
       ...(claims.entitlements ? { entitlements: claims.entitlements } : {}),
+      ...(claims.grant_id ? { grant_id: claims.grant_id } : {}),
+      ...(claims.txn ? { txn: claims.txn } : {}),
     });
   });
 
@@ -293,7 +340,15 @@ export async function introspectController(fastify: FastifyInstance) {
       });
     }
 
-    return reply.send({ revoked });
+    /**
+     * 200 with NO BODY, per RFC 7009 2.2.
+     *
+     * It answered `{ revoked: true | false }`, which contradicted the comment three lines above it:
+     * reporting whether anything was revoked tells a caller which of the tokens it holds are real,
+     * which is exactly what answering identically was meant to prevent. The value is not lost, it is
+     * in the trail, where it belongs and where the caller cannot read it.
+     */
+    return reply.status(200).send();
   });
 }
 

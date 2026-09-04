@@ -40,6 +40,9 @@ const PROVABLY_PUBLIC = new Set([
   // either would break every conforming client and protect nothing.
   'get /realms/{realm}/.well-known/openid-configuration',
   'get /realms/{realm}/.well-known/oauth-authorization-server',
+  // RFC 8414 3.1 puts the well-known segment BETWEEN the host and the path when the issuer has
+  // path components, so this is the location a client following that RFC actually requests.
+  'get /.well-known/oauth-authorization-server/realms/{realm}',
   'get /realms/{realm}/protocol/openid-connect/certs',
 
   // Public by nature: it is where a credential is presented, so it cannot require one first.
