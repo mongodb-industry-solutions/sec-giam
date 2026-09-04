@@ -51,7 +51,7 @@ export default function ProfilePage() {
   const verified = info?.email_verified === true;
   const roles = claims.roles ?? [];
   const scopes = (claims.scope ?? '').split(' ').filter(Boolean);
-  const permissions = claims.permissions ?? [];
+  const entitlements = claims.entitlements ?? [];
   const audience = Array.isArray(claims.aud) ? claims.aud.join(', ') : claims.aud;
 
   return (
@@ -124,24 +124,27 @@ export default function ProfilePage() {
 
           <div>
             <div className="flex items-center gap-1.5">
-              <h3 className="text-[10px] uppercase tracking-wider text-gray-400">Permissions</h3>
-              <Tooltip text="Resolved when the token was issued, and carried inside it. Each pair names a resource and one action allowed on it." />
+              <h3 className="text-[10px] uppercase tracking-wider text-gray-400">Entitlements</h3>
+              <Tooltip text="Carried only when this application asked for a narrower token than its roles allow. Each entry names a resource and one action allowed on it." />
             </div>
-            {permissions.length === 0
-              ? <p className="mt-1 text-sm text-gray-400">No permission is carried by this token.</p>
+            {entitlements.length === 0
+              ? <p className="mt-1 text-sm text-gray-400">This token carries roles rather than individual entitlements.</p>
               : (
                 <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                  {permissions.map((permission) => (
-                    <li
-                      key={`${permission.resource}:${permission.action}`}
-                      className="flex items-baseline gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5"
-                    >
-                      <span className="truncate text-xs font-medium text-[#001E2B]">{permission.resource}</span>
-                      <span className="ml-auto shrink-0 rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-gray-600">
-                        {permission.action}
-                      </span>
-                    </li>
-                  ))}
+                  {entitlements.map((entitlement) => {
+                    const [resource, action] = entitlement.split(':');
+                    return (
+                      <li
+                        key={entitlement}
+                        className="flex items-baseline gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5"
+                      >
+                        <span className="truncate text-xs font-medium text-[#001E2B]">{resource}</span>
+                        <span className="ml-auto shrink-0 rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-gray-600">
+                          {action}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
           </div>

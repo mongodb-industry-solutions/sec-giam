@@ -7,6 +7,7 @@ import { SessionService, isSessionLimitRefusal } from '../services/session.servi
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { authenticationMethods } from '../../../shared/ports';
 import { bindAuthenticationMethods } from '../services/authenticationMethods';
+import { amrFor } from '../models/authenticationContext';
 import { bindCredentialStores } from '../../directory/services/credentialStores';
 import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord } from '../models/session.model';
@@ -140,6 +141,10 @@ export async function loginController(fastify: FastifyInstance) {
       epoch: identity?.sessionEpoch ?? 0,
       ...(localDomain ? { domainId: localDomain.providerId } : {}),
       ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
+      // The authentication context, so every token minted from this session can carry acr and amr
+      // without reading the credential as it stands later.
+      acr: resolution.assuranceLevel,
+      amr: amrFor(resolution.method),
       ...(request.headers['user-agent'] ? { userAgentHash: hashIp(String(request.headers['user-agent'])) as string } : {}),
       ...(request.ip ? { ipHash: hashIp(request.ip) as string } : {}),
     });

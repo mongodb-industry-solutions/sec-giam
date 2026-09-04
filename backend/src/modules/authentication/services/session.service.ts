@@ -73,6 +73,16 @@ export class SessionService {
     ticketId?: string;
     userAgentHash?: string;
     ipHash?: string;
+    /**
+     * How the principal authenticated, so issuing a token needs no credential read.
+     *
+     * `credentialId` was previously passed by `login.controller` and silently discarded: it was not
+     * declared here, and because the call site spreads it into the object literal TypeScript applies
+     * no excess-property check. The session therefore never recorded which factor authenticated it.
+     */
+    acr?: string;
+    amr?: string[];
+    credentialId?: string;
   }): Promise<SessionRecord | SessionLimitRefusal> {
     const now = new Date();
     const session: SessionRecord = {
@@ -87,6 +97,9 @@ export class SessionService {
       ...(input.clientId ? { clientId: input.clientId } : {}),
       ...(input.domainId ? { domainId: input.domainId } : {}),
       ...(input.ticketId ? { ticketId: input.ticketId } : {}),
+      ...(input.acr ? { acr: input.acr } : {}),
+      ...(input.amr?.length ? { amr: input.amr } : {}),
+      ...(input.credentialId ? { credentialId: input.credentialId } : {}),
       createdAt: now.toISOString(),
       lastSeenAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + input.realm.tokenPolicy.sessionMaxTtlSeconds * 1000).toISOString(),

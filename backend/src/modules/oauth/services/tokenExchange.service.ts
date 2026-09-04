@@ -114,6 +114,6 @@ export class TokenExchangeService {
 
     // Carried into the token, so the trail reads "the simulator acting as Julia Santos" rather than
     // "Julia Santos". That is strictly better evidence than the flow it replaces.
-    return { identity, actor: { subjectId: client.clientId, clientId: client.clientId } };
+    return { identity, actor: { sub: client.clientId, client_id: client.clientId } };
   }
 }

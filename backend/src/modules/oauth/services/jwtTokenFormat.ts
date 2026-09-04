@@ -81,7 +81,15 @@ export class JwtTokenFormat implements TokenFormat {
     if (header.alg !== 'RS256') return null;
     if (header.jku || header.jwk || header.x5u || header.x5c) return null;
     if (typeof header.kid !== 'string') return null;
-    if (header.typ && header.typ !== this.typ) return null;
+    /**
+     * `typ` is REQUIRED, not merely checked when present.
+     *
+     * It was `header.typ && header.typ !== this.typ`, which accepted a token that simply omitted the
+     * header. RFC 9068 2.1 requires it, and the whole reason it exists is to stop one kind of token
+     * this authority signed being presented as another. A check that a token can opt out of by
+     * leaving a field blank is not a check.
+     */
+    if (header.typ !== this.typ) return null;
 
     const keySet = await this.ring.publishedKeySet(this.realmId);
     const jwk = keySet.keys.find((key) => key.kid === header.kid);
@@ -101,7 +109,19 @@ export class JwtTokenFormat implements TokenFormat {
     const claims = await this.inspect(token);
     if (!claims) return null;
 
-    if (claims.iss !== expected.issuer) return null;
+    /**
+     * The claims RFC 9068 2.2 makes REQUIRED are required, rather than checked when present.
+     *
+     * Every check below used to be guarded on the claim existing, so a token omitting `exp` passed
+     * the expiry check and a token omitting `sub` passed everything. Not exploitable without a
+     * signing key, but it is the difference between refusing a malformed token and accepting one,
+     * and a profile-conformant verifier must refuse.
+     */
+    if (typeof claims.iss !== 'string' || claims.iss !== expected.issuer) return null;
+    if (typeof claims.sub !== 'string' || !claims.sub) return null;
+    if (typeof claims.exp !== 'number') return null;
+    if (typeof claims.iat !== 'number') return null;
+    if (claims.aud === undefined) return null;
     const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
     if (!audience.includes(expected.audience)) return null;
 
@@ -109,7 +129,9 @@ export class JwtTokenFormat implements TokenFormat {
     // future is a clock problem rather than a forgery.
     const now = Math.floor(Date.now() / 1000);
     const skew = 60;
-    if (typeof claims.exp === 'number' && claims.exp + skew < now) return null;
+    if (claims.exp + skew < now) return null;
+    // Still conditional, because `nbf` is OPTIONAL in RFC 7519 4.1.5 and this authority no longer
+    // emits it. A token from elsewhere that carries one is still honoured.
     if (typeof claims.nbf === 'number' && claims.nbf - skew > now) return null;
 
     return claims;

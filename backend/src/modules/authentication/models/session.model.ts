@@ -1,4 +1,5 @@
 import { Meta, Scoped } from '../../../shared/models/base.model';
+import { AuthenticationContext } from './authenticationContext';
 
 /**
  * The fact that access is still live.
@@ -17,7 +18,7 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  * scales. With a five minute lifetime that window is the maximum exposure and it is the stated
  * revocation objective.
  */
-export interface SessionRecord extends Scoped {
+export interface SessionRecord extends Scoped, AuthenticationContext {
   sessionId: string;
   subjectId: string;
   /** The client the session was established for. Logout by client is a delete on this. */
@@ -56,6 +57,12 @@ export interface SessionRecord extends Scoped {
   /** Incremented to invalidate every token issued before it, without listing them. */
   epoch: number;
 
+  /**
+   * When the authentication happened, and therefore the source of the OIDC `auth_time`.
+   *
+   * No separate `authTime` field: a session is created by one sign-in, so the two would always hold
+   * the same value and one of them would eventually be updated without the other.
+   */
   createdAt: string;
   lastSeenAt: string;
   /** Absolute end, regardless of activity. The TTL index expires the document on it. */

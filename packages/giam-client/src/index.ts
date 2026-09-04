@@ -41,7 +41,7 @@ export interface VerifiedClaims {
    * cut around 8 KB, so a token carrying every expanded permission fails intermittently depending
    * on which proxy the request crossed. Read `roles` and expand, or ask for what you need.
    */
-  permissions: string[];
+  entitlements: string[];
   roles: string[];
   clientId?: string;
   sessionId?: string;
@@ -276,20 +276,15 @@ export class GiamClient {
       aud: claims.aud as string | string[],
       exp: Number(claims.exp ?? 0),
       scope: typeof claims.scope === 'string' ? claims.scope.split(' ').filter(Boolean) : [],
-      permissions: Array.isArray(claims.permissions)
-        ? (claims.permissions as unknown[])
-          /**
-           * Strings only, and a v39-shaped entry is CONVERTED rather than dropped.
-           *
-           * Not a compatibility shim for the old authority: a verifier may hold a token minted
-           * minutes before an authority upgrade, and refusing it would turn a rolling deploy into
-           * an outage. The conversion is one expression and it disappears when the last such token
-           * has expired, which is five minutes.
-           */
-          .map((entry) => (typeof entry === 'string'
-            ? entry
-            : `${(entry as { resource?: string }).resource ?? ''}:${(entry as { action?: string }).action ?? ''}`))
-          .filter((entry) => entry.length > 1 && !entry.startsWith(':') && !entry.endsWith(':'))
+      /**
+       * `entitlements`, the RFC 9068 2.2.3.1 name, with values per RFC 7643 4.1.2.
+       *
+       * It read `permissions` until v41 P1. Strings only: the v39 `{resource, action}` conversion
+       * that used to sit here is gone with the rename, since nothing carries that shape any more.
+       */
+      entitlements: Array.isArray(claims.entitlements)
+        ? (claims.entitlements as unknown[])
+          .filter((entry): entry is string => typeof entry === 'string' && entry.includes(':'))
         : [],
       roles: Array.isArray(claims.roles) ? claims.roles as string[] : [],
       clientId: typeof claims.client_id === 'string' ? claims.client_id : undefined,
@@ -370,10 +365,10 @@ export interface RoleCatalog {
  * and one that fails on whichever proxy is strictest.
  */
 export function effectivePermissions(
-  claims: Pick<VerifiedClaims, 'permissions' | 'roles'>,
+  claims: Pick<VerifiedClaims, 'entitlements' | 'roles'>,
   catalog: RoleCatalog | null,
 ): Set<string> {
-  const held = new Set<string>(claims.permissions);
+  const held = new Set<string>(claims.entitlements);
   if (!catalog) return held;
   const byName = new Map(catalog.roles.map((role) => [role.name, role.permissions]));
   for (const role of claims.roles) {
@@ -390,7 +385,7 @@ export function effectivePermissions(
  * most important line in this file.
  */
 export function holdsPermission(
-  claims: Pick<VerifiedClaims, 'permissions' | 'roles'>,
+  claims: Pick<VerifiedClaims, 'entitlements' | 'roles'>,
   catalog: RoleCatalog | null,
   resource: string,
   action: string,
