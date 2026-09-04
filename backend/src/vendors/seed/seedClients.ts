@@ -56,7 +56,15 @@ interface ClientFixture {
   /** Present when this client is a principal in its own right rather than an application's agent. */
   serviceIdentity?: {
     kind: PrincipalRecord['kind'];
-    userName: string;
+    /**
+     * The NAME to show. The login is the `clientId`, and is not repeated here.
+     *
+     * It was `userName`, holding strings like "LeafyPay, as a registered third party": a display
+     * name in the field that carries the unique login index, which is the same defect the human
+     * fixtures had. A machine's identifier is the client id it authenticates as, which is already
+     * this record's `subjectId`.
+     */
+    displayName: string;
     roleName?: string;
     owner?: { kind: string; ref: string; displayName?: string };
     /** Which resource server the permissions below belong to. */
@@ -155,7 +163,10 @@ export async function seedClients(db: Db): Promise<void> {
       identities,
       { subjectId: fixture.clientId },
       {
-        userName: fixture.serviceIdentity.userName,
+        // The login is the client id: unique in the realm, already this record's subject, and an
+        // identifier rather than a sentence.
+        userName: fixture.clientId,
+        name: { formatted: fixture.serviceIdentity.displayName },
         kind: fixture.serviceIdentity.kind,
         active: true,
         lifecycleState: 'active',

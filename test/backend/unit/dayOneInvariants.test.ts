@@ -246,4 +246,28 @@ describe('v39 P0.6: GIAM carries no consumer and no industry vocabulary', () => 
       .map((spec) => spec.name);
     expect(offenders, `financial vocabulary in: ${offenders.join(', ')}`).toEqual([]);
   });
+
+  /**
+   * v41 D44. The same rule, over the SOURCE and not only over the registry.
+   *
+   * The check above reads `GIAM_COLLECTIONS` alone, so a constant in a service, a claim name or an
+   * authorization detail type could say `payment` and nothing fired. That is the narrowest possible
+   * reading of a rule the project states broadly, and it is the gap through which v41 nearly shipped
+   * a built-in `payment_initiation` authorization detail type.
+   *
+   * `vendors/seed/` is exempt, as it is for the consumer-name check above and for the same reason:
+   * seed data legitimately CREATES the records that represent a deployment's business.
+   *
+   * `transaction` is NOT in the pattern, because `transactionId` names a delegation's task binding,
+   * which is a generic concept the grant model owns rather than an industry's word.
+   */
+  it('names no single industry anywhere in the source, not only in the registry', () => {
+    const industry = /\b(payment|payments|card|pan|iban|merchant|ledger|settlement)\b/i;
+    const offenders: string[] = [];
+    for (const file of sourceFiles(['vendors/seed/'])) {
+      const match = stripComments(file.text).match(industry);
+      if (match) offenders.push(`${file.path} says "${match[0]}"`);
+    }
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  });
 });

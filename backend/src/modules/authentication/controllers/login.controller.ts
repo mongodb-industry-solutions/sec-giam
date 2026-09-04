@@ -65,7 +65,8 @@ export async function loginController(fastify: FastifyInstance) {
           properties: {
             subjectId: { type: 'string' },
             sessionId: { type: 'string' },
-            userName: { type: 'string' },
+            userName: { type: 'string', description: 'The login identifier, per SCIM.' },
+            displayName: { type: 'string', description: 'The name to show. SCIM `name.formatted`.' },
             assuranceLevel: { type: 'string' },
             method: { type: 'string' },
             sessionEpoch: { type: 'integer' },
@@ -73,7 +74,8 @@ export async function loginController(fastify: FastifyInstance) {
           examples: [{
             subjectId: 'ec06cbfa-96e2-4867-892b-b74987e78d7a',
             sessionId: 'a3f1…',
-            userName: 'Ada Lovelace',
+            userName: 'ada.lovelace',
+            displayName: 'Ada Lovelace',
             assuranceLevel: 'aal1',
             method: 'password',
             sessionEpoch: 0,
@@ -189,6 +191,9 @@ export async function loginController(fastify: FastifyInstance) {
       subjectId: resolution.subjectId,
       sessionId: session.sessionId,
       userName: identity?.userName,
+      // So the console can greet somebody by name without waiting for the profile read. The access
+      // token deliberately carries no profile claim, so without this every header rendered a login.
+      ...(identity?.name?.formatted ? { displayName: identity.name.formatted } : {}),
       assuranceLevel: resolution.assuranceLevel,
       method: resolution.method,
       sessionEpoch: session.epoch,

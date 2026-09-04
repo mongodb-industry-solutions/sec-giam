@@ -87,7 +87,7 @@ export default function LoginPage() {
       <AuthBackdrop>
         <div className="w-full max-w-md rounded-xl border bg-white p-8 text-center shadow-sm">
           <h1 className="text-2xl font-semibold text-mongodb-dark">Signed in</h1>
-          <p className="mt-2 text-gray-600">{signedIn.userName}</p>
+          <p className="mt-2 text-gray-600">{signedIn.displayName ?? signedIn.userName}</p>
           <div className="mt-6 flex justify-center gap-4 text-sm">
             <a href="/system" className="underline">Your console</a>
             <a href="/profile/credentials" className="underline">Your authenticators</a>
