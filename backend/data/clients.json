@@ -55,6 +55,49 @@
     },
     "audience": [
       "leafypay"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
+      },
+      {
+        "name": "profile",
+        "description": "Read your name and profile details"
+      },
+      {
+        "name": "email",
+        "description": "Read your email address"
+      },
+      {
+        "name": "read:beneficiaries",
+        "description": "See the payees you have saved"
+      },
+      {
+        "name": "write:beneficiaries",
+        "description": "Add and remove saved payees"
+      },
+      {
+        "name": "write:transfers",
+        "description": "Start transfers from your accounts"
+      },
+      {
+        "name": "read:accounts",
+        "description": "See your accounts and their balances"
+      },
+      {
+        "name": "read:transactions",
+        "description": "See your transaction history"
+      },
+      {
+        "name": "read:rtp",
+        "description": "See requests to pay addressed to you"
+      },
+      {
+        "name": "write:rtp",
+        "description": "Send requests to pay on your behalf"
+      }
     ]
   },
   {
@@ -143,6 +186,13 @@
     ],
     "audience": [
       "leafypay"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
+      }
     ]
   },
   {
@@ -185,6 +235,44 @@
     },
     "audience": [
       "bankcore"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "accounts",
+        "description": "See your accounts"
+      },
+      {
+        "name": "balances",
+        "description": "See your balances"
+      },
+      {
+        "name": "transactions",
+        "description": "See your transaction history"
+      },
+      {
+        "name": "payments",
+        "description": "Start payments on your behalf"
+      },
+      {
+        "name": "funds-confirmations",
+        "description": "Check whether funds are available"
+      },
+      {
+        "name": "card-data",
+        "description": "See your card details"
+      },
+      {
+        "name": "card-authorisations",
+        "description": "See authorisations made on your cards"
+      },
+      {
+        "name": "credit-assessments",
+        "description": "See credit assessments about you"
+      },
+      {
+        "name": "demo-credits",
+        "description": "Use demonstration credits"
+      }
     ]
   },
   {
@@ -222,6 +310,13 @@
     },
     "audience": [
       "bankcore"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
+      }
     ]
   },
   {
@@ -368,6 +463,21 @@
     ],
     "audience": [
       "leafypay"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
+      },
+      {
+        "name": "profile",
+        "description": "Read your name and profile details"
+      },
+      {
+        "name": "email",
+        "description": "Read your email address"
+      }
     ]
   },
   {
@@ -409,6 +519,24 @@
     },
     "audience": [
       "bankcore"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "accounts",
+        "description": "See your accounts"
+      },
+      {
+        "name": "balances",
+        "description": "See your balances"
+      },
+      {
+        "name": "transactions",
+        "description": "See your transaction history"
+      },
+      {
+        "name": "payments",
+        "description": "Start payments on your behalf"
+      }
     ]
   }
 ]

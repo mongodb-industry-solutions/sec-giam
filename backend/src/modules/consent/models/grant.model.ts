@@ -103,11 +103,27 @@ export function grantedScopes(grant: Pick<GrantRecord, 'scope'>): string[] {
   return grant.scope.split(' ').filter(Boolean);
 }
 
-/** Whether a grant still covers everything a request asks for. A partial grant is not a grant. */
+/** Whether a grant covers everything a request asks for. */
 export function covers(grant: Pick<GrantRecord, 'scope' | 'status'>, requested: string[]): boolean {
-  if (grant.status !== 'active') return false;
+  return missingFrom(grant, requested).length === 0;
+}
+
+/**
+ * What a request asks for that this grant does not yet hold.
+ *
+ * The REMAINDER rather than a yes or no, which is what turns consent from all-or-nothing into
+ * something incremental. `covers` returning false said only that the person had to be asked again;
+ * it did not say what about, so they were asked to approve everything they had already approved
+ * plus the one new thing. RFC 6749 3.3 explicitly permits granting a narrower scope than requested,
+ * so the previous design was more restrictive than the specification and gained nothing by it.
+ *
+ * A revoked grant holds nothing: the whole request is missing, so the person is asked afresh. It
+ * stays revoked otherwise, because restoring one would give access back without anybody approving.
+ */
+export function missingFrom(grant: Pick<GrantRecord, 'scope' | 'status'>, requested: string[]): string[] {
+  if (grant.status !== 'active') return [...requested];
   const held = new Set(grantedScopes(grant));
-  return requested.every((scope) => held.has(scope));
+  return requested.filter((scope) => !held.has(scope));
 }
 
 /** A grant carrying a purpose is a delegation. The one distinction the merged record makes. */

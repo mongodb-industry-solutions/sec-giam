@@ -2,7 +2,7 @@ import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import { GRANT_COLLECTION } from '../../../shared/models/collections';
 import { listOAuthClients } from '../../oauth/services/clientAuth.service';
-import { GrantRecord, grantedScopes, covers } from '../models/grant.model';
+import { GrantRecord, grantedScopes, missingFrom } from '../models/grant.model';
 import { OAuthClient } from '../../oauth/models/client.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { RealmRecord } from '../../realm/models/realm.model';
@@ -30,6 +30,36 @@ export interface GrantView {
 
 export type GrantStatusFilter = 'active' | 'revoked' | 'all';
 
+/** Why a scope change was refused, so a caller learns which bound it crossed. */
+export type ScopeChangeRefusal =
+  | { refused: 'no_such_grant' }
+  | { refused: 'beyond_registration'; scopes: string[] };
+
+export function isScopeChangeRefusal(value: unknown): value is ScopeChangeRefusal {
+  return typeof value === 'object' && value !== null && 'refused' in (value as object);
+}
+
+/**
+ * What a scope change did, so the caller can report it and end sessions if it narrowed.
+ *
+ * WIDENING is bounded by the client's registration and nothing else. The scopes were deduced from
+ * what the owner registered, so that is the legitimate ceiling, and allowing more would make a
+ * registration stop being a limit. Refused rather than clamped: silently granting less than was
+ * asked for is how somebody believes they restored access they did not.
+ *
+ * NARROWING takes effect on the grant at once. An access token already issued keeps its scope until
+ * it expires, because it is verified without touching this database, so the caller ends the client's
+ * sessions to force a narrower reissue. That window is minutes, and no design that verifies locally
+ * can do better; saying "immediately" would be false.
+ */
+export interface ScopeChange {
+  before: string[];
+  after: string[];
+  added: string[];
+  removed: string[];
+  clientId: string;
+}
+
 export class GrantService {
   constructor(private readonly db: Db) {}
 
@@ -45,11 +75,31 @@ export class GrantService {
    * next authorization asks again rather than silently succeeding.
    */
   async covers(realmId: string, subjectId: string, clientId: string, requested: string[]): Promise<boolean> {
+    return (await this.missing(realmId, subjectId, clientId, requested)).length === 0;
+  }
+
+  /** The scopes this subject currently holds for this client. Empty when there is no active grant. */
+  async grantedScopesFor(realmId: string, subjectId: string, clientId: string): Promise<string[]> {
+    const grant = await this.grants.findOne(
+      { realmId, subjectId, clientId, status: 'active' },
+      { projection: { _id: 0, scope: 1 } },
+    );
+    return grant ? grantedScopes(grant) : [];
+  }
+
+  /**
+   * What still needs asking, rather than whether anything does.
+   *
+   * This is what makes consent incremental: a client that already holds `openid profile` and now
+   * asks for `payments:read` gets asked about `payments:read` alone. Asking about all three would
+   * make widening a scope look, to the person, exactly like a first authorisation.
+   */
+  async missing(realmId: string, subjectId: string, clientId: string, requested: string[]): Promise<string[]> {
     const grant = await this.grants.findOne(
       { realmId, subjectId, clientId },
       { projection: { _id: 0, scope: 1, status: 1 } },
     );
-    return Boolean(grant && covers(grant, requested));
+    return grant ? missingFrom(grant, requested) : [...requested];
   }
 
   /** The client's display name and logo travel with the grant, so a caller needs no second read. */
@@ -179,6 +229,64 @@ export class GrantService {
   private attribution(subjectId: string, actorSubjectId?: string) {
     if (!actorSubjectId || actorSubjectId === subjectId) return { subjectId };
     return { subjectId: actorSubjectId, principalSubjectId: subjectId, stakeholderSubjectIds: [subjectId] };
+  }
+
+  /**
+   * Changes what an application holds, in either direction. See `ScopeChange` above for the rules.
+   */
+  async changeScope(
+    realm: RealmRecord,
+    subjectId: string,
+    grantId: string,
+    requested: string[],
+    options: { registeredScopes: string[]; actorSubjectId?: string },
+  ): Promise<ScopeChange | ScopeChangeRefusal> {
+    const record = await this.grants.findOne(
+      { realmId: realm.realmId, subjectId, grantId },
+      { projection: { _id: 0 } },
+    );
+    if (!record || record.status !== 'active') return { refused: 'no_such_grant' };
+
+    const registered = new Set(options.registeredScopes);
+    const beyond = requested.filter((scope) => !registered.has(scope));
+    if (beyond.length > 0) return { refused: 'beyond_registration', scopes: beyond };
+
+    const before = grantedScopes(record);
+    const after = [...new Set(requested)].sort();
+    const added = after.filter((scope) => !before.includes(scope));
+    const removed = before.filter((scope) => !after.includes(scope));
+
+    const now = new Date().toISOString();
+    await this.grants.updateOne(
+      { grantId },
+      { $set: { scope: after.join(' '), 'meta.lastModified': now } },
+    );
+
+    /**
+     * One attributable event per change, always, even when nothing moved.
+     *
+     * A no-op decision is still a decision somebody made, and an audit that records only the changes
+     * cannot distinguish "they reviewed it and left it alone" from "nobody looked".
+     */
+    void new SecurityEventService(this.db).record({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      category: 'consent',
+      action: 'grant.scope_changed',
+      outcome: 'success',
+      ...this.attribution(subjectId, options.actorSubjectId),
+      clientId: record.clientId,
+      target: { type: 'grant', ref: grantId },
+      detail: {
+        before,
+        after,
+        added,
+        removed,
+        direction: added.length && removed.length ? 'both' : added.length ? 'widened' : removed.length ? 'narrowed' : 'unchanged',
+      },
+    });
+
+    return { before, after, added, removed, clientId: record.clientId };
   }
 
   async revoke(realm: RealmRecord, subjectId: string, grantId: string, actorSubjectId?: string): Promise<boolean> {
