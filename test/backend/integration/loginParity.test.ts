@@ -159,8 +159,14 @@ describe('v39 P9.9: the demo roster survived the move, persona by persona', () =
      * learning what a merchant, an account or a case is. That opacity is the whole reason it is
      * safe on an unauthenticated page, and it is why widening the set here is a decision rather
      * than an accommodation.
+     *
+     * `displayName` was added by v41 P8 and DISCLOSES NOTHING NEW, which is the argument for it
+     * rather than a plea. Until P8 the person's name was in `userName`, on this same page, because
+     * a display name had been written into the login field. P8 separated the two, so the name now
+     * appears under the field that means "name" and the login appears under the field that means
+     * "login". The set of facts on the page is unchanged; only the naming was corrected.
      */
-    const permitted = new Set(['subjectId', 'userName', 'email', 'role', 'demoNote']);
+    const permitted = new Set(['subjectId', 'userName', 'displayName', 'email', 'role', 'demoNote']);
     for (const entry of context.roster) {
       const leaked = Object.keys(entry).filter((field) => !permitted.has(field));
       expect(leaked, `roster entry exposes ${leaked.join(', ')}`).toEqual([]);
