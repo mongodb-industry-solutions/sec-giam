@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import { appendLog } from '../../../shared/services/logBuffer';
 import { createHash } from 'crypto';
 import { AUDIT_COLLECTION } from '../../../shared/models/collections';
 import { AuditRecord } from '../models/audit.model';
@@ -34,16 +35,17 @@ export function redactSecrets(value: unknown, depth = 0): unknown {
   return output;
 }
 
-/**
- * The correlator that groups one flow.
+/*
+ * `hashState` lived here and is gone.
  *
- * Derived from the state parameter rather than storing it: the state is a value the client chose and
- * may be guessable, and a trail does not need it, only the ability to say two records belong to the
- * same flow.
+ * It derived a flow correlator from the client's `state` parameter, which is optional, chosen by the
+ * client, and was truncated to 64 bits. A flow that omitted `state` was correlated by nothing. The
+ * flow now has an identifier this authority allocates, which becomes the ticket's `requestId`, the
+ * trail's `correlationId` and the `txn` claim, so one value spans the attempt and every token.
+ *
+ * Deleted rather than left unused: a function still named for correlating a flow is a function
+ * somebody reaches for.
  */
-export function hashState(state: string): string {
-  return `flow:${createHash('sha256').update(state).digest('hex').slice(0, 16)}`;
-}
 
 /** Hashed, never raw: a trail is not a place to accumulate personal data. */
 export function hashIp(value: string | undefined): string | undefined {
@@ -112,6 +114,34 @@ export interface RecordEventInput {
   enforcementResult?: string;
 }
 
+/**
+ * How the trail is doing, so a lost write is visible rather than merely absent.
+ *
+ * A counter rather than a stored record: the one thing that certainly cannot be relied on when the
+ * audit collection is unwritable is writing to the audit collection. Exposed on the health surface,
+ * which is what turns "PCI DSS 10.7 requires detecting audit log failures" from a claim into a
+ * check somebody can run.
+ *
+ * Process-local and reset by a restart. That is a real limitation and it is the right trade: the
+ * alternative is durable state on the path that is failing.
+ */
+export const trailWrites = {
+  written: 0,
+  failed: 0,
+  lastFailureAt: undefined as string | undefined,
+  lastFailureCause: undefined as string | undefined,
+};
+
+/** Whether the trail is currently trustworthy. Any failure at all degrades it: evidence is not sampled. */
+export function trailHealth(): { healthy: boolean; written: number; failed: number; lastFailureAt?: string } {
+  return {
+    healthy: trailWrites.failed === 0,
+    written: trailWrites.written,
+    failed: trailWrites.failed,
+    ...(trailWrites.lastFailureAt ? { lastFailureAt: trailWrites.lastFailureAt } : {}),
+  };
+}
+
 export class SecurityEventService {
   constructor(private readonly db: Db) {}
 
@@ -165,8 +195,30 @@ export class SecurityEventService {
         },
       };
       await this.db.collection<AuditRecord>(AUDIT_COLLECTION).insertOne(event);
-    } catch {
-      // Deliberately swallowed. See above.
+      trailWrites.written += 1;
+    } catch (err) {
+      /**
+       * Still not thrown, and now not silent either.
+       *
+       * The availability argument above is sound: a trail that can fail an authentication is a
+       * trail that gets removed from the authentication path the first time it does. But it was
+       * swallowed with no log line, no counter and no retry, so a failure was undetectable BY
+       * CONSTRUCTION. PCI DSS 10.7 requires detection of audit log failures, and on a full disk or
+       * a dropped connection the evidence disappeared and nobody learned.
+       *
+       * There is a second reason this matters more here than it would elsewhere: an audit write can
+       * never be atomic with the state change it records, because a time series collection cannot be
+       * written inside a transaction. The trail is structurally best-effort, so detecting a lost
+       * write is the only control there is.
+       */
+      trailWrites.failed += 1;
+      trailWrites.lastFailureAt = new Date().toISOString();
+      trailWrites.lastFailureCause = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+      // Through the log buffer, so it reaches the operations panel and not only stderr.
+      appendLog(
+        `[${trailWrites.lastFailureAt}] ERROR audit trail write failed (${trailWrites.failed} total): `
+        + `${input.action} ${input.outcome} — ${trailWrites.lastFailureCause}`,
+      );
     }
   }
 

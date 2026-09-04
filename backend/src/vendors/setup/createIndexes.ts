@@ -181,6 +181,23 @@ export function plannedIndexes(): IndexPlan[] {
       keys: { realmId: 1, stakeholderSubjectIds: 1, ts: -1 },
       options: { name: 'realm_stakeholders_ts' },
     },
+    /**
+     * "Every event in this flow", which is the first query a post-incident investigation runs.
+     *
+     * `correlationId` stays a MEASUREMENT field and is deliberately NOT moved into `meta`, though
+     * that is where a time series collection filters most cheaply. The `metaField` determines
+     * bucketing, and this field holds one distinct value per flow, which is near-maximal
+     * cardinality: each bucket would end up holding almost a single measurement, destroying the
+     * columnar compression that is the reason to use a time series collection at all.
+     *
+     * A secondary index on a measurement field is supported from MongoDB 6.0 and this deployment
+     * runs 8.x, so the query is served without touching how the data is laid out.
+     */
+    {
+      collection: AUDIT_COLLECTION,
+      keys: { realmId: 1, correlationId: 1, ts: -1 },
+      options: { name: 'realm_correlation_ts' },
+    },
   ];
 
   /**

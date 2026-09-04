@@ -12,7 +12,7 @@ import { enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { oauthError } from '../../../shared/models/problem';
 import type { OAuthErrorCode } from '../../../shared/models/problem';
-import { SecurityEventService, hashIp, hashState } from '../../audit/services/securityEvent.service';
+import { SecurityEventService, hashIp } from '../../audit/services/securityEvent.service';
 import { GrantService } from '../../consent/services/grant.service';
 
 /**
@@ -120,10 +120,21 @@ export async function authorizeController(fastify: FastifyInstance) {
     // position on the same case.
     if (!realm || !realm.enabled) return reply.status(400).send(oauthError('invalid_request', 'unknown realm'));
 
-    // The same correlator the token endpoint derives, so authorize and redemption group together. The
-    // state is never stored raw: it is a value the client chose, and the trail only needs to say that
-    // two records belong to one flow.
-    const correlationId = body.state ? hashState(body.state) : request.correlationId;
+    /**
+     * The flow's own identifier, allocated here, and the trail's correlator for everything below.
+     *
+     * It was `hashState(state)`, which had four problems: `state` is OPTIONAL, it is chosen by the
+     * CLIENT, it was truncated to 64 bits, and it does not exist for a flow that omits it. So the
+     * grouping was derived from client input and often absent, which is not a correlator an
+     * investigation can rely on.
+     *
+     * Allocated BEFORE the refusals, so an attempt that never produces a ticket is still filed under
+     * a flow rather than under a per-request id nothing else shares. The same value becomes the
+     * ticket's `requestId` and then the `txn` claim, so one identifier spans the attempt, the code,
+     * the tokens and every rotation.
+     */
+    const flowId = uuidv4();
+    const correlationId = flowId;
     const ipHash = hashIp(request.ip);
     // What is known so far. A refusal names the subject once one is resolved, and the client until
     // then: a failure recorded against nobody is a failure nobody can be shown.
@@ -260,7 +271,7 @@ export async function authorizeController(fastify: FastifyInstance) {
     const record: TicketRecord = {
       realmId: realm.realmId,
       tenantId: realm.tenantId,
-      requestId: uuidv4(),
+      requestId: flowId,
       flow: 'authorization_code',
       clientId: client.clientId,
       subjectId: identity.subjectId,
@@ -272,6 +283,8 @@ export async function authorizeController(fastify: FastifyInstance) {
         ? { pkce: { challenge: body.code_challenge, method: body.code_challenge_method ?? 'S256' } }
         : {}),
       redirectUri: body.redirect_uri,
+      // `stateHash` stays: it is the CLIENT's correlator, and a client debugging its own flow has
+      // only `state` to go on. It is no longer what the trail groups by.
       ...(body.state ? { state: body.state, stateHash: createHash('sha256').update(body.state).digest('hex').slice(0, 16) } : {}),
       ...(body.nonce ? { nonce: body.nonce } : {}),
       scope: requested.join(' '),

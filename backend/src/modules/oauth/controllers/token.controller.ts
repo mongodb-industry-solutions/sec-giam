@@ -14,7 +14,7 @@ import { BackchannelService, isFailure, BACKCHANNEL_GRANT } from '../../authenti
 import { TokenExchangeService, isRefusal, TOKEN_EXCHANGE_GRANT } from '../services/tokenExchange.service';
 import { DelegationExchangeService, isDelegationRefusal } from '../services/delegationExchange.service';
 import { JwtTokenFormat } from '../services/jwtTokenFormat';
-import { SecurityEventService, classifyFailure, hashIp, hashState } from '../../audit/services/securityEvent.service';
+import { SecurityEventService, classifyFailure, hashIp } from '../../audit/services/securityEvent.service';
 import { GrantService } from '../../consent/services/grant.service';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { oauthError } from '../../../shared/models/problem';
@@ -402,6 +402,8 @@ export async function tokenController(fastify: FastifyInstance) {
         client,
         ...(resources.length ? { resources } : {}),
         subjectId: redeemed.subjectId,
+        // The flow the presented refresh token belongs to, so a rotation chain reads as one flow.
+        ...(redeemed.txn ? { txn: redeemed.txn } : {}),
         scope,
         sessionId: redeemed.sessionId,
         sessionEpoch: identity?.sessionEpoch,
@@ -428,7 +430,7 @@ export async function tokenController(fastify: FastifyInstance) {
       context.subjectId = pending.subjectId;
       // From here the redemption belongs to the authorization that produced the code, so it carries
       // that flow's correlator rather than this request's. Derived, never the state itself.
-      if (pending.state) correlationId = hashState(pending.state);
+
       if (pending.status === 'consumed') {
         // A replay, and it is DETECTED rather than merely absent. Everything issued from the
         // original redemption is revoked, because a code arriving twice means one of the two
@@ -459,6 +461,9 @@ export async function tokenController(fastify: FastifyInstance) {
         return refuse(400, 'invalid_grant', 'this client requires PKCE');
       }
 
+      // Everything recorded from here belongs to the flow the ticket names, so the authorization and
+       // its redemption read as one story rather than two unrelated entries.
+      correlationId = pending.requestId;
       await requests.updateOne({ requestId: pending.requestId }, { $set: { status: 'consumed' } });
 
       const directory = new DirectoryService(fastify.db);
@@ -482,6 +487,8 @@ export async function tokenController(fastify: FastifyInstance) {
         ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
+        // The ticket's own id IS the flow: allocated here, never derived from client input.
+        txn: pending.requestId,
         nonce: pending.nonce,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
@@ -519,6 +526,8 @@ export async function tokenController(fastify: FastifyInstance) {
         ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
+        // The claimed ticket IS the flow: allocated here, never derived from client input.
+        txn: claimed.requestId,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
       });
@@ -549,6 +558,19 @@ export async function tokenController(fastify: FastifyInstance) {
        * unless the realm and the target both permit it. Anything else is a delegated hop.
        */
       const wantsImpersonation = Boolean(body.requested_subject ?? body.audience);
+
+      /**
+       * The flow the SUBJECT TOKEN belongs to, so an exchange continues it rather than starting one.
+       *
+       * Read without verifying, and that is safe for this one purpose: both paths below verify the
+       * token before acting on it, and a correlator is a label rather than an authorisation. Reading
+       * it here means the delegated path and the impersonation path share one source instead of two
+       * that can disagree.
+       */
+      const subjectTxn = await new JwtTokenFormat(ring(), realm.realmId)
+        .inspect(String(body.subject_token ?? ''))
+        .then((claims) => (typeof claims?.txn === 'string' ? claims.txn : undefined))
+        .catch(() => undefined);
 
       if (!wantsImpersonation) {
         const inbound = await new JwtTokenFormat(ring(), realm.realmId)
@@ -582,6 +604,8 @@ export async function tokenController(fastify: FastifyInstance) {
           permissions: delegated.permissions,
           roles: delegated.roles,
           actor: hop.actor,
+          // Same flow as the token this hop was exchanged from.
+          ...(subjectTxn ? { txn: subjectTxn } : {}),
           // A delegated token that can renew itself outlives the delegation that produced it.
           includeRefreshToken: false,
         });
@@ -627,6 +651,15 @@ export async function tokenController(fastify: FastifyInstance) {
         ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
+        /**
+         * A hop CONTINUES the flow of the token it was exchanged from.
+         *
+         * There is no ticket here, and inventing a new flow would be wrong rather than merely
+         * unhelpful: the whole reason an exchange is auditable is that the delegated token can be
+         * traced back to the authorization the person actually gave. `subjectTxn` is read off the
+         * verified subject token, so the chain stays one flow however many hops it runs to.
+         */
+        ...(subjectTxn ? { txn: subjectTxn } : {}),
         actor,
         // No refresh token. A delegated token that can renew itself outlives the reason it was
         // granted, and this one exists for the length of one demonstration.

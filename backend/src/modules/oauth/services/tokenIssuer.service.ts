@@ -63,6 +63,14 @@ export interface IssueTokensInput {
   includeRefreshToken?: boolean;
   includeIdToken?: boolean;
   /**
+   * The flow this issuance belongs to, carried as the `txn` claim.
+   *
+   * Valued from `ticket.requestId`: allocated by this authority, never derived from client input,
+   * and it IS the identity of the authorization request. Passed in where the flow is known, and
+   * otherwise taken from the session, so a refresh rotation stays in the flow that produced it.
+   */
+  txn?: string;
+  /**
    * Resource indicators the client asked for. RFC 8707.
    *
    * The standard way for a client to narrow its own audience, and the only one: `client.audience` is
@@ -277,9 +285,24 @@ export class TokenIssuer {
     const session = input.sessionId
       ? await this.sessions.findOne(
         { realmId: realm.realmId, sessionId: input.sessionId },
-        { projection: { _id: 0, refreshGen: 1, createdAt: 1, acr: 1, amr: 1 } },
+        { projection: { _id: 0, refreshGen: 1, createdAt: 1, acr: 1, amr: 1, ticketId: 1 } },
       )
       : null;
+
+    /**
+     * Given by the flow, never guessed from the session.
+     *
+     * A session fallback was tried first and is wrong: one session produces MANY flows, because a
+     * person signs in once and then authorises several applications. `session.ticketId` would report
+     * whichever flow was most recent, so a refresh rotation would be filed under a flow that did not
+     * mint it. An identifier that is confidently wrong is worse than one that is absent.
+     *
+     * The three entry points all know it: an authorization code redemption reads the ticket, a
+     * backchannel redemption reads its own, and a refresh rotation reads it from the refresh token,
+     * which carries it precisely so the rotation chain stays in one flow with no stored state.
+     * `client_credentials` has no flow and no `txn`, which is correct.
+     */
+    const txn = input.txn;
 
     /**
      * The consent this token is issued under, and the constraints it carries.
@@ -425,6 +448,19 @@ export class TokenIssuer {
       client_id: client.clientId,
       ...authContext,
       ...(input.sessionId ? { sid: input.sessionId } : {}),
+      /**
+       * The FLOW correlator, RFC 8417 2.2, registered in the IANA JWT Claims registry.
+       *
+       * "In cases in which multiple related JWTs are issued, the transaction identifier claim can be
+       * used to correlate these related JWTs", and explicitly permitted "in JWTs using non-SET
+       * profiles". One value across the access token, the refresh token, the id token, and every
+       * pair minted by a later rotation.
+       *
+       * This is what makes an audit possible from a captured token: decompose it, read `txn`, and
+       * every event of the flow is reachable. It is NOT `jti`, which must stay unique per token, and
+       * it is not `sid`, which is one login and many flows.
+       */
+      ...(txn ? { txn } : {}),
       // The epoch travels in the token so a resource server can refuse a whole generation at once,
       // without listing outstanding tokens.
       ...(input.sessionEpoch !== undefined ? { session_epoch: input.sessionEpoch } : {}),
@@ -530,6 +566,7 @@ export class TokenIssuer {
         sub: input.subjectId ?? client.clientId,
         sid: input.sessionId,
         gen: session?.refreshGen ?? 0,
+        ...(txn ? { txn } : {}),
         client_id: client.clientId,
         jti: uuidv4(),
         iat: now,
@@ -550,6 +587,9 @@ export class TokenIssuer {
         // The same authentication context the access token carries. An RP checking that the person
         // authenticated recently, or strongly, reads it here rather than introspecting.
         ...authContext,
+        // Same flow, same claim name. A different name per token type would make one concept read
+        // as two.
+        ...(txn ? { txn } : {}),
         ...(input.nonce ? { nonce: input.nonce } : {}),
       }, kid);
     }
@@ -573,7 +613,7 @@ export class TokenIssuer {
     realmId: string,
     presented: string,
   ): Promise<
-    | { ok: true; sessionId: string; subjectId?: string; clientId: string; generation: number }
+    | { ok: true; sessionId: string; subjectId?: string; clientId: string; generation: number; txn?: string }
     | { ok: false; cause: 'invalid' | 'expired' | 'no_session' | 'reuse_detected'; sessionId?: string; subjectId?: string }
   > {
     // `rt+jwt`, matching what issuance now stamps. Verification checks `typ` strictly, so redemption
@@ -612,6 +652,8 @@ export class TokenIssuer {
         subjectId: rotated.subjectId,
         clientId: claims.client_id,
         generation: rotated.refreshGen,
+        // Carried out of the presented token, so the new pair stays in the flow that started it.
+        ...(typeof claims.txn === 'string' ? { txn: claims.txn } : {}),
       };
     }
 
