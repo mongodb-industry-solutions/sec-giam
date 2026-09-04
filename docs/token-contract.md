@@ -35,6 +35,8 @@ token nominating its own verification key is a token asserting its own authentic
 | `entitlements` | only when the client narrowed | RFC 9068 2.2.3.1, RFC 7643 4.1.2 | `resource:action` strings, present only when the client asked for LESS than its roles grant. Always a subset of what the roles allow: asking can never widen. |
 | `sid` | when there is a session | OIDC Back-Channel Logout 1.0 | The session this token belongs to. Introspect it to learn whether access is still live. Standard name, and carrying it in an access token is this authority's extension. |
 | `act` | on a delegated token | RFC 8693 4.1 | Who is really acting. Members are `sub` and `client_id`, nesting through `act` for a chain. |
+| `grant_id` | when a grant exists | OIDF Grant Management | The consent this token was issued under. Introspect it for the authoritative current state, including revocation and constraints that changed since issuance. Absent for `client_credentials` and for a first-party client, and that absence means there is nothing to introspect. |
+| `authorization_details` | when the grant is constrained | RFC 9396 | Structured constraints a scope cannot express: a value ceiling, allowed resources, a transaction binding. Already filtered to the audience this token addresses, per 9.1, so everything present is for you. **A `type` you do not recognise MUST be refused, never ignored**: the specification does not say what to do with one, and ignoring it makes a token limited to a ceiling indistinguishable from a token with none. `packages/giam-client` fails closed on it. |
 
 ### Private claims
 
@@ -90,6 +92,20 @@ rely upon this value being unique". The identifier is `sub`.
 ## How to verify
 
 Two ways, and neither is right in general, which is why both exist.
+
+### Narrowing what you receive
+
+Two request parameters, both narrowing only, and neither can widen anything.
+
+- **`resource`** (RFC 8707), on the authorization or token request: which API the token is for. It
+  intersects the client registration's audience, and a resource outside it is refused with
+  `invalid_target` rather than silently dropped. Ask for one and your token is addressed to one API
+  instead of every API in the realm.
+- **`entitlements`**, space delimited, on the token request: hold less than your roles allow. This
+  one is intersected and the remainder DROPPED rather than refused, so asking for one entitlement
+  too many does not fail the whole request. The asymmetry with `resource` is deliberate: dropping
+  keeps a narrow request worth making, while a wrong audience means you have the wrong idea of what
+  you are talking to, and a token for the wrong API produces a 401 you cannot diagnose.
 
 **Locally, against the published key set** at `/realms/{realm}/protocol/openid-connect/certs`. Costs
 nothing per request and keeps you serving when the authority is unreachable. Answers "was this signed

@@ -140,6 +140,14 @@ export async function tokenController(fastify: FastifyInstance) {
           code_verifier: { type: 'string' },
           refresh_token: { type: 'string' },
           scope: { type: 'string' },
+          resource: {
+            description:
+              'RFC 8707 resource indicators: which API this token is for. Repeatable. Narrows the '
+              + 'audience within what the client registration allows; a resource outside it is '
+              + 'refused with invalid_target rather than silently dropped.',
+            oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+            examples: ['https://api.example'],
+          },
           entitlements: { type: 'string', description: 'Space delimited resource:action strings, to obtain a NARROWER token than the roles alone would give. Intersected with what the roles grant, never unioned. Named for the claim it populates, RFC 9068 section 2.2.3.1.' },
           client_id: { type: 'string' },
           client_secret: { type: 'string' },
@@ -181,6 +189,15 @@ export async function tokenController(fastify: FastifyInstance) {
      * comment was a sentence that lost its subject when the parameter was last renamed.
      */
     const requestedPermissions = String(body.entitlements ?? '').split(' ').filter(Boolean);
+
+    /**
+     * Resource indicators, RFC 8707. Repeatable, so both shapes arrive.
+     *
+     * Form encoding gives a string for one occurrence and an array for several, and the parser does
+     * not normalise it. Handled here rather than at four call sites.
+     */
+    const resources = (Array.isArray(body.resource) ? body.resource : [body.resource])
+      .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
 
     // The request's own correlator until a redemption can be tied to the authorization that produced
     // it, at which point it becomes the flow's. Reassignable for exactly that reason.
@@ -292,6 +309,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: owner.subjectId,
         scope,
         permissions: machine.permissions,
@@ -382,6 +400,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: redeemed.subjectId,
         scope,
         sessionId: redeemed.sessionId,
@@ -455,6 +474,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: identity.subjectId,
         scope,
         permissions: decision.permissions,
@@ -491,6 +511,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: identity.subjectId,
         scope,
         permissions: decision.permissions,
@@ -555,6 +576,7 @@ export async function tokenController(fastify: FastifyInstance) {
         const tokens = await issuer.issue({
           realm,
           client,
+          ...(resources.length ? { resources } : {}),
           subjectId: hop.subjectId,
           scope: hop.scope,
           permissions: delegated.permissions,
@@ -597,6 +619,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: identity.subjectId,
         scope: effective,
         permissions: decision.permissions,

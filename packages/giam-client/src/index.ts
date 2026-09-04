@@ -22,6 +22,19 @@ export interface GiamClientOptions {
   jwksCacheSeconds?: number;
   /** Injectable so a test can drive discovery and key fetching without a network. */
   fetchImpl?: typeof fetch;
+  /**
+   * The `authorization_details` types this resource server understands. RFC 9396.
+   *
+   * A token carrying a type not listed here is REFUSED. That is a deliberate reading of a gap in the
+   * specification, which does not say what to do with an unrecognised type: ignoring it would make a
+   * token constrained to a value ceiling indistinguishable from one with no ceiling, so a constraint
+   * this verifier cannot evaluate is a constraint it must not silently drop.
+   *
+   * Omitted means this resource server expects NO constrained tokens, and any `authorization_details`
+   * is refused. That is the safe default: a deployment that has not thought about constraints should
+   * not be the one enforcing them by accident.
+   */
+  knownAuthorizationDetailTypes?: string[];
 }
 
 export interface VerifiedClaims {
@@ -43,6 +56,22 @@ export interface VerifiedClaims {
    */
   entitlements: string[];
   roles: string[];
+  /**
+   * The consent this token was issued under, when there is one. OIDF Grant Management.
+   *
+   * Present means there is an authoritative record to introspect, carrying the current constraints
+   * and whether it has since been revoked. ABSENT means there is nothing to introspect, which is the
+   * case for `client_credentials` and for a first-party client, and is a fact rather than a gap.
+   */
+  grantId?: string;
+  /**
+   * Structured constraints on what this token may do. RFC 9396.
+   *
+   * Already filtered by the authority to the audience this token addresses, so everything here is
+   * for you. Each entry carries a `type` that determines its schema, and a type you do not
+   * recognise must be REFUSED and not ignored: see `unknownAuthorizationDetailTypes`.
+   */
+  authorizationDetails?: Array<{ type: string; [member: string]: unknown }>;
   clientId?: string;
   sessionId?: string;
   sessionEpoch?: number;
@@ -63,7 +92,17 @@ export type FailureCause =
   | 'wrong_audience'
   | 'expired'
   | 'not_yet_valid'
-  | 'revoked';
+  | 'revoked'
+  /**
+   * The token carried a constraint this verifier does not understand.
+   *
+   * RFC 9396 does not say what a resource server should do with an unrecognised `type`, and the
+   * permissive reading is dangerous: a token limited to a value ceiling under
+   * `type: "example.payment"` would, to a verifier that ignores unknown types, look exactly like a
+   * token with no ceiling. So it fails closed. A deployment teaches its types with
+   * `knownAuthorizationDetailTypes`.
+   */
+  | 'unknown_constraint';
 
 export interface VerifierMetrics {
   cacheHits: number;
@@ -269,6 +308,23 @@ export class GiamClient {
 
     if (typeof claims.jti === 'string' && this.isRevoked(claims.jti)) return this.fail('revoked');
 
+    /**
+     * FAIL CLOSED on a constraint this verifier cannot evaluate.
+     *
+     * The authority has already filtered `authorization_details` to this token's audience, so
+     * anything present is addressed here. A type this deployment has not declared is authority it
+     * cannot enforce, and accepting the token anyway would enforce nothing while looking like it had.
+     */
+    const details = Array.isArray(claims.authorization_details) ? claims.authorization_details : [];
+    if (details.length > 0) {
+      const known = new Set(this.options.knownAuthorizationDetailTypes ?? []);
+      const unknown = details.some((detail) => {
+        const type = (detail as { type?: unknown }).type;
+        return typeof type !== 'string' || !known.has(type);
+      });
+      if (unknown) return this.fail('unknown_constraint');
+    }
+
     return {
       ...claims,
       sub: String(claims.sub ?? ''),
@@ -287,6 +343,10 @@ export class GiamClient {
           .filter((entry): entry is string => typeof entry === 'string' && entry.includes(':'))
         : [],
       roles: Array.isArray(claims.roles) ? claims.roles as string[] : [],
+      grantId: typeof claims.grant_id === 'string' ? claims.grant_id : undefined,
+      authorizationDetails: Array.isArray(claims.authorization_details)
+        ? claims.authorization_details as Array<{ type: string; [member: string]: unknown }>
+        : undefined,
       clientId: typeof claims.client_id === 'string' ? claims.client_id : undefined,
       sessionId: typeof claims.sid === 'string' ? claims.sid : undefined,
       sessionEpoch: typeof claims.session_epoch === 'number' ? claims.session_epoch : undefined,

@@ -1,6 +1,10 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
-import { RESOURCE_COLLECTION, REALM_COLLECTION, SESSION_COLLECTION } from '../../../shared/models/collections';
+import {
+  RESOURCE_COLLECTION, REALM_COLLECTION, SESSION_COLLECTION, GRANT_COLLECTION,
+} from '../../../shared/models/collections';
+import { GrantRecord } from '../../consent/models/grant.model';
+import { authorizationDetailsFor, hasConstraints } from './authorizationDetails';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { ActorClaim } from '../models/actor.model';
 import { SessionRecord, RefreshClaims, isLive } from '../../authentication/models/session.model';
@@ -58,6 +62,23 @@ export interface IssueTokensInput {
   nonce?: string;
   includeRefreshToken?: boolean;
   includeIdToken?: boolean;
+  /**
+   * Resource indicators the client asked for. RFC 8707.
+   *
+   * The standard way for a client to narrow its own audience, and the only one: `client.audience` is
+   * the configured ceiling, this is the request. Intersected with the ceiling, never unioned, so
+   * asking cannot widen. A resource outside the ceiling is refused with `invalid_target` by the
+   * caller, before this is reached.
+   */
+  resources?: string[];
+}
+
+/** Refused when a client asks for a resource its registration does not address. RFC 8707 2.2. */
+export class InvalidTargetError extends Error {
+  constructor(readonly resource: string) {
+    super(`resource ${resource} is not addressed by this client's registration`);
+    this.name = 'InvalidTargetError';
+  }
 }
 
 export interface TokenResponse {
@@ -110,10 +131,66 @@ export class TokenIssuer {
     return this.db.collection<SessionRecord>(SESSION_COLLECTION);
   }
 
-  private async audienceFor(realm: RealmRecord, client: OAuthClient): Promise<string[]> {
-    const declared = client.audience;
-    if (declared?.length) return declared;
+  /**
+   * The active grant this token is issued under, if there is one.
+   *
+   * Read HERE rather than threaded through the six call sites at the token endpoint, and the reason
+   * is not convenience. The authorization code flow knows its grant from the ticket, but a refresh
+   * rotation has only a session and a backchannel redemption only an `auth_req_id`, so each would
+   * have needed its own way to find the same record. One read, on the unique index
+   * `realm_subject_client_active_unique`, means no flow can omit it.
+   *
+   * Absent for `client_credentials`, where nobody consented, and for a first-party client, which
+   * creates no grant. Both absences are facts rather than gaps: no `grant_id` means there is nothing
+   * to introspect, which is exactly what a resource server needs to know.
+   */
+  private async activeGrant(realmId: string, subjectId: string, clientId: string) {
+    return this.db
+      .collection<GrantRecord>(GRANT_COLLECTION)
+      .findOne(
+        { realmId, subjectId, clientId, status: 'active' },
+        { projection: { _id: 0, grantId: 1, constraints: 1, purpose: 1 } },
+      );
+  }
 
+  /**
+   * What the token is addressed to, narrowed by the request where one narrows it.
+   *
+   * Three sources, in order. `client.audience` is the configured CEILING. `resources` is RFC 8707,
+   * what the client asked for on this request, and it can only intersect. The realm-wide fallback is
+   * last and is a warning, not a default worth having: in a realm with a payment API, a bank and a
+   * merchant, it addresses every token to all three and the audience stops separating anything.
+   */
+  private async audienceFor(
+    realm: RealmRecord,
+    client: OAuthClient,
+    resources?: string[],
+  ): Promise<string[]> {
+    const ceiling = client.audience?.length ? client.audience : await this.realmWideAudience(realm, client);
+
+    if (!resources?.length) return ceiling;
+
+    /**
+     * Refused rather than silently dropped.
+     *
+     * The opposite of how a requested ENTITLEMENT is handled, and the difference is deliberate: an
+     * entitlement the subject lacks is dropped so that asking narrowly stays worth doing, while an
+     * audience the client cannot address is a client that has the wrong idea of what it is talking
+     * to. Handing back a token for a different API would be answered with a 401 it cannot diagnose.
+     */
+    for (const requested of resources) {
+      if (!ceiling.includes(requested)) throw new InvalidTargetError(requested);
+    }
+    return resources;
+  }
+
+  /**
+   * Every resource server in the realm, which is the fallback and should not be reached.
+   *
+   * Warned about rather than silently used: a client relying on this is a client whose registration
+   * is missing an `audience`, and the symptom is a token accepted by APIs it was never meant for.
+   */
+  private async realmWideAudience(realm: RealmRecord, client: OAuthClient): Promise<string[]> {
     const servers = await this.db
       .collection<{ name: string; audience: string }>(RESOURCE_COLLECTION)
       .find({ realmId: realm.realmId }, { projection: { _id: 0, name: 1, audience: 1 } })
@@ -123,6 +200,14 @@ export class TokenIssuer {
       .filter((server) => server.name !== AUTHORITY_RESOURCE_SERVER)
       .map((server) => server.audience)
       .filter(Boolean);
+
+    if (addressed.length > 1) {
+      console.warn(
+        `[oauth] client ${client.clientId} in realm ${realm.name} declares no audience, so its tokens `
+        + `address all ${addressed.length} resource servers in the realm. Register an audience: an `
+        + 'audience naming everything separates nothing.',
+      );
+    }
 
     // A realm with no registered resource server yet: the client's own id keeps the claim populated
     // rather than emitting a token with an empty audience, which a verifier must refuse.
@@ -196,6 +281,16 @@ export class TokenIssuer {
       )
       : null;
 
+    /**
+     * The consent this token is issued under, and the constraints it carries.
+     *
+     * Suppressed for a soft admission along with everything else: a reduced token must not point at
+     * an authorisation it is not exercising.
+     */
+    const grant = this.options.reducedAuthority || !input.subjectId
+      ? null
+      : await this.activeGrant(realm.realmId, input.subjectId, client.clientId);
+
     const format = new JwtTokenFormat(this.ring, realm.realmId);
     const kid = await this.ring.signingKid(realm.realmId);
 
@@ -258,6 +353,50 @@ export class TokenIssuer {
       }
       : {};
 
+    const audience = await this.audienceFor(realm, client, input.resources);
+    const authorizationDetails = grant ? authorizationDetailsFor(grant as GrantRecord, audience) : [];
+
+    /**
+     * A constrained grant addressed at a resource that has declared it verifies LOCALLY.
+     *
+     * `resource.validationMode` was registered, seeded and read by nothing. This is what it is for.
+     * A resource on `local-jwks` reads the signature and the claims and never calls back, so it will
+     * see `authorization_details` but never learn that the grant was later narrowed or revoked.
+     *
+     * NOT refused. The resource server's choice stands, including a choice that puts it at risk:
+     * this authority's job is to make the information available, and it has. What is not acceptable
+     * is that nobody could tell afterwards, so the issuance is recorded as a compliance event and
+     * names the resource, which makes the configuration accountable rather than invisible.
+     */
+    if (grant && hasConstraints(grant as GrantRecord) && audience.length > 0) {
+      const local = await this.db
+        .collection<{ audience: string; name: string; validationMode?: string }>(RESOURCE_COLLECTION)
+        .find(
+          { realmId: realm.realmId, audience: { $in: audience }, validationMode: 'local-jwks' },
+          { projection: { _id: 0, name: 1, audience: 1 } },
+        )
+        .toArray();
+
+      if (local.length > 0) {
+        void new SecurityEventService(this.db).record({
+          realmId: realm.realmId,
+          tenantId: realm.tenantId,
+          category: 'token',
+          action: 'token.constraints_locally_enforced',
+          outcome: 'success',
+          clientId: client.clientId,
+          ...(input.subjectId ? { subjectId: input.subjectId } : {}),
+          target: { type: 'grant', ref: grant.grantId },
+          detail: {
+            resources: local.map((entry) => entry.name),
+            reason:
+              'the grant carries constraints and these resource servers verify locally, so a later '
+              + 'narrowing or revocation will not reach them until the token expires',
+          },
+        });
+      }
+    }
+
     const accessJti = uuidv4();
     this.lastJti = accessJti;
     const accessClaims: Record<string, unknown> = {
@@ -272,7 +411,7 @@ export class TokenIssuer {
        * to be in the first state. Naming the resource server makes the claim mean what a verifier
        * assumes it means, which is what stops a token minted for one API opening another.
        */
-      aud: await this.audienceFor(realm, client),
+      aud: audience,
       sub: input.subjectId ?? client.clientId,
       jti: accessJti,
       iat: now,
@@ -316,6 +455,24 @@ export class TokenIssuer {
       // authority what the reference names. The authority never resolves it either.
       ...(input.accountHolderRef ? { account_holder: input.accountHolderRef } : {}),
       ...(input.actor ? { act: input.actor } : {}),
+      /**
+       * The consent record, present whenever one exists, and regardless of how the target resource
+       * intends to verify.
+       *
+       * This is the handle for the centralised model: introspect it and the authority answers with
+       * the authoritative current state, including revocation and any constraint that changed since
+       * issuance. Its ABSENCE is equally informative, meaning there is nothing to introspect.
+       *
+       * OIDF Grant Management for OAuth 2.0.
+       */
+      ...(grant ? { grant_id: grant.grantId } : {}),
+      /**
+       * The constraints, so a resource server verifying locally is not blind to them. RFC 9396.
+       *
+       * Filtered to this token's audience per 9.1: a resource server must not receive constraints
+       * addressed to another.
+       */
+      ...(authorizationDetails.length ? { authorization_details: authorizationDetails } : {}),
     };
 
     /**
