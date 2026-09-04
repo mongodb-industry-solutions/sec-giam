@@ -23,12 +23,23 @@ export interface PendingAuthorization {
   requestId: string;
 }
 
+/** One scope, as the authority describes it. The description is the deployment's, not this app's. */
+export interface ConsentScope {
+  name: string;
+  /** Absent when the resource server that accepts this scope has not described it. */
+  description?: string;
+  /** Declining it ends the flow rather than narrowing it, so the screen cannot untick it. */
+  required?: boolean;
+  /** Held from an earlier authorisation, so the person is being asked to confirm rather than grant. */
+  alreadyGranted?: boolean;
+}
+
 /** What the person is being asked to agree to. Assembled by the authority from the stored request. */
 export interface ConsentPrompt {
   clientName: string;
   clientUri?: string;
   logoUri?: string;
-  scopes: string[];
+  scopes: ConsentScope[];
 }
 
 /**

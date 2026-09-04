@@ -49,6 +49,27 @@ export interface ResourceRecord extends Scoped {
   catalogVersion: number;
 
   /**
+   * The SCOPES this resource server accepts, and what each one means to a person.
+   *
+   * Here rather than in code, and that is not a preference. A description like "See your payments"
+   * is one industry's vocabulary, and this authority must serve several: a map of scope names to
+   * sentences compiled into the service would be exactly what `dayOneInvariants.test.ts` refuses.
+   * The deployment declares them, through setup and the seeder, and GIAM renders what it is given.
+   *
+   * The descriptions were previously a constant in the CONSENT SCREEN, which put them outside the
+   * API entirely: a person calling the authority directly could not learn what they were agreeing
+   * to, and two clients could describe one scope differently.
+   *
+   * `required` marks a scope the flow cannot proceed without. Declining one ends the flow with
+   * `access_denied` rather than producing a token missing something it needs.
+   */
+  scopes?: Array<{
+    name: string;
+    description: string;
+    required?: boolean;
+  }>;
+
+  /**
    * How this resource verifies a token.
    *
    * Local verification against the published key set costs nothing per request and keeps the

@@ -71,6 +71,13 @@ interface ClientFixture {
     resourceServer?: string;
     permissions?: Record<string, string[]>;
   };
+  /**
+   * What this client's resource server tells a person each scope means.
+   *
+   * On the fixture because the vocabulary is the deployment's. `required` marks a scope the flow
+   * cannot proceed without, which is `openid` and, in practice, nothing else.
+   */
+  scopeDescriptions?: Array<{ name: string; description: string; required?: boolean }>;
 }
 
 export async function seedClients(db: Db): Promise<void> {
@@ -201,6 +208,9 @@ export async function seedClients(db: Db): Promise<void> {
         kind: 'api',
         catalogVersion: 0,
         actions: [],
+        // What each scope MEANS, from the fixture. A consent screen that lists `payments:read` and
+        // asks for agreement has obtained a click rather than consent.
+        ...(fixture.scopeDescriptions ? { scopes: fixture.scopeDescriptions } : {}),
         status: 'active',
         validationMode: 'hybrid',
         registeredAt: SEED_GRANTED_AT,

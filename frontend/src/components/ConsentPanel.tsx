@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Check, ShieldCheck, X } from 'lucide-react';
 import type { ConsentPrompt } from '../lib/authorizationRequest';
 import { AuthBackdrop } from './AuthBackdrop';
@@ -16,27 +17,49 @@ import { AuthBackdrop } from './AuthBackdrop';
  * whole page exists to avoid.
  */
 
-const SCOPE_LABELS: Record<string, string> = {
-  openid: 'Confirm who you are',
-  profile: 'Read your name and profile details',
-  email: 'Read your email address',
-  'read:accounts': 'See your accounts and their balances',
-  'read:transactions': 'See your transaction history',
-  'read:beneficiaries': 'See the payees you have saved',
-  'write:beneficiaries': 'Add and remove saved payees',
-  'write:transfers': 'Start transfers from your accounts',
-  'read:rtp': 'See requests to pay addressed to you',
-  'write:rtp': 'Send requests to pay on your behalf',
-};
+/*
+ * The scope label map lived here and is gone.
+ *
+ * It put a deployment's vocabulary ("See your accounts and their balances") in the CONSOLE, which
+ * had two consequences. A person calling the authority directly could not learn what they were
+ * agreeing to, because the meaning existed only in one screen. And two clients could describe the
+ * same scope differently, since nothing made them agree.
+ *
+ * The descriptions come from the resource server that accepts each scope now, seeded as data. This
+ * component renders what it is given and knows nothing about what a payment or an account is.
+ */
 
 export function ConsentPanel({
   prompt, onApprove, onDeny, busy,
 }: {
   prompt: ConsentPrompt;
-  onApprove: () => void;
+  /** Carries the scopes actually ticked, which may be fewer than were asked for. */
+  onApprove: (grantedScopes: string[]) => void;
   onDeny: () => void;
   busy?: boolean;
 }) {
+  /**
+   * What is currently ticked. Everything starts approved, and a required scope cannot be unticked.
+   *
+   * Starting from all-approved rather than none is deliberate: the common answer is yes to
+   * everything, and a screen that makes the ordinary case the laborious one is a screen people click
+   * through without reading. What matters is that saying no to ONE thing is possible at all, which
+   * it was not before.
+   */
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(prompt.scopes.map((scope) => scope.name)),
+  );
+
+  const toggle = (name: string, required: boolean) => {
+    if (required) return;
+    setSelected((held) => {
+      const next = new Set(held);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
   return (
     <AuthBackdrop>
       <div className="w-full max-w-md rounded-xl border bg-white p-8 shadow-sm">
@@ -52,19 +75,43 @@ export function ConsentPanel({
           </p>
         </div>
 
-        <ul className="mt-6 space-y-2">
+        <ul className="mt-6 space-y-1.5">
           {prompt.scopes.map((scope) => (
-            <li key={scope} className="flex items-start gap-2 text-sm text-gray-700">
-              <Check size={15} className="mt-0.5 shrink-0 text-mongodb-green" />
-              <span>
-                {SCOPE_LABELS[scope] ?? scope}
-                {/* The wire name stays visible for anything without a plain-language label, so an
-                    unlabelled scope is obvious rather than silently vague. */}
-                {!SCOPE_LABELS[scope] && <span className="ml-1 text-xs text-gray-400">(raw scope)</span>}
-              </span>
+            <li key={scope.name}>
+              <label
+                className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${
+                  scope.required ? 'border-gray-100 bg-gray-50 text-gray-500' : 'cursor-pointer border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[#00684A]"
+                  checked={selected.has(scope.name)}
+                  disabled={scope.required}
+                  onChange={() => toggle(scope.name, Boolean(scope.required))}
+                />
+                <span className="flex-1">
+                  {/* The description comes from the authority. Without one the wire name is shown as
+                      itself, so an undescribed scope is obviously vague rather than quietly so. */}
+                  {scope.description ?? scope.name}
+                  {!scope.description && <span className="ml-1 text-xs text-gray-400">(raw scope)</span>}
+                  {scope.required && <span className="ml-1.5 text-xs text-gray-400">required</span>}
+                  {scope.alreadyGranted && !scope.required && (
+                    <span className="ml-1.5 text-xs text-gray-400">already allowed</span>
+                  )}
+                </span>
+              </label>
             </li>
           ))}
         </ul>
+
+        {selected.size < prompt.scopes.length && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {/* Said plainly, because a partly approved application failing later should not be a
+                surprise the person has to work out for themselves. */}
+            You are allowing part of what was asked for. The application may not work fully.
+          </p>
+        )}
 
         <div className="mt-7 flex gap-3">
           <button
@@ -78,7 +125,7 @@ export function ConsentPanel({
           </button>
           <button
             type="button"
-            onClick={onApprove}
+            onClick={() => onApprove([...selected])}
             disabled={busy}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-mongodb-dark px-4 py-2.5 text-sm font-semibold text-mongodb-green transition-colors hover:opacity-90 disabled:opacity-40"
           >

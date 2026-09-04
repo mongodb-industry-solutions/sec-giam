@@ -52,7 +52,7 @@ export default function ConsentPage() {
       .catch(() => setFailure('The authority could not be reached.'));
   }, []);
 
-  const decide = useCallback(async (approved: boolean) => {
+  const decide = useCallback(async (approved: boolean, grantedScopes?: string[]) => {
     if (!context) return;
     setBusy(true);
     try {
@@ -60,7 +60,13 @@ export default function ConsentPage() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ request_id: context.requestId, approved }),
+        body: JSON.stringify({
+          request_id: context.requestId,
+          approved,
+          // Only what was ticked. The authority intersects it with what was asked, so a
+          // decision can narrow and never widen.
+          ...(grantedScopes ? { granted_scopes: grantedScopes } : {}),
+        }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error_description?: string };
@@ -98,7 +104,7 @@ export default function ConsentPage() {
     <ConsentPanel
       prompt={prompt}
       busy={busy}
-      onApprove={() => decide(true)}
+      onApprove={(granted) => decide(true, granted)}
       onDeny={() => decide(false)}
     />
   );

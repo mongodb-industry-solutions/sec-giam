@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { ClientAuthService, provisionalClient, recordSoftAdmission } from '../services/clientAuth.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { TICKET_COLLECTION, SESSION_COLLECTION } from '../../../shared/models/collections';
+import { TICKET_COLLECTION, SESSION_COLLECTION, RESOURCE_COLLECTION } from '../../../shared/models/collections';
 import { TicketRecord } from '../models/ticket.model';
 import { SessionRecord, isLive } from '../../authentication/models/session.model';
 import { readSessionCookie } from '../../authentication/services/sessionCookie';
@@ -57,6 +57,29 @@ export async function authorizeController(fastify: FastifyInstance) {
     const base = config.server.frontendUrl.replace(/\/$/, '');
     return `${base}${path}?realm=${encodeURIComponent(realm)}&request_id=${encodeURIComponent(requestId)}`;
   };
+
+  /**
+   * What each scope means, gathered from the resource servers that accept them.
+   *
+   * From the CATALOG rather than from a map in this file: a description like "See your payments" is
+   * one industry's vocabulary, and an authority that has to serve several cannot carry it. The
+   * deployment declares them through the seeder and this renders what it is given.
+   */
+  async function scopeCatalogue(realmId: string): Promise<Map<string, { description?: string; required?: boolean }>> {
+    const servers = await fastify.db
+      .collection<{ scopes?: Array<{ name: string; description: string; required?: boolean }> }>(RESOURCE_COLLECTION)
+      .find({ realmId, scopes: { $exists: true } }, { projection: { _id: 0, scopes: 1 } })
+      .toArray();
+    const catalogue = new Map<string, { description?: string; required?: boolean }>();
+    for (const server of servers) {
+      for (const scope of server.scopes ?? []) {
+        if (!catalogue.has(scope.name)) {
+          catalogue.set(scope.name, { description: scope.description, required: scope.required });
+        }
+      }
+    }
+    return catalogue;
+  }
 
   function redirectWith(reply: FastifyReply, redirectUri: string, values: Record<string, string | undefined>) {
     const url = new URL(redirectUri);
@@ -247,6 +270,8 @@ export async function authorizeController(fastify: FastifyInstance) {
         return refuse('invalid_request', 'code_challenge_method must be S256', 'pkce_method_unsupported');
       }
 
+      // On a resume this is the ticket's scope, which the consent decision may have NARROWED. Taking
+      // it from the query instead would re-widen the request after the person cut it down.
       const asked = (resumed?.scope ?? one('scope') ?? 'openid').split(' ').filter(Boolean);
       const permitted = scopesOf(client);
       // Narrowed for a soft admission, which IS the limit soft mode applies, and refused for a
@@ -331,14 +356,21 @@ export async function authorizeController(fastify: FastifyInstance) {
        */
       if (!client.firstParty) {
         const grants = new GrantService(fastify.db);
-        const held = one('prompt') === 'consent'
-          ? false
-          : await grants.covers(realm.realmId, identity.subjectId, client.clientId, requested);
+        /**
+         * Only what is MISSING is asked about, which is what makes consent incremental.
+         *
+         * A client already holding `openid profile` that now asks for `payments:read` is asked
+         * about `payments:read`. Asking about all three would make widening a scope look, to the
+         * person, exactly like a first authorisation, so they would learn nothing from the screen.
+         */
+        const missing = one('prompt') === 'consent'
+          ? requested
+          : await grants.missing(realm.realmId, identity.subjectId, client.clientId, requested);
 
-        if (!held && pending.status !== 'approved') {
+        if (missing.length > 0 && pending.status !== 'approved') {
           return reply.redirect(page('/auth/consent', realm.name, pending.requestId), 302);
         }
-        if (!held) await grants.consent(realm, identity.subjectId, client, requested);
+        if (missing.length > 0) await grants.consent(realm, identity.subjectId, client, requested);
       }
 
       const code = randomBytes(32).toString('base64url');
@@ -443,9 +475,32 @@ export async function authorizeController(fastify: FastifyInstance) {
               clientName: { type: 'string' },
               clientUri: { type: 'string' },
               logoUri: { type: 'string' },
-              scopes: { type: 'array', items: { type: 'string' } },
+              scopes: {
+                type: 'array',
+                description:
+                  'One entry per scope, with what it means to a person. The description comes from '
+                  + 'the resource server that accepts the scope, so this authority renders a '
+                  + 'the vocabulary of the deployment rather than carrying one of its own.',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['name', 'required', 'alreadyGranted'],
+                  properties: {
+                    name: { type: 'string' },
+                    description: { type: 'string' },
+                    required: { type: 'boolean', description: 'Declining it ends the flow rather than narrowing it.' },
+                    alreadyGranted: { type: 'boolean', description: 'Held from an earlier authorisation.' },
+                  },
+                },
+              },
             },
-            examples: [{ clientName: 'Acme Accounting', scopes: ['openid', 'profile'] }],
+            examples: [{
+              clientName: 'Acme Accounting',
+              scopes: [
+                { name: 'openid', description: 'Confirm who you are', required: true, alreadyGranted: true },
+                { name: 'profile', description: 'Read your name', required: false, alreadyGranted: false },
+              ],
+            }],
           },
           400: {
             allOf: [{ $ref: 'OAuthError#' }],
@@ -471,7 +526,7 @@ export async function authorizeController(fastify: FastifyInstance) {
       const sessionId = readSessionCookie(request);
       const session = sessionId
         ? await fastify.db.collection<SessionRecord>(SESSION_COLLECTION)
-          .findOne({ realmId: realm.realmId, sessionId }, { projection: { _id: 0, expiresAt: 1, idleExpiresAt: 1 } })
+          .findOne({ realmId: realm.realmId, sessionId }, { projection: { _id: 0, expiresAt: 1, idleExpiresAt: 1, subjectId: 1 } })
         : null;
       if (!session || !isLive(session as SessionRecord)) {
         return reply.status(401).send(oauthError('access_denied', 'no live session', 401));
@@ -486,11 +541,23 @@ export async function authorizeController(fastify: FastifyInstance) {
       }
 
       const client = await new ClientAuthService(fastify.db).find(realm.realmId, pending.clientId);
+      const asked = pending.scope.split(' ').filter(Boolean);
+      const catalogue = await scopeCatalogue(realm.realmId);
+      const held = new Set(await new GrantService(fastify.db)
+        .grantedScopesFor(realm.realmId, session.subjectId, pending.clientId));
+
       return reply.send({
         clientName: client?.clientName ?? pending.clientId,
         ...(client?.clientUri ? { clientUri: client.clientUri } : {}),
         ...(client?.logoUri ? { logoUri: client.logoUri } : {}),
-        scopes: pending.scope.split(' ').filter(Boolean),
+        scopes: asked.map((name) => ({
+          name,
+          ...(catalogue.get(name)?.description ? { description: catalogue.get(name)!.description } : {}),
+          // `openid` is required by nature: without it there is no identity to hand over, so
+          // declining it is declining the whole request rather than narrowing it.
+          required: catalogue.get(name)?.required ?? name === 'openid',
+          alreadyGranted: held.has(name),
+        })),
       });
     });
 
@@ -525,6 +592,15 @@ export async function authorizeController(fastify: FastifyInstance) {
           properties: {
             request_id: { type: 'string' },
             approved: { type: 'boolean', description: 'False sends `access_denied` back to the application.' },
+            granted_scopes: {
+              type: 'array',
+              items: { type: 'string' },
+              description:
+                'The scopes the person actually approved, which may be FEWER than were asked for. '
+                + 'RFC 6749 3.3 permits granting a narrower scope than requested, and 5.1 requires '
+                + 'the token response to say so. Omitted means all of them. Anything not asked for '
+                + 'is ignored rather than granted: a decision can only narrow.',
+            },
           },
         },
         response: {
@@ -546,7 +622,7 @@ export async function authorizeController(fastify: FastifyInstance) {
       },
     }, async (request, reply) => {
       const { realm: realmName } = request.params as { realm: string };
-      const body = request.body as { request_id: string; approved: boolean };
+      const body = request.body as { request_id: string; approved: boolean; granted_scopes?: string[] };
 
       const realm = await new RealmService(fastify.db).byName(realmName);
       if (!realm || !realm.enabled) {
@@ -599,12 +675,62 @@ export async function authorizeController(fastify: FastifyInstance) {
         return reply.send({ continue: url.toString() });
       }
 
+      /**
+       * The subset the person approved, which may be FEWER scopes than were asked for.
+       *
+       * RFC 6749 3.3 permits granting a narrower scope than requested, and 5.1 requires the token
+       * response to say so. Consent used to be all-or-nothing here, which was MORE restrictive than
+       * the specification and gained nothing: a person who wanted to withhold one scope had to
+       * decline the application entirely.
+       *
+       * Intersected with what was asked, never unioned. A decision naming a scope nobody requested
+       * is ignored rather than granted, so approving cannot widen a request, which is what makes it
+       * safe to let the browser send this at all.
+       */
+      const asked = new Set(scopes);
+      const granted = body.granted_scopes
+        ? body.granted_scopes.filter((scope) => asked.has(scope))
+        : scopes;
+
+      /**
+       * A required scope that was withheld ends the flow rather than narrowing it.
+       *
+       * Without `openid` there is no identity to hand over, so a token missing it would satisfy
+       * nothing the client asked for. Reported as `access_denied`, which is what declining is.
+       */
+      const catalogue = await scopeCatalogue(realm.realmId);
+      const withheldRequired = scopes.filter(
+        (scope) => (catalogue.get(scope)?.required ?? scope === 'openid') && !granted.includes(scope),
+      );
+      if (withheldRequired.length > 0) {
+        await tickets().updateOne(
+          { requestId: pending.requestId },
+          { $set: { status: 'denied', cause: 'required_scope_declined', subjectId: session.subjectId } },
+        );
+        const denied = new URL(pending.redirectUri as string);
+        denied.searchParams.set('error', 'access_denied');
+        denied.searchParams.set(
+          'error_description',
+          `The person declined a scope this request cannot proceed without: ${withheldRequired.join(' ')}.`,
+        );
+        if (pending.state) denied.searchParams.set('state', pending.state);
+        return reply.send({ continue: denied.toString() });
+      }
+
       if (client) {
-        await new GrantService(fastify.db).consent(realm, session.subjectId, client as OAuthClient, scopes);
+        await new GrantService(fastify.db).consent(realm, session.subjectId, client as OAuthClient, granted);
       }
       await tickets().updateOne(
         { requestId: pending.requestId },
-        { $set: { status: 'approved', subjectId: session.subjectId } },
+        {
+          $set: {
+            status: 'approved',
+            subjectId: session.subjectId,
+            // What is EXERCISED is what was granted, so the token cannot carry a scope the person
+            // withheld. Writing it back here is what makes the narrowing real rather than cosmetic.
+            scope: granted.join(' '),
+          },
+        },
       );
 
       const base = (realm as RealmRecord).issuer.replace(/\/$/, '');

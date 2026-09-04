@@ -991,8 +991,31 @@
                     },
                     "scopes": {
                       "type": "array",
+                      "description": "One entry per scope, with what it means to a person. The description comes from the resource server that accepts the scope, so this authority renders a the vocabulary of the deployment rather than carrying one of its own.",
                       "items": {
-                        "type": "string"
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "required",
+                          "alreadyGranted"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "description": "Declining it ends the flow rather than narrowing it."
+                          },
+                          "alreadyGranted": {
+                            "type": "boolean",
+                            "description": "Held from an earlier authorisation."
+                          }
+                        }
                       }
                     }
                   }
@@ -1000,8 +1023,18 @@
                 "example": {
                   "clientName": "Acme Accounting",
                   "scopes": [
-                    "openid",
-                    "profile"
+                    {
+                      "name": "openid",
+                      "description": "Confirm who you are",
+                      "required": true,
+                      "alreadyGranted": true
+                    },
+                    {
+                      "name": "profile",
+                      "description": "Read your name",
+                      "required": false,
+                      "alreadyGranted": false
+                    }
                   ]
                 }
               }
@@ -1072,6 +1105,13 @@
                   "approved": {
                     "type": "boolean",
                     "description": "False sends `access_denied` back to the application."
+                  },
+                  "granted_scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "The scopes the person actually approved, which may be FEWER than were asked for. RFC 6749 3.3 permits granting a narrower scope than requested, and 5.1 requires the token response to say so. Omitted means all of them. Anything not asked for is ignored rather than granted: a decision can only narrow."
                   }
                 }
               }
@@ -5552,6 +5592,154 @@
           },
           "404": {
             "description": "No such grant for this principal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "changeGrantScope",
+        "summary": "Change what an application is allowed to do",
+        "tags": [
+          "consent"
+        ],
+        "description": "Standard-adjacent: the scope of an RFC 6749 authorisation, changed after the fact. Bounded by the registration of the client, because those scopes were deduced from what its owner registered and a registration that can be exceeded is not a limit. Narrowing takes effect on the grant at once and ends the sessions of that client so the next token is minted narrower; a token already issued keeps its scope until it expires, which is minutes, because it is verified without calling here. Every change is recorded with the scope set before and after and who made it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "scopes"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "The complete set this application should hold. Not a delta: a set is unambiguous."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "grantId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What changed, and what it means for tokens already issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "What changed, and what it means for tokens already issued.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "before",
+                    "after",
+                    "added",
+                    "removed"
+                  ],
+                  "properties": {
+                    "before": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "after": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "added": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "removed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sessionsEnded": {
+                      "type": "integer",
+                      "description": "Ended so the next token is narrower. Tokens already issued run to expiry."
+                    }
+                  }
+                },
+                "example": {
+                  "before": [
+                    "openid"
+                  ],
+                  "after": [
+                    "openid",
+                    "profile"
+                  ],
+                  "added": [
+                    "profile"
+                  ],
+                  "removed": [],
+                  "sessionsEnded": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A scope beyond what the client is registered for.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such active authorisation for this person.",
             "content": {
               "application/json": {
                 "schema": {
