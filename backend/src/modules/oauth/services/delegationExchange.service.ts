@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 import { GRANT_COLLECTION } from '../../../shared/models/collections';
 import {
   GrantRecord, isExercisable, narrowScope, grantedScopes,
@@ -30,7 +31,8 @@ const DEFAULT_MAX_CHAIN_DEPTH = 3;
 
 export interface DelegationRefusal {
   status: number;
-  error: string;
+  /** Typed to the closed RFC 6749 set, so a code a client cannot switch on will not compile. */
+  error: OAuthErrorCode;
   description?: string;
 }
 

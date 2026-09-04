@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { OAuthClient } from '../models/client.model';
 import { DirectoryService } from '../../directory/services/directory.service';
@@ -33,7 +34,8 @@ const AUTHORITY_AUDIENCE = 'authority';
 
 export interface ExchangeRefusal {
   status: number;
-  error: string;
+  /** Typed to the closed RFC 6749 set, so a code a client cannot switch on will not compile. */
+  error: OAuthErrorCode;
   description?: string;
 }
 

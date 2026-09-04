@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 import { randomBytes, createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { TICKET_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
@@ -33,7 +34,8 @@ const POLL_INTERVAL_SECONDS = 5;
 
 export interface BackchannelFailure {
   status: number;
-  error: string;
+  /** Typed to the closed RFC 6749 set, so a code a client cannot switch on will not compile. */
+  error: OAuthErrorCode;
   description?: string;
 }
 
@@ -41,7 +43,7 @@ export function isFailure(value: unknown): value is BackchannelFailure {
   return typeof value === 'object' && value !== null && 'error' in value && 'status' in value;
 }
 
-function refuse(status: number, error: string, description?: string): BackchannelFailure {
+function refuse(status: number, error: OAuthErrorCode, description?: string): BackchannelFailure {
   return { status, error, description };
 }
 
