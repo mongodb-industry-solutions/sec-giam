@@ -80,7 +80,7 @@ export async function introspectController(fastify: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>;
 
     const realm = await new RealmService(fastify.db).byName(realmName);
-    if (!realm) return reply.status(401).send(oauthError(401, 'unknown realm'));
+    if (!realm) return reply.status(401).send(oauthError('invalid_client', 'unknown realm', 401));
 
     const clientAuth = new ClientAuthService(fastify.db);
     const outcome = await clientAuth.authenticate(
@@ -90,7 +90,7 @@ export async function introspectController(fastify: FastifyInstance) {
       // the token endpoint; it explains nothing here.
       { requireAuthentication: true, allowSoftAdmission: false },
     );
-    if ('error' in outcome) return reply.status(401).send(oauthError(401, outcome.description));
+    if ('error' in outcome) return reply.status(401).send(oauthError('invalid_client', outcome.description, 401));
 
     /**
      * Every negative answer is the same answer.
@@ -240,7 +240,7 @@ export async function introspectController(fastify: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>;
 
     const realm = await new RealmService(fastify.db).byName(realmName);
-    if (!realm) return reply.status(401).send(oauthError(401, 'unknown realm'));
+    if (!realm) return reply.status(401).send(oauthError('invalid_client', 'unknown realm', 401));
 
     const clientAuth = new ClientAuthService(fastify.db);
     const outcome = await clientAuth.authenticate(
@@ -250,7 +250,7 @@ export async function introspectController(fastify: FastifyInstance) {
       // the token endpoint; it explains nothing here.
       { requireAuthentication: true, allowSoftAdmission: false },
     );
-    if ('error' in outcome) return reply.status(401).send(oauthError(401, outcome.description));
+    if ('error' in outcome) return reply.status(401).send(oauthError('invalid_client', outcome.description, 401));
 
     const issuer = new TokenIssuer(fastify.db, ring());
     const presented = String(body.token ?? '');

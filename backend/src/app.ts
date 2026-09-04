@@ -13,7 +13,9 @@ import mongodbPlugin from './plugins/mongodb';
 import swaggerPlugin from './plugins/swagger';
 import { appendLog, appendLogEntry, levelLabel, mirrorConsoleToLogBuffer } from './shared/services/logBuffer';
 import { configurationReport, readinessReport, formatReport } from './shared/services/startupReport';
-import { PROBLEM_SCHEMA, OAUTH_ERROR_SCHEMA, problem, isOAuthSurface, oauthError } from './shared/models/problem';
+import {
+  PROBLEM_SCHEMA, OAUTH_ERROR_SCHEMA, problem, isOAuthSurface, oauthError, oauthErrorForStatus,
+} from './shared/models/problem';
 import { realmModule } from './modules/realm';
 import { directoryModule } from './modules/directory';
 import { provisioningModule } from './modules/provisioning';
@@ -121,6 +123,40 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
     }
   });
 
+  /**
+   * `WWW-Authenticate` on every refusal from a bearer-protected route. RFC 6750 3.
+   *
+   * In one hook rather than at each refusal, because a header that has to be remembered at forty
+   * call sites is a header that is present at thirty-nine. It was present at none: nothing in the
+   * codebase mentioned it, so a conforming client could not discover how to authenticate, and a
+   * token refused for insufficient authority was indistinguishable from one refused as invalid.
+   *
+   * The code follows the status, per RFC 6750 3.1: a 401 is about the token, a 403 is about what the
+   * token was allowed to do. That distinction is the actionable part, since one says "authenticate
+   * again" and the other says "authenticating again will not help".
+   *
+   * Keyed off `request.bearerProtected`, set by the middleware that expects a token, rather than off
+   * the URL. Routing on the path would be wrong in both directions:
+   * `/protocol/openid-connect/userinfo` IS a protected resource and needs the challenge, while
+   * `/protocol/openid-connect/token` authenticates a CLIENT, answers with the RFC 6749 5.2 error
+   * object, and must not carry one, since a challenge there invites a retry of a flow that is not
+   * the one that failed. Both share a path prefix.
+   */
+  fastify.addHook('onSend', async (request, reply) => {
+    if (reply.statusCode !== 401 && reply.statusCode !== 403) return;
+    // Only where a bearer token was expected. `userinfo` is a protected resource and gets a
+    // challenge; the token endpoint authenticates a client and must not.
+    if (!request.bearerProtected) return;
+    if (reply.getHeader('WWW-Authenticate')) return;
+
+    const { realm } = request.params as { realm?: string };
+    const error = reply.statusCode === 401 ? 'invalid_token' : 'insufficient_scope';
+    reply.header(
+      'WWW-Authenticate',
+      `Bearer realm="${realm ?? 'giam'}", error="${error}"`,
+    );
+  });
+
   // Errors keep the shape of the surface they occurred on: the specification's own on a standard
   // endpoint, RFC 9457 problem+json everywhere else. A house envelope on an OAuth endpoint is a defect.
   fastify.setErrorHandler((error, request, reply) => {
@@ -129,9 +165,9 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
     const status = validation?.length ? 400 : failure.statusCode ?? 500;
 
     if (isOAuthSurface(request.url)) {
-      return reply.status(status).send(oauthError(status, validation?.length
+      return reply.status(status).send(oauthError(oauthErrorForStatus(status), validation?.length
         ? validation.map((i) => `${i.instancePath || 'body'} ${i.message ?? 'is invalid'}`.trim()).join('; ')
-        : failure.message));
+        : failure.message, status));
     }
 
     if (validation?.length) {

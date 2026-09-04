@@ -99,6 +99,8 @@ function principalCaller(
  * before the parameters are read.
  */
 export async function requireAuthorityCaller(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // A bearer token is expected here too, so a refusal carries the RFC 6750 challenge.
+  request.bearerProtected = true;
   const resolved = await resolveCaller(request);
   if (!resolved.caller) return refuse(reply, 401, resolved.detail);
   request.authorityCaller = resolved.caller;

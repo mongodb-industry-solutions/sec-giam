@@ -11,6 +11,7 @@ import { scopesOf } from '../models/client.model';
 import { enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { oauthError } from '../../../shared/models/problem';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 import { SecurityEventService, hashIp, hashState } from '../../audit/services/securityEvent.service';
 import { GrantService } from '../../consent/services/grant.service';
 
@@ -117,7 +118,7 @@ export async function authorizeController(fastify: FastifyInstance) {
     const realm = await new RealmService(fastify.db).byName(realmName);
     // Not recorded: with no realm there is no trail to record it in, which is the token endpoint's
     // position on the same case.
-    if (!realm || !realm.enabled) return reply.status(400).send(oauthError(400, 'unknown realm'));
+    if (!realm || !realm.enabled) return reply.status(400).send(oauthError('invalid_request', 'unknown realm'));
 
     // The same correlator the token endpoint derives, so authorize and redemption group together. The
     // state is never stored raw: it is a value the client chose, and the trail only needs to say that
@@ -128,8 +129,15 @@ export async function authorizeController(fastify: FastifyInstance) {
     // then: a failure recorded against nobody is a failure nobody can be shown.
     const context: { subjectId?: string } = {};
 
-    /** Refuses and records. The cause is what makes this trail worth reading afterwards. */
-    const refuse = (status: number, description: string, cause: string) => {
+    /**
+     * Refuses and records.
+     *
+     * The RFC 6749 error code and the recorded cause are separate arguments, because they answer
+     * different questions: the code is what a client switches on, the cause is what an investigator
+     * reads. They were conflated and the code was derived from the status, so every refusal here
+     * reached the client as `invalid_request` however precisely the cause had been determined.
+     */
+    const refuse = (status: number, code: OAuthErrorCode, description: string, cause: string) => {
       void new SecurityEventService(fastify.db).record({
         realmId: realm.realmId,
         tenantId: realm.tenantId,
@@ -143,23 +151,23 @@ export async function authorizeController(fastify: FastifyInstance) {
         ...(ipHash ? { ipHash } : {}),
         detail: { responseType: body.response_type, scope: body.scope },
       });
-      return reply.status(status as 400).send(oauthError(status, description));
+      return reply.status(status as 400).send(oauthError(code, description, status));
     };
 
     if (body.response_type !== 'code') {
-      return refuse(400, 'unsupported response_type', 'unsupported_response_type');
+      return refuse(400, 'unsupported_response_type', 'unsupported response_type', 'unsupported_response_type');
     }
 
     const registered = await new ClientAuthService(fastify.db).find(realm.realmId, body.client_id);
     if (registered && registered.status !== 'active') {
-      return refuse(400, 'unknown client', 'client_not_active');
+      return refuse(400, 'unauthorized_client', 'unknown client', 'client_not_active');
     }
 
     // Soft mode admits a client that has never registered. It does NOT admit one that registered and
     // then presented the wrong redirect: that client is known, so its registration is the answer.
     const softAdmitted = !registered && enforcementFor(realm) === 'soft';
     if (!registered && !softAdmitted) {
-      return refuse(400, 'unknown client', 'unknown_client');
+      return refuse(400, 'invalid_request', 'unknown client', 'unknown_client');
     }
     // A provisional client has no registered redirect, so the one presented is the one it gets, and
     // it holds the minimum scope rather than whatever it asked for.
@@ -168,16 +176,16 @@ export async function authorizeController(fastify: FastifyInstance) {
     // Exact match, never a prefix. A redirect URI compared loosely is how an authorization code ends
     // up delivered to an attacker's path on a legitimate host.
     if (!client.redirectUris.includes(body.redirect_uri)) {
-      return refuse(400, 'redirect_uri is not registered for this client', 'redirect_uri_mismatch');
+      return refuse(400, 'invalid_request', 'redirect_uri is not registered for this client', 'redirect_uri_mismatch');
     }
 
     if (client.requirePkce && !body.code_challenge) {
-      return refuse(400, 'this client requires PKCE', 'pkce_missing');
+      return refuse(400, 'invalid_request', 'this client requires PKCE', 'pkce_missing');
     }
     // A challenge with a method this authority does not implement is worse than none: the client
     // believes it is protected and the redemption would compare the wrong bytes.
     if (body.code_challenge && body.code_challenge_method && body.code_challenge_method !== 'S256') {
-      return refuse(400, 'unsupported code_challenge_method', 'pkce_method_unsupported');
+      return refuse(400, 'invalid_request', 'unsupported code_challenge_method', 'pkce_method_unsupported');
     }
 
     if (softAdmitted) {
@@ -197,21 +205,21 @@ export async function authorizeController(fastify: FastifyInstance) {
     const requested = softAdmitted ? permitted : asked;
     const refused = softAdmitted ? [] : asked.filter((scope) => !permitted.includes(scope));
     if (refused.length > 0) {
-      return refuse(400, `scope not permitted: ${refused.join(' ')}`, 'scope_not_permitted');
+      return refuse(400, 'invalid_scope', `scope not permitted: ${refused.join(' ')}`, 'scope_not_permitted');
     }
 
     const session = await fastify.db
       .collection<SessionRecord>(SESSION_COLLECTION)
       .findOne({ realmId: realm.realmId, sessionId: body.session_id }, { projection: { _id: 0 } });
     if (!session || !isLive(session)) {
-      return refuse(401, 'no live session', 'no_live_session');
+      return refuse(401, 'login_required', 'no live session', 'no_live_session');
     }
     // Named as soon as the session resolves, so anything refused after this point reaches the person
     // it concerned rather than only the application.
     context.subjectId = session.subjectId;
 
     const identity = await new DirectoryService(fastify.db).findBySubjectId(session.subjectId);
-    if (!identity) return refuse(401, 'no live session', 'subject_no_longer_exists');
+    if (!identity) return refuse(401, 'login_required', 'no live session', 'subject_no_longer_exists');
 
     /**
      * Has this person agreed to hand their identity to this application?

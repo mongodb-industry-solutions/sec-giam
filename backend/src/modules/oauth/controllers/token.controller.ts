@@ -17,6 +17,8 @@ import { JwtTokenFormat } from '../services/jwtTokenFormat';
 import { SecurityEventService, classifyFailure, hashIp, hashState } from '../../audit/services/securityEvent.service';
 import { GrantService } from '../../consent/services/grant.service';
 import { RealmRecord } from '../../realm/models/realm.model';
+import { oauthError } from '../../../shared/models/problem';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 
 /**
  * The token endpoint, RFC 6749.
@@ -32,8 +34,20 @@ import { RealmRecord } from '../../realm/models/realm.model';
 export async function tokenController(fastify: FastifyInstance) {
   const ring = () => new KeyRing(new MongoSigningKeyStore(fastify.db));
 
-  function fail(reply: never | { status: (code: number) => { send: (body: unknown) => unknown } }, status: number, error: string, description?: string) {
-    return reply.status(status).send({ error, ...(description ? { error_description: description } : {}) });
+  /**
+   * One error shape, built by `oauthError` like every other OAuth surface.
+   *
+   * It assembled the object inline, which is why the codes here were already right while the
+   * authorization endpoint's were all `invalid_request`: two helpers, one correct. Typing the code
+   * to `OAuthErrorCode` is what stops a typo reaching a client as an error it cannot switch on.
+   */
+  function fail(
+    reply: never | { status: (code: number) => { send: (body: unknown) => unknown } },
+    status: number,
+    error: OAuthErrorCode,
+    description?: string,
+  ) {
+    return reply.status(status).send(oauthError(error, description, status));
   }
 
   /**
@@ -182,7 +196,7 @@ export async function tokenController(fastify: FastifyInstance) {
     const context: { clientId?: string; clientName?: string; subjectId?: string } = {};
 
     /** Refuses and records. Repeated refusals for one account are themselves worth seeing. */
-    const refuse = (status: number, error: string, description?: string) => {
+    const refuse = (status: number, error: OAuthErrorCode, description?: string) => {
       void new SecurityEventService(fastify.db).record({
         realmId: realm.realmId,
         tenantId: realm.tenantId,
@@ -215,7 +229,7 @@ export async function tokenController(fastify: FastifyInstance) {
       // consumer that has not registered yet, not a consumer that failed to authenticate.
       allowSoftAdmission: true,
     });
-    if ('error' in outcome) return refuse(401, outcome.error, outcome.description);
+    if ('error' in outcome) return refuse(401, outcome.error as OAuthErrorCode, outcome.description);
     const { client, softAdmitted } = outcome;
     context.clientId = client.clientId;
     context.clientName = client.clientName;

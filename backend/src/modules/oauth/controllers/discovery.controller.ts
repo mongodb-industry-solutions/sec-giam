@@ -102,7 +102,7 @@ export async function discoveryController(fastify: FastifyInstance) {
     }, async (request, reply) => {
       const { realm } = request.params as { realm: string };
       const document = await metadata(realm);
-      if (!document) return reply.status(404).send(oauthError(404, 'unknown realm'));
+      if (!document) return reply.status(404).send(oauthError('invalid_request', 'unknown realm', 404));
       return reply.send(document);
     });
   }
@@ -139,7 +139,7 @@ export async function discoveryController(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { realm: realmName } = request.params as { realm: string };
     const realm = await realmService().byName(realmName);
-    if (!realm) return reply.status(404).send(oauthError(404, 'unknown realm'));
+    if (!realm) return reply.status(404).send(oauthError('invalid_request', 'unknown realm', 404));
     // Cacheable, because it changes only on rotation and a stale copy is safe: an old public key can
     // validate only signatures the authority itself produced.
     reply.header('Cache-Control', 'public, max-age=300');
