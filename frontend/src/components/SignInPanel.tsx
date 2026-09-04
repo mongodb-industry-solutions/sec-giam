@@ -26,7 +26,10 @@ interface Provider {
 
 export interface RosterEntry {
   subjectId: string;
+  /** The login identifier, which is what gets typed into the field. */
   userName: string;
+  /** The name to show. SCIM `name.formatted`. */
+  displayName?: string;
   email?: string;
   role?: string;
   /** A fixture-written hint, so two personas holding the same role are distinguishable. */
@@ -44,7 +47,10 @@ export interface LoginContext {
 }
 
 export interface SignedIn {
+  /** The LOGIN identifier, per SCIM. An identifier, not a name. */
   userName?: string;
+  /** The name to show. SCIM `name.formatted`. */
+  displayName?: string;
   sessionId: string;
   realm: string;
 }
@@ -124,12 +130,13 @@ export function SignInPanel({
       }
       const body = await response.json();
       // Kept before anything else can fail: the name is in hand HERE, and every screen that names
-      // this person otherwise has to fetch it back or show a subject id instead.
-      rememberUserName(body.userName);
+      // this person otherwise has to fetch it back or show a subject id instead. The display name
+      // where there is one, and the login only as a fallback, since `userName` is an identifier.
+      rememberUserName(body.displayName ?? body.userName);
       // A token for the console itself, obtained the ordinary way. Failing here does not undo the
       // sign-in: the person IS signed in, and only the screens needing a token are affected.
       await tokenFromSession(realm, body.sessionId);
-      onSignedIn?.({ userName: body.userName, sessionId: body.sessionId, realm });
+      onSignedIn?.({ userName: body.userName, displayName: body.displayName, sessionId: body.sessionId, realm });
     } catch {
       setError('The identity service could not be reached.');
     } finally {
@@ -246,7 +253,10 @@ export function SignInPanel({
                 <optgroup key={role} label={role}>
                   {entries.map((entry) => (
                     <option key={entry.subjectId} value={entry.userName}>
-                      {entry.demoNote ? `${entry.userName} (${entry.demoNote})` : entry.userName}
+                      {/* The name is what somebody recognises; the value is the login it fills in. */}
+                      {entry.demoNote
+                        ? `${entry.displayName ?? entry.userName} (${entry.demoNote})`
+                        : (entry.displayName ?? entry.userName)}
                     </option>
                   ))}
                 </optgroup>

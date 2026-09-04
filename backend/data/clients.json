@@ -46,12 +46,12 @@
     ],
     "serviceIdentity": {
       "kind": "service",
-      "userName": "Espresso Works, acting as itself",
       "owner": {
         "kind": "merchant",
         "ref": "m0000001-0000-4000-8000-000000000001",
         "displayName": "Espresso Works"
-      }
+      },
+      "displayName": "Espresso Works, acting as itself"
     },
     "audience": [
       "leafypay"
@@ -115,7 +115,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "LeafyPay backend service",
       "roleName": "platform_service",
       "owner": {
         "kind": "application",
@@ -130,7 +129,8 @@
         "modules": [
           "view"
         ]
-      }
+      },
+      "displayName": "LeafyPay backend service"
     },
     "demoRoster": [
       "customer",
@@ -161,7 +161,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "LeafyPay, as a registered third party",
       "roleName": "third_party_provider",
       "owner": {
         "kind": "application",
@@ -181,7 +180,8 @@
           "PISP",
           "CBPII"
         ]
-      }
+      },
+      "displayName": "LeafyPay, as a registered third party"
     },
     "audience": [
       "bankcore"
@@ -203,7 +203,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "BankCore backend service",
       "roleName": "bank_platform_service",
       "owner": {
         "kind": "application",
@@ -218,7 +217,8 @@
         "bankAudit": [
           "view"
         ]
-      }
+      },
+      "displayName": "BankCore backend service"
     },
     "audience": [
       "bankcore"
@@ -343,7 +343,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "LeafyPay simulator",
       "roleName": "demonstration_simulator",
       "owner": {
         "kind": "application",
@@ -355,7 +354,8 @@
         "impersonation": [
           "exercise"
         ]
-      }
+      },
+      "displayName": "LeafyPay simulator"
     },
     "demoRoster": [
       "customer",
@@ -386,7 +386,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "Another Provider, a second registered third party",
       "roleName": "third_party_provider_secondary",
       "owner": {
         "kind": "tenant",
@@ -405,7 +404,8 @@
           "AISP",
           "PISP"
         ]
-      }
+      },
+      "displayName": "Another Provider, a second registered third party"
     },
     "audience": [
       "bankcore"

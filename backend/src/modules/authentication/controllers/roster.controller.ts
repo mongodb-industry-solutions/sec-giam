@@ -79,7 +79,8 @@ export async function rosterController(fastify: FastifyInstance) {
                 additionalProperties: false,
                 properties: {
                   subjectId: { type: 'string' },
-                  userName: { type: 'string' },
+                  userName: { type: 'string', description: 'The login identifier, per SCIM.' },
+                  displayName: { type: 'string', description: 'The name to show. SCIM `name.formatted`.' },
                   email: { type: 'string' },
                   role: { type: 'string' },
                   demoNote: { type: 'string' },
@@ -92,7 +93,7 @@ export async function rosterController(fastify: FastifyInstance) {
             displayName: 'Acme',
             branding: { displayName: 'Acme', primaryColor: '#00ED64' },
             providers: [{ name: 'entra', displayName: 'Microsoft Entra ID', protocol: 'oidc', enabled: false }],
-            roster: [{ subjectId: 'ada', userName: 'Ada Lovelace', role: 'analyst' }],
+            roster: [{ subjectId: 'ada', userName: 'ada.lovelace', displayName: 'Ada Lovelace', role: 'analyst' }],
           }],
         },
         404: { $ref: 'Problem#', description: 'No such realm.' },
@@ -177,7 +178,10 @@ export async function rosterController(fastify: FastifyInstance) {
         })
         .map((identity) => ({
           subjectId: identity.subjectId,
+          // The login and the name are different things, and both are useful here: somebody
+          // choosing a persona reads the name, and the field they then type is the login.
           userName: identity.userName,
+          ...(identity.name?.formatted ? { displayName: identity.name.formatted } : {}),
           ...(toScimEmails(identity)[0] ? { email: toScimEmails(identity)[0].value } : {}),
           ...(roleFor(identity.subjectId) ? { role: roleFor(identity.subjectId) as string } : {}),
           ...(identity.demoNote ? { demoNote: identity.demoNote } : {}),

@@ -76,9 +76,10 @@ export function storedUserName(): string {
   return typeof window === 'undefined' ? '' : window.sessionStorage.getItem(NAME_KEY) ?? '';
 }
 
-export function rememberUserName(userName: string): void {
-  if (typeof window === 'undefined' || !userName) return;
-  window.sessionStorage.setItem(NAME_KEY, userName);
+/** The name to greet somebody by, not their login. Kept for the first paint, before UserInfo. */
+export function rememberUserName(displayName: string): void {
+  if (typeof window === 'undefined' || !displayName) return;
+  window.sessionStorage.setItem(NAME_KEY, displayName);
 }
 
 /** The realm that authenticated this person and issued their token. Never changes while signed in. */

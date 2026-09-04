@@ -2,7 +2,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0001-operations",
-    "userName": "Marta Oliveira",
+    "userName": "marta.oliveira",
     "kind": "human",
     "email": "marta.oliveira@bankcore.example",
     "name": {
@@ -18,7 +18,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0002-cardofficer",
-    "userName": "Tomas Reyes",
+    "userName": "tomas.reyes",
     "kind": "human",
     "email": "tomas.reyes@bankcore.example",
     "name": {
@@ -34,7 +34,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0003-compliance",
-    "userName": "Ingrid Larsen",
+    "userName": "ingrid.larsen",
     "kind": "human",
     "email": "ingrid.larsen@bankcore.example",
     "name": {
@@ -50,7 +50,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0004-admin",
-    "userName": "Samuel Adeyemi",
+    "userName": "samuel.adeyemi",
     "kind": "human",
     "email": "samuel.adeyemi@bankcore.example",
     "name": {
@@ -66,7 +66,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-cus-0001-holder",
-    "userName": "Elena Duarte",
+    "userName": "elena.duarte",
     "kind": "human",
     "email": "elena.duarte@example.com",
     "name": {
@@ -83,7 +83,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0006-operations",
-    "userName": "Nadia Haddad",
+    "userName": "nadia.haddad",
     "kind": "human",
     "email": "nadia.haddad@bankcore.example",
     "name": {
@@ -99,7 +99,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0007-cards",
-    "userName": "Petra Novak",
+    "userName": "petra.novak",
     "kind": "human",
     "email": "petra.novak@bankcore.example",
     "name": {
@@ -115,7 +115,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0008-compliance",
-    "userName": "Owen Bradley",
+    "userName": "owen.bradley",
     "kind": "human",
     "email": "owen.bradley@bankcore.example",
     "name": {
@@ -131,7 +131,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-emp-0009-admin",
-    "userName": "Ruth Nakamura",
+    "userName": "ruth.nakamura",
     "kind": "human",
     "email": "ruth.nakamura@bankcore.example",
     "name": {
@@ -147,7 +147,7 @@
   {
     "realm": "leafypay",
     "subjectId": "bank-cus-0010-holder",
-    "userName": "Viktor Ilyin",
+    "userName": "viktor.ilyin",
     "kind": "human",
     "email": "viktor.ilyin@bankcore.example",
     "name": {

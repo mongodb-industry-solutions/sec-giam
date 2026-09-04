@@ -3022,7 +3022,12 @@
                       "type": "string"
                     },
                     "userName": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The login identifier, per SCIM."
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "description": "The name to show. SCIM `name.formatted`."
                     },
                     "assuranceLevel": {
                       "type": "string"
@@ -3038,7 +3043,8 @@
                 "example": {
                   "subjectId": "ec06cbfa-96e2-4867-892b-b74987e78d7a",
                   "sessionId": "a3f1…",
-                  "userName": "Ada Lovelace",
+                  "userName": "ada.lovelace",
+                  "displayName": "Ada Lovelace",
                   "assuranceLevel": "aal1",
                   "method": "password",
                   "sessionEpoch": 0
@@ -3178,7 +3184,12 @@
                             "type": "string"
                           },
                           "userName": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The login identifier, per SCIM."
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "description": "The name to show. SCIM `name.formatted`."
                           },
                           "email": {
                             "type": "string"
@@ -3212,7 +3223,8 @@
                   "roster": [
                     {
                       "subjectId": "ada",
-                      "userName": "Ada Lovelace",
+                      "userName": "ada.lovelace",
+                      "displayName": "Ada Lovelace",
                       "role": "analyst"
                     }
                   ]

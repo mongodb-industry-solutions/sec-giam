@@ -30,7 +30,13 @@ interface IdentityFixture {
   kind: PrincipalRecord['kind'];
   email?: string;
   phone?: string;
-  name?: { formatted?: string; givenName?: string; familyName?: string };
+  name?: {
+    formatted?: string;
+    givenName?: string;
+    familyName?: string;
+    honorificPrefix?: string;
+    honorificSuffix?: string;
+  };
   active: boolean;
   lifecycleState: PrincipalRecord['lifecycleState'];
   demoFeatured?: boolean;

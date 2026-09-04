@@ -108,6 +108,20 @@ export const MAX_ROLE_HOLDINGS = 100;
 export interface PrincipalRecord extends Scoped {
   /** The OIDC `sub`. Reuses the platform's existing login reference so historical rows resolve. */
   subjectId: string;
+  /**
+   * The LOGIN identifier, per RFC 7643 4.1.1: unique, and what the user signs in as.
+   *
+   * Not a display name. Every seeded principal held one ("Luis Fernandez", "Mr. Loren Raynor"),
+   * duplicating `name.formatted` exactly, while this field is the `findByLogin` lookup, the SCIM
+   * filter target, and carries the unique index `realm_userName_unique`. So the seeded values were
+   * unusable logins and the API's own examples (`userName: "ada"`) disagreed with the data.
+   *
+   * There is deliberately NO `displayName` beside it. `name.formatted` already holds that value and
+   * is already a Queryable Encryption field with the `substring` query type, which is what makes
+   * administrative search by name fragment work. A second copy would be either personal data in the
+   * clear next to the encrypted one, or a fourth encrypted field with its own key material on the
+   * hottest collection in the system, since issuing a token reads it.
+   */
   userName: string;
   kind: PrincipalKind;
 
@@ -122,10 +136,19 @@ export interface PrincipalRecord extends Scoped {
   primaryPhone?: string;
   /** Keyed one-way digest of the phone. Carries the unique index that encrypted material cannot. */
   primaryPhoneDigest?: string;
+  /**
+   * The person's name, RFC 7643 4.1.1. `formatted` is the display name.
+   *
+   * A title and a suffix have their own attributes in the standard, and they are not given names: a
+   * generator had been writing `{ givenName: "Mr.", familyName: "Loren Raynor" }`, so any surface
+   * greeting somebody by their given name greeted them as "Mr.".
+   */
   name?: {
     formatted?: string;
     givenName?: string;
     familyName?: string;
+    honorificPrefix?: string;
+    honorificSuffix?: string;
   };
 
   /** Additional addresses, none of them queryable, so they are safe inside an array. */
