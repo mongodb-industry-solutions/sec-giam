@@ -32,6 +32,7 @@ import { systemModule } from './modules/system';
 import { registerBuiltinPorts } from './shared/ports/builtins';
 import { config } from './config';
 import { RELEASE_VERSION } from './shared/services/release';
+import { InvalidTargetError } from './modules/oauth/services/tokenIssuer.service';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -163,6 +164,17 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
     const validation = (error as { validation?: Array<{ instancePath?: string; message?: string }> }).validation;
     const failure = error as { statusCode?: number; message?: string };
     const status = validation?.length ? 400 : failure.statusCode ?? 500;
+
+    /**
+     * A resource indicator the client may not address is `invalid_target`, RFC 8707 2.2, not a 500.
+     *
+     * Translated here rather than at each issuance, because the issuer is called from six places at
+     * the token endpoint and wrapping each one would leave the one added last unwrapped. The issuer
+     * throws because that is where the audience ceiling is known; the status belongs here.
+     */
+    if (error instanceof InvalidTargetError) {
+      return reply.status(400).send(oauthError('invalid_target', error.message, 400));
+    }
 
     if (isOAuthSurface(request.url)) {
       return reply.status(status).send(oauthError(oauthErrorForStatus(status), validation?.length
