@@ -40,7 +40,7 @@ async function adminToken(): Promise<string> {
   const session = await fetch(`${GIAM}/realms/${REALM}/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ login: 'Alex Rivera', password: DEMO_PASSWORD }),
+    body: JSON.stringify({ login: 'alex.rivera', password: DEMO_PASSWORD }),
     signal: AbortSignal.timeout(20000),
   });
   if (!session.ok) return '';

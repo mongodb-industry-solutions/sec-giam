@@ -33,12 +33,12 @@ const PLATFORM = { clientId: 'giam-console', redirectUri: 'http://localhost:8086
 const BANK = { clientId: 'bankcore-console', redirectUri: 'http://localhost:8084/api/auth/callback' };
 
 const MATRIX: Expectation[] = [
-  { label: 'manager', realm: 'leafypay', login: 'Alex Rivera', ...PLATFORM, views: 'all', manageable: 'all-but-keys', identities: 200 },
-  { label: 'security auditor', realm: 'leafypay', login: 'Diego Sans', ...PLATFORM, views: 'all', manageable: 'none', identities: 200 },
-  { label: 'customer', realm: 'leafypay', login: 'Luis Fernandez', ...PLATFORM, views: 'none', manageable: 'none', identities: 403 },
-  { label: 'bank administrator', realm: 'leafypay', login: 'Samuel Adeyemi', ...BANK, views: 'all', manageable: 'all-but-keys', identities: 200 },
-  { label: 'bank compliance', realm: 'leafypay', login: 'Ingrid Larsen', ...BANK, views: 'all', manageable: 'none', identities: 200 },
-  { label: 'bank customer', realm: 'leafypay', login: 'Elena Duarte', ...BANK, views: 'none', manageable: 'none', identities: 403 },
+  { label: 'manager', realm: 'leafypay', login: 'alex.rivera', ...PLATFORM, views: 'all', manageable: 'all-but-keys', identities: 200 },
+  { label: 'security auditor', realm: 'leafypay', login: 'diego.sans', ...PLATFORM, views: 'all', manageable: 'none', identities: 200 },
+  { label: 'customer', realm: 'leafypay', login: 'luis.fernandez', ...PLATFORM, views: 'none', manageable: 'none', identities: 403 },
+  { label: 'bank administrator', realm: 'leafypay', login: 'samuel.adeyemi', ...BANK, views: 'all', manageable: 'all-but-keys', identities: 200 },
+  { label: 'bank compliance', realm: 'leafypay', login: 'ingrid.larsen', ...BANK, views: 'all', manageable: 'none', identities: 200 },
+  { label: 'bank customer', realm: 'leafypay', login: 'elena.duarte', ...BANK, views: 'none', manageable: 'none', identities: 403 },
 ];
 
 async function reachable(): Promise<boolean> {

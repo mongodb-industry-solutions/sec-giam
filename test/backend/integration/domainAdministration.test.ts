@@ -103,8 +103,8 @@ describe('ADR-002: administering authentication paths', () => {
   beforeAll(async () => {
     live = await reachable();
     if (!live) return;
-    manager = await tokenFor('Alex Rivera');
-    customer = await tokenFor('Luis Fernandez');
+    manager = await tokenFor('alex.rivera');
+    customer = await tokenFor('luis.fernandez');
   }, 90_000);
 
   /** A request that carries a body. */
