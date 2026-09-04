@@ -143,20 +143,14 @@ export function narrowScope(held: string[], requested: string[]): string[] {
   return asked.length > 0 ? asked : held;
 }
 
-/** One link in a delegation chain, as it appears in the actor claim. */
-export interface DelegationHop {
-  subjectId: string;
-  clientId?: string;
-  grantId?: string;
-}
-
-/** How deep an actor chain runs. Bounded, because an unbounded one is untraceable. */
-export function chainDepth(actor: { actor?: unknown } | undefined): number {
-  let depth = 0;
-  let current: { actor?: unknown } | undefined = actor;
-  while (current) {
-    depth += 1;
-    current = current.actor as { actor?: unknown } | undefined;
-  }
-  return depth;
-}
+/*
+ * `chainDepth` and `DelegationHop` lived here and are gone.
+ *
+ * `chainDepth` walked an actor chain through an untyped `{ actor?: unknown }`, duplicating
+ * `actorChainDepth` in the oauth module, which walks the same chain with the real type. Two
+ * implementations of one traversal is how the two disagree about depth after the claim's member
+ * names change, which is exactly what happened: this one still looked for `actor` after the claim
+ * became RFC 8693's `act`, and the untyped parameter is why the compiler could not say so.
+ *
+ * `DelegationHop` was never referenced by anything.
+ */

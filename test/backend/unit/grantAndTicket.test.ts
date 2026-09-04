@@ -6,8 +6,10 @@
 // answering the question quietly stops existing. So that boundary is asserted directly.
 import { describe, it, expect } from 'vitest';
 import {
-  covers, isDelegation, isExercisable, narrowScope, grantedScopes, chainDepth,
+  covers, isDelegation, isExercisable, narrowScope, grantedScopes,
 } from '../../../backend/src/modules/consent/models/grant.model';
+import { actorChainDepth } from '../../../backend/src/modules/oauth/models/actor.model';
+import type { ActorClaim } from '../../../backend/src/modules/oauth/models/actor.model';
 import type { GrantRecord } from '../../../backend/src/modules/consent/models/grant.model';
 import { isRedeemable } from '../../../backend/src/modules/oauth/models/ticket.model';
 import type { TicketRecord, AuthorizationFlow } from '../../../backend/src/modules/oauth/models/ticket.model';
@@ -97,8 +99,24 @@ describe('P7: a delegated hop may only narrow', () => {
   });
 
   it('counts the chain, because an unbounded one is untraceable', () => {
-    expect(chainDepth(undefined)).toBe(0);
-    expect(chainDepth({ actor: { actor: undefined } })).toBe(2);
+    expect(actorChainDepth(undefined)).toBe(0);
+    const twoHops: ActorClaim = { sub: 'agent-2', act: { sub: 'agent-1' } };
+    expect(actorChainDepth(twoHops)).toBe(2);
+  });
+
+  /**
+   * v41 P1. The chain nests through `act`, per RFC 8693 4.1, and the walker must be typed.
+   *
+   * This is the assertion that was missing. The previous version walked an untyped
+   * `{ actor?: unknown }`, so when the claim's members were the camelCase `subjectId`/`clientId`/
+   * `actor` the compiler could not object, and a rename would have left the walker counting one hop
+   * for a chain of any length. A depth silently reported as 1 means every depth bound passes.
+   */
+  it('walks `act` and not a differently named field, so a rename cannot silently flatten it', () => {
+    const threeHops: ActorClaim = { sub: 'c', act: { sub: 'b', act: { sub: 'a' } } };
+    expect(actorChainDepth(threeHops)).toBe(3);
+    // A chain nested under any other key is not a chain: depth 1, and a bound would wrongly pass.
+    expect(actorChainDepth({ sub: 'c', actor: { sub: 'b' } } as unknown as ActorClaim)).toBe(1);
   });
 });
 

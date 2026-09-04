@@ -55,6 +55,8 @@ export async function tokenController(fastify: FastifyInstance) {
       ipHash?: string;
       transactionId?: string;
       delegationId?: string;
+      /** The `jti` of the access token minted, so the trail can name the exact token. */
+      jti?: string;
     },
   ) {
     const forPerson = Boolean(input.subjectId) && input.subjectId !== input.client.clientId;
@@ -75,6 +77,12 @@ export async function tokenController(fastify: FastifyInstance) {
         grantType: input.grantType,
         clientName: input.client.clientName,
         scope: input.scope,
+        /**
+         * The token's own identifier, recorded so an investigation can name THE token involved
+         * rather than "a token for that subject around that time". That is the main reason RFC 9068
+         * makes `jti` required, and it was minted and then thrown away.
+         */
+        ...(input.jti ? { jti: input.jti } : {}),
         // The plain-language distinction the trail exists to answer.
         actedFor: !forPerson ? 'itself' : input.onBehalf ? 'the principal' : 'the signed-in person',
       },
@@ -118,7 +126,7 @@ export async function tokenController(fastify: FastifyInstance) {
           code_verifier: { type: 'string' },
           refresh_token: { type: 'string' },
           scope: { type: 'string' },
-          permissions: { type: 'string', description: 'Space delimited resource:action strings, to obtain a NARROWER token than the roles alone would give. Intersected with what the roles grant, never unioned.' },
+          entitlements: { type: 'string', description: 'Space delimited resource:action strings, to obtain a NARROWER token than the roles alone would give. Intersected with what the roles grant, never unioned. Named for the claim it populates, RFC 9068 section 2.2.3.1.' },
           client_id: { type: 'string' },
           client_secret: { type: 'string' },
         },
@@ -149,13 +157,16 @@ export async function tokenController(fastify: FastifyInstance) {
     const grantType = String(body.grant_type ?? '');
 
     /**
-     * P9.3. Permissions the client asked for, to obtain a NARROWER token than its roles would give.
+     * Entitlements the client asked for, to obtain a NARROWER token than its roles would give.
      *
-     * Space delimited, like , because it is the same kind of list and a client should not
+     * Space delimited, like `scope`, because it is the same kind of list and a client should not
      * have to encode two list formats in one request. Intersected with what the roles grant by the
      * issuer, never unioned, so asking cannot widen.
+     *
+     * Named `entitlements` to match the claim it populates. The dangling "like ," in the previous
+     * comment was a sentence that lost its subject when the parameter was last renamed.
      */
-    const requestedPermissions = String(body.permissions ?? '').split(' ').filter(Boolean);
+    const requestedPermissions = String(body.entitlements ?? '').split(' ').filter(Boolean);
 
     // The request's own correlator until a redemption can be tied to the authorization that produced
     // it, at which point it becomes the flow's. Reassignable for exactly that reason.
@@ -272,7 +283,7 @@ export async function tokenController(fastify: FastifyInstance) {
         permissions: machine.permissions,
         roles: machine.roles,
       });
-      recordIssued(realm, { grantType, client, subjectId: owner.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: owner.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       return reply.send(tokens);
     }
 
@@ -366,7 +377,7 @@ export async function tokenController(fastify: FastifyInstance) {
         ...(identity?.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         includeRefreshToken: true,
       });
-      recordIssued(realm, { grantType, client, subjectId: redeemed.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: redeemed.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       return reply.send(tokens);
     }
 
@@ -440,14 +451,9 @@ export async function tokenController(fastify: FastifyInstance) {
         nonce: pending.nonce,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
-        idTokenClaims: {
-          name: identity.name?.formatted,
-          preferred_username: identity.userName,
-          ...(scope.includes('email') && identity.primaryEmail ? { email: identity.primaryEmail } : {}),
-        },
       });
 
-      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       // Redeeming a code is the moment the person's approval becomes an ongoing authorisation.
       await new GrantService(fastify.db).consent(realm, identity.subjectId, client, scope);
       return reply.send(tokens);
@@ -480,16 +486,11 @@ export async function tokenController(fastify: FastifyInstance) {
         sessionEpoch: identity.sessionEpoch,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
-        idTokenClaims: {
-          name: identity.name?.formatted,
-          preferred_username: identity.userName,
-          ...(scope.includes('email') && identity.primaryEmail ? { email: identity.primaryEmail } : {}),
-        },
       });
 
       // push delivery carries the tokens to the client's endpoint as well. The poll that got here
       // already claimed the request, so this cannot produce a second set.
-      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       // The person approved on their own device, so this is consent in exactly the sense the code
       // grant records it.
       await new GrantService(fastify.db).consent(realm, identity.subjectId, client, scope);
@@ -559,6 +560,7 @@ export async function tokenController(fastify: FastifyInstance) {
           ipHash,
           delegationId: hop.delegation.grantId,
           ...(body.transaction_id ? { transactionId: String(body.transaction_id) } : {}),
+          ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}),
         });
         return reply.send(tokens);
       }
@@ -601,6 +603,7 @@ export async function tokenController(fastify: FastifyInstance) {
         onBehalf: true,
         correlationId,
         ipHash,
+        ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}),
       });
       return reply.send(tokens);
     }

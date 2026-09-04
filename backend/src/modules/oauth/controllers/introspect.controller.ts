@@ -68,7 +68,7 @@ export async function introspectController(fastify: FastifyInstance) {
             exp: { type: 'integer' },
             iat: { type: 'integer' },
             token_type: { type: 'string' },
-            permissions: { type: 'array', items: { type: 'object', additionalProperties: true } },
+            entitlements: { type: 'array', items: { type: 'string' } },
           },
           examples: [{ active: true, sub: 'ada', client_id: 'orders-web', scope: 'openid profile' }],
         },
@@ -193,7 +193,7 @@ export async function introspectController(fastify: FastifyInstance) {
       exp: claims.exp,
       iat: claims.iat,
       token_type: 'Bearer',
-      ...(claims.permissions ? { permissions: claims.permissions } : {}),
+      ...(claims.entitlements ? { entitlements: claims.entitlements } : {}),
     });
   });
 

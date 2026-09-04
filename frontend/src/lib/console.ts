@@ -11,21 +11,28 @@ import { PROFILE_KEY, storedHomeRealm, storedRealm, storedToken, storedUserName 
  * refused by the API when somebody types the address, which is the order these two checks belong in.
  */
 
-export interface Permission {
-  resource: string;
-  action: string;
-}
-
 export interface Claims {
   sub: string;
   preferred_username?: string;
   name?: string;
   email?: string;
   roles?: string[];
-  /** Realms this principal may administer besides the issuing one. Explicit data, never inferred. */
-  admin_realms?: Array<{ id: string; name: string }>;
+  /**
+   * Realms this principal may administer besides the issuing one, by NAME.
+   *
+   * It was `[{id, name}]` until v41 P1. Nothing here read the id: the switcher calls
+   * `/administrable-realms`, which answers with the realm record and the permissions actually held
+   * there, because a switcher showing only names would hide that a grant is usually narrower away
+   * from home. So the id was two UUIDs per realm in every administrator's token, serving nobody.
+   */
+  admin_realms?: string[];
   scope?: string;
-  permissions?: Permission[];
+  /**
+   * Fine-grained authority, when the client asked to narrow. `entitlements` per RFC 9068 2.2.3.1,
+   * as `resource:action` STRINGS. This was typed as the v39 `{resource, action}` objects under the
+   * name `permissions`, which had been wrong on both counts since v40.
+   */
+  entitlements?: string[];
   exp?: number;
   iat?: number;
   iss?: string;
@@ -160,10 +167,10 @@ export function initials(claims: Claims): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** Whether the claims carry a named permission. Absent claims mean no, never "probably". */
+/** Whether the claims carry a named entitlement. Absent claims mean no, never "probably". */
 export function can(claims: Claims | null, resource: string, action: string): boolean {
   if (!claims) return false;
-  return (claims.permissions ?? []).some((p) => p.resource === resource && p.action === action);
+  return (claims.entitlements ?? []).includes(`${resource}:${action}`);
 }
 
 // Offered only when the claims say the person administers identity, so the console never advertises
@@ -171,7 +178,7 @@ export function can(claims: Claims | null, resource: string, action: string): bo
 export function administersIdentity(claims: Claims | null): boolean {
   if (!claims) return false;
   if ((claims.roles ?? []).some((role) => /admin|auditor|security/i.test(role))) return true;
-  return (claims.permissions ?? []).some((p) => /realm|client|identit|role|polic|key|session|audit/i.test(p.resource));
+  return (claims.entitlements ?? []).some((entitlement) => /realm|client|identit|role|polic|key|session|audit/i.test(entitlement));
 }
 
 /** A failure a screen can print as it is, rather than a stack trace or a bare status code. */

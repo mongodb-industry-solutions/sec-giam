@@ -1,13 +1,13 @@
 import { Db } from 'mongodb';
 import { GRANT_COLLECTION } from '../../../shared/models/collections';
 import {
-  GrantRecord, isExercisable, narrowScope, chainDepth, grantedScopes,
+  GrantRecord, isExercisable, narrowScope, grantedScopes,
 } from '../../consent/models/grant.model';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { OAuthClient } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { ActorClaim } from '../models/actor.model';
+import { ActorClaim, actorChainDepth } from '../models/actor.model';
 
 /**
  * Delegation at the token endpoint: acting FOR somebody, with your own identity intact.
@@ -88,7 +88,7 @@ export class DelegationExchangeService {
     // finding a valid delegation at the end of it.
     const bound = (realm as RealmRecord & { maxDelegationDepth?: number }).maxDelegationDepth
       ?? DEFAULT_MAX_CHAIN_DEPTH;
-    if (chainDepth(presented.actor) >= bound) return refuse('chain_depth_exceeded');
+    if (actorChainDepth(presented.actor) >= bound) return refuse('chain_depth_exceeded');
 
     const delegation = await this.delegations.findOne(
       { realmId: realm.realmId, subjectId: presented.subjectId, agentSubjectId: client.clientId },
@@ -104,7 +104,7 @@ export class DelegationExchangeService {
     }
 
     // Rule 3 again, from the delegation's own side: the grantor said how far this may travel.
-    if (chainDepth(presented.actor) > (delegation.maxDepth ?? 0)) return refuse('delegation_depth_exceeded');
+    if (actorChainDepth(presented.actor) > (delegation.maxDepth ?? 0)) return refuse('delegation_depth_exceeded');
 
     // Rule 1, twice over. Narrowed against what the delegation permits AND against what the inbound
     // token actually carried, because a delegation cannot lend authority its holder did not present.
@@ -138,7 +138,7 @@ export class DelegationExchangeService {
       delegationId: delegation.grantId,
       ...(requested.transactionId ? { transactionId: requested.transactionId } : {}),
       decision: 'allow',
-      detail: { purpose: delegation.purpose, scope: effective, depth: chainDepth(presented.actor) + 1 },
+      detail: { purpose: delegation.purpose, scope: effective, depth: actorChainDepth(presented.actor) + 1 },
     });
 
     return {
@@ -148,9 +148,9 @@ export class DelegationExchangeService {
       scope: effective,
       // Rule 2: appended, with the existing chain carried underneath untouched.
       actor: {
-        subjectId: client.clientId,
-        clientId: client.clientId,
-        ...(presented.actor ? { actor: presented.actor } : {}),
+        sub: client.clientId,
+        client_id: client.clientId,
+        ...(presented.actor ? { act: presented.actor } : {}),
       },
       delegation,
     };

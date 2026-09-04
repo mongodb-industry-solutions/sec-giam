@@ -12,7 +12,17 @@ import { KeyRing } from '../../keys/services/keyRing.service';
 import { newMeta } from '../../../shared/models/base.model';
 import { SOFT_ADMISSION_SCOPE } from './clientAuth.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { attenuate } from './attenuate';
+import { attenuate, claimsSize } from './attenuate';
+
+/**
+ * The claim-set ceiling for an access token, in bytes.
+ *
+ * 2 KB against a measured largest legitimate shape of about 750 bytes of payload (a delegated agent
+ * token carrying an actor chain and a constraint set), so the margin absorbs a longer issuer, a
+ * second audience and a wider constraint. Sixty expanded entitlements breach it, which is the point:
+ * the refusal happens at issuance rather than at a proxy.
+ */
+export const MAX_ACCESS_TOKEN_CLAIMS_BYTES = 2048;
 
 /** The name the authority registers its OWN permissions under. Never an audience for a business token. */
 const AUTHORITY_RESOURCE_SERVER = 'authority';
@@ -48,8 +58,6 @@ export interface IssueTokensInput {
   nonce?: string;
   includeRefreshToken?: boolean;
   includeIdToken?: boolean;
-  /** Profile claims for the id token, so this service needs no directory read of its own. */
-  idTokenClaims?: Record<string, unknown>;
 }
 
 export interface TokenResponse {
@@ -80,6 +88,24 @@ export class TokenIssuer {
     private readonly options: { reducedAuthority?: boolean } = {},
   ) {}
 
+  /**
+   * The `jti` of the access token this issuer last minted.
+   *
+   * Not on `TokenResponse`, because that object goes on the wire verbatim and RFC 6749 5.1 defines
+   * what a token response carries: adding a member would put a non-standard field in front of every
+   * client to serve an internal need. Exposed here instead so the caller can record it in the audit
+   * event, which is the whole reason `jti` is required.
+   *
+   * Safe as instance state because a `TokenIssuer` is constructed per request and `issue` is called
+   * once on it. A caller that reuses one instance for two issuances gets the second `jti`, which is
+   * why this is a read of the LAST issuance and named that way.
+   */
+  private lastJti?: string;
+
+  get issuedJti(): string | undefined {
+    return this.lastJti;
+  }
+
   private get sessions() {
     return this.db.collection<SessionRecord>(SESSION_COLLECTION);
   }
@@ -106,10 +132,11 @@ export class TokenIssuer {
   /**
    * The realms this subject may administer BESIDES the one issuing the token.
    *
-   * Written as explicit data, `[{ id, name }]`, and never as a flag a client would have to interpret.
-   * Both halves are there on purpose: the id is what an authorization decision is made against, and
-   * the name is what appears in a request path, so a console reading this claim never has to look one
-   * up from the other and never has to guess which it was given.
+   * NAMES ONLY. It carried `[{ id, name }]` until v41 P1, which cost 142 bytes for two realms in
+   * every administrator's token so that one client, the console, was spared a lookup it can cache.
+   * A realm name is unique per deployment and is already the component that appears in a request
+   * path, so the name is the half that is actually used; the id is resolvable from the realm list
+   * the console reads anyway.
    *
    * The claim widens nothing by itself. The token is still issued by, signed by and addressed from
    * ONE realm; every request against a named realm is re-decided against the stored grant. What the
@@ -118,14 +145,14 @@ export class TokenIssuer {
   private async administrableRealmClaim(
     realm: RealmRecord,
     subjectId: string,
-  ): Promise<Array<{ id: string; name: string }>> {
+  ): Promise<string[]> {
     const granted = await new DecisionService(this.db).grantedRealmIds(realm.realmId, subjectId);
     if (granted.length === 0) return [];
     const realms = await this.db
       .collection<{ realmId: string; name: string; enabled?: boolean }>(REALM_COLLECTION)
-      .find({ realmId: { $in: granted }, enabled: true }, { projection: { _id: 0, realmId: 1, name: 1 } })
+      .find({ realmId: { $in: granted }, enabled: true }, { projection: { _id: 0, name: 1 } })
       .toArray();
-    return realms.map((entry) => ({ id: entry.realmId, name: entry.name }));
+    return realms.map((entry) => entry.name);
   }
 
   private ttl(realm: RealmRecord, client: OAuthClient): { access: number; refresh: number } {
@@ -154,6 +181,20 @@ export class TokenIssuer {
     const ttl = this.ttl(realm, client);
     const now = Math.floor(Date.now() / 1000);
     const scope = input.scope.join(' ');
+
+    /**
+     * The session, read ONCE for everything that needs it.
+     *
+     * It previously loaded inside the refresh-token branch only, for `refreshGen`. The
+     * authentication context claims need it too, and reading it twice would put two round trips on
+     * the hottest write path in the system for one document.
+     */
+    const session = input.sessionId
+      ? await this.sessions.findOne(
+        { realmId: realm.realmId, sessionId: input.sessionId },
+        { projection: { _id: 0, refreshGen: 1, createdAt: 1, acr: 1, amr: 1 } },
+      )
+      : null;
 
     const format = new JwtTokenFormat(this.ring, realm.realmId);
     const kid = await this.ring.signingKid(realm.realmId);
@@ -201,7 +242,24 @@ export class TokenIssuer {
       });
     }
 
+    /**
+     * How the person authenticated: `auth_time`, `acr`, `amr`.
+     *
+     * OPTIONAL in RFC 9068 2.2.1, emitted because without them no resource server can demand a
+     * recent or a stronger authentication for a sensitive operation, which is the whole of step-up.
+     * Absent for `client_credentials`, which has no session and no person, and that absence is
+     * correct rather than a gap.
+     */
+    const authContext: Record<string, unknown> = session
+      ? {
+        ...(session.createdAt ? { auth_time: Math.floor(Date.parse(session.createdAt) / 1000) } : {}),
+        ...(session.acr ? { acr: session.acr } : {}),
+        ...(session.amr?.length ? { amr: session.amr } : {}),
+      }
+      : {};
+
     const accessJti = uuidv4();
+    this.lastJti = accessJti;
     const accessClaims: Record<string, unknown> = {
       iss: realm.issuer,
       /**
@@ -218,10 +276,15 @@ export class TokenIssuer {
       sub: input.subjectId ?? client.clientId,
       jti: accessJti,
       iat: now,
-      nbf: now,
+      /**
+       * No `nbf`. It was emitted equal to `iat`, so it carried nothing a verifier could act on, and
+       * it is OPTIONAL in RFC 7519 4.1.5. A verifier that wants the earliest valid instant reads
+       * `iat`, which is REQUIRED and always present.
+       */
       exp: now + ttl.access,
       scope,
       client_id: client.clientId,
+      ...authContext,
       ...(input.sessionId ? { sid: input.sessionId } : {}),
       // The epoch travels in the token so a resource server can refuse a whole generation at once,
       // without listing outstanding tokens.
@@ -238,8 +301,13 @@ export class TokenIssuer {
        * INVARIANT is that asking can only narrow: `narrowed` intersects the request with what the
        * roles actually grant, so a permission the subject does not hold is dropped rather than
        * granted. That is what makes it safe for a client to ask at all.
+       *
+       * The claim is `entitlements`, which is the name RFC 9068 2.2.3.1 gives the fine-grained
+       * authorization claim, with values per RFC 7643 4.1.2. It was `permissions` until v41 P1,
+       * which no specification defines and which therefore no generic client looks for. `roles`
+       * already used the standard name.
        */
-      ...(narrowed.permissions.length ? { permissions: narrowed.permissions } : {}),
+      ...(narrowed.permissions.length ? { entitlements: narrowed.permissions } : {}),
       ...(narrowed.roles.length ? { roles: narrowed.roles } : {}),
       // Absent, not empty, when there is no cross-realm grant: the token of everybody who administers
       // one realm is byte-for-byte what it was before this existed.
@@ -249,6 +317,25 @@ export class TokenIssuer {
       ...(input.accountHolderRef ? { account_holder: input.accountHolderRef } : {}),
       ...(input.actor ? { act: input.actor } : {}),
     };
+
+    /**
+     * The size budget, enforced where the claims are built.
+     *
+     * A JWT travels in an `Authorization` header and proxies commonly cut around 8 KB, shared with
+     * cookies and everything else. A token that is too large fails intermittently, on whichever
+     * proxy the request happens to cross, and is very hard to diagnose from either end.
+     *
+     * Refused here rather than measured in a test, because the failure mode is a token that was
+     * issued successfully and then breaks somewhere else. `claimsSize` already existed and was
+     * exercised only by a unit test.
+     */
+    const size = claimsSize(accessClaims);
+    if (size > MAX_ACCESS_TOKEN_CLAIMS_BYTES) {
+      throw new Error(
+        `access token claims are ${size} bytes, over the ${MAX_ACCESS_TOKEN_CLAIMS_BYTES} byte budget. `
+        + 'Carry roles rather than expanded entitlements.',
+      );
+    }
 
     const access_token = await format.issue(accessClaims, kid);
 
@@ -271,11 +358,14 @@ export class TokenIssuer {
      * what makes `client_credentials` refresh-free without a special case: it creates no session.
      */
     if (input.includeRefreshToken && input.sessionId) {
-      const session = await this.sessions.findOne(
-        { realmId: realm.realmId, sessionId: input.sessionId },
-        { projection: { _id: 0, refreshGen: 1 } },
-      );
-      const refreshFormat = new JwtTokenFormat(this.ring, realm.realmId, 'JWT');
+      /**
+       * `rt+jwt`, not the generic `JWT`.
+       *
+       * The same argument that makes `at+jwt` worth having: a distinct type is what stops one kind
+       * of token the authority signed from being presented as another. Leaving the refresh token
+       * generic meant an id token and a refresh token were indistinguishable by header.
+       */
+      const refreshFormat = new JwtTokenFormat(this.ring, realm.realmId, 'rt+jwt');
       response.refresh_token = await refreshFormat.issue({
         iss: realm.issuer,
         // Addressed to the issuer itself: this token is redeemed here and accepted nowhere else.
@@ -300,8 +390,10 @@ export class TokenIssuer {
         jti: idJti,
         iat: now,
         exp: now + ttl.access,
+        // The same authentication context the access token carries. An RP checking that the person
+        // authenticated recently, or strongly, reads it here rather than introspecting.
+        ...authContext,
         ...(input.nonce ? { nonce: input.nonce } : {}),
-        ...(input.idTokenClaims ?? {}),
       }, kid);
     }
 
@@ -327,7 +419,9 @@ export class TokenIssuer {
     | { ok: true; sessionId: string; subjectId?: string; clientId: string; generation: number }
     | { ok: false; cause: 'invalid' | 'expired' | 'no_session' | 'reuse_detected'; sessionId?: string; subjectId?: string }
   > {
-    const format = new JwtTokenFormat(this.ring, realmId, 'JWT');
+    // `rt+jwt`, matching what issuance now stamps. Verification checks `typ` strictly, so redemption
+    // and issuance have to name the same type or every refresh fails.
+    const format = new JwtTokenFormat(this.ring, realmId, 'rt+jwt');
     const realm = await this.db
       .collection<{ realmId: string; issuer: string }>(REALM_COLLECTION)
       .findOne({ realmId }, { projection: { _id: 0, issuer: 1 } });

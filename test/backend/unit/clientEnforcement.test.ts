@@ -281,21 +281,23 @@ describe('client enforcement: a soft-admitted token genuinely carries less autho
   it('issues the full authority when the client is registered', async () => {
     const full = await new TokenIssuer(issuingDb(), ring).issue(await input());
     const claims = claimsOf(full.access_token);
-    // P9.2: ROLES BY DEFAULT. The permissions claim is absent unless the client narrows, because a
-    // token full of expanded permissions is one that fails on whichever proxy cuts around 8 KB.
+    // ROLES BY DEFAULT. The entitlements claim is absent unless the client narrows, because a
+    // token full of expanded entitlements is one that fails on whichever proxy cuts around 8 KB.
+    expect(claims.entitlements).toBeUndefined();
+    // v41 P1: and the pre-rename name must not reappear alongside it.
     expect(claims.permissions).toBeUndefined();
     expect(claims.roles).toEqual(['operator']);
     expect(full.scope).toBe('openid read:orders write:orders');
     expect(full.refresh_token).toBeTruthy();
   });
 
-  it('strips the permissions, the roles, the refresh token and the scope when it is not', async () => {
+  it('strips the entitlements, the roles, the refresh token and the scope when it is not', async () => {
     // Same input, one flag different. If registration bought nothing, nobody would ever complete it.
     const reduced = await new TokenIssuer(issuingDb(), ring, { reducedAuthority: true })
       .issue(await input());
     const claims = claimsOf(reduced.access_token);
 
-    expect(claims.permissions).toBeUndefined();
+    expect(claims.entitlements).toBeUndefined();
     expect(claims.roles).toBeUndefined();
     // No binding to the subject's own records either: that is authority too.
     expect(claims.account_holder).toBeUndefined();

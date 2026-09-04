@@ -10,10 +10,17 @@
  * and outlives the collection that once held a copy of them.
  */
 export interface ActorClaim {
-  subjectId: string;
-  clientId?: string;
+  /**
+   * RFC 8693 4.1 member names, `sub` and `client_id`, not `subjectId` and `clientId`.
+   *
+   * They were the camelCase forms until v41 P1, which meant a conforming verifier could not read
+   * the delegation chain at all: the acting party was invisible to exactly the audience the claim
+   * exists for.
+   */
+  sub: string;
+  client_id?: string;
   /** Nested, so a chain of delegation is visible rather than flattened to its last link. */
-  actor?: ActorClaim;
+  act?: ActorClaim;
 }
 
 /**
@@ -27,7 +34,7 @@ export function actorChainDepth(actor?: ActorClaim): number {
   let current = actor;
   while (current) {
     depth += 1;
-    current = current.actor;
+    current = current.act;
   }
   return depth;
 }
