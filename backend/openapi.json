@@ -9624,8 +9624,7 @@
                       "name": "realm_administrator",
                       "permissions": [
                         "roles:manage"
-                      ],
-                      "catalogVersion": 3
+                      ]
                     }
                   ],
                   "catalogVersion": 3
@@ -11416,21 +11415,22 @@
                   "conditionCount": 1,
                   "inEffect": true,
                   "attachedTo": [],
-                  "statements": [
+                  "permissions": [
+                    "roles:manage"
+                  ],
+                  "resource": {
+                    "type": "resource",
+                    "pattern": "roles"
+                  },
+                  "conditions": [
                     {
-                      "effect": "deny",
-                      "actions": [
-                        "manage"
-                      ],
-                      "resources": [
-                        "roles"
-                      ],
-                      "condition": {
-                        "assuranceAtLeast": "aal2"
-                      },
-                      "reason": "Changing what a role grants requires a second factor."
+                      "assuranceAtLeast": "aal2"
                     }
-                  ]
+                  ],
+                  "principals": [
+                    "*"
+                  ],
+                  "reason": "Changing what a role grants requires a second factor."
                 }
               }
             }
@@ -11728,21 +11728,22 @@
                   "conditionCount": 1,
                   "inEffect": true,
                   "attachedTo": [],
-                  "statements": [
+                  "permissions": [
+                    "roles:manage"
+                  ],
+                  "resource": {
+                    "type": "resource",
+                    "pattern": "roles"
+                  },
+                  "conditions": [
                     {
-                      "effect": "deny",
-                      "actions": [
-                        "manage"
-                      ],
-                      "resources": [
-                        "roles"
-                      ],
-                      "condition": {
-                        "assuranceAtLeast": "aal2"
-                      },
-                      "reason": "Changing what a role grants requires a second factor."
+                      "assuranceAtLeast": "aal2"
                     }
-                  ]
+                  ],
+                  "principals": [
+                    "*"
+                  ],
+                  "reason": "Changing what a role grants requires a second factor."
                 }
               }
             }
@@ -12183,21 +12184,22 @@
                   "conditionCount": 1,
                   "inEffect": true,
                   "attachedTo": [],
-                  "statements": [
+                  "permissions": [
+                    "roles:manage"
+                  ],
+                  "resource": {
+                    "type": "resource",
+                    "pattern": "roles"
+                  },
+                  "conditions": [
                     {
-                      "effect": "deny",
-                      "actions": [
-                        "manage"
-                      ],
-                      "resources": [
-                        "roles"
-                      ],
-                      "condition": {
-                        "assuranceAtLeast": "aal2"
-                      },
-                      "reason": "Changing what a role grants requires a second factor."
+                      "assuranceAtLeast": "aal2"
                     }
-                  ]
+                  ],
+                  "principals": [
+                    "*"
+                  ],
+                  "reason": "Changing what a role grants requires a second factor."
                 }
               }
             }
@@ -12521,7 +12523,6 @@
                             "policyId",
                             "name",
                             "version",
-                            "statementIndex",
                             "effect"
                           ],
                           "properties": {
@@ -12531,9 +12532,9 @@
                             "name": {
                               "type": "string"
                             },
-                            "statementIndex": {
-                              "type": "integer",
-                              "description": "Position in that policy's statement list, from zero."
+                            "version": {
+                              "type": "string",
+                              "description": "Which revision of the policy decided."
                             },
                             "effect": {
                               "type": "string",
@@ -12599,7 +12600,6 @@
                       "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                       "name": "administration-requires-strong-authentication",
                       "version": "1",
-                      "statementIndex": 0,
                       "effect": "deny"
                     },
                     "evaluators": [
