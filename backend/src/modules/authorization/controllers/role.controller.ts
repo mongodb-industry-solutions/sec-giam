@@ -329,7 +329,16 @@ export async function roleController(fastify: FastifyInstance) {
               },
             },
           },
-          examples: [{ permissions: [{ permission: 'roles:manage', resource: 'roles', action: 'manage', description: 'the role catalogue', resourceServer: 'authority' }], roles: [{ name: 'realm_administrator', permissions: ['roles:manage'], catalogVersion: 3 }], catalogVersion: 3 }],
+          // `catalogVersion` belongs to the RESPONSE, not to each role. The example carried it inside
+          // the role item too, where the item schema does not declare it and refuses extras.
+          examples: [{
+            permissions: [{
+              permission: 'roles:manage', resource: 'roles', action: 'manage',
+              description: 'the role catalogue', resourceServer: 'authority',
+            }],
+            roles: [{ name: 'realm_administrator', permissions: ['roles:manage'] }],
+            catalogVersion: 3,
+          }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },

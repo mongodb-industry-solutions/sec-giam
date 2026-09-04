@@ -139,15 +139,22 @@ export async function policyController(fastify: FastifyInstance) {
     additionalProperties: false,
     required: [...policySummary.required, 'permissions', 'resource', 'conditions'],
     properties: { ...policySummary.properties, ...policyBody },
+    /**
+     * The FLAT shape, which is what the endpoint returns.
+     *
+     * This was the v39 `statements: [{ actions, resources, condition }]` form, so it satisfied
+     * neither the required members (`permissions`, `resource`, `conditions`) nor
+     * `additionalProperties: false`. Showing a shape v40 removed is worse than showing none:
+     * somebody reads the contract, writes a client against `statements`, and finds out at
+     * integration time.
+     */
     examples: [{
       ...policySummary.examples[0],
-      statements: [{
-        effect: 'deny',
-        actions: ['manage'],
-        resources: ['roles'],
-        condition: { assuranceAtLeast: 'aal2' },
-        reason: 'Changing what a role grants requires a second factor.',
-      }],
+      permissions: ['roles:manage'],
+      resource: { type: 'resource', pattern: 'roles' },
+      conditions: [{ assuranceAtLeast: 'aal2' }],
+      principals: ['*'],
+      reason: 'Changing what a role grants requires a second factor.',
     }],
   } as const;
 
@@ -499,11 +506,27 @@ export async function policyController(fastify: FastifyInstance) {
                   type: 'object',
                   additionalProperties: false,
                   description: 'Present when a stored policy decided. Absent when a role or the default did.',
-                  required: ['policyId', 'name', 'version', 'statementIndex', 'effect'],
+                  /**
+                   * Two defects lived in these five lines, and both made a REAL response fail its
+                   * own published contract.
+                   *
+                   * `statementIndex` was required and the engine has never sent it. A policy used to
+                   * hold a list of statements and a decision named which one decided; v40 flattened
+                   * that to `permissions` plus `resource` plus `conditions`, so a policy decides as
+                   * a whole and there is no index to report.
+                   *
+                   * `version` was required and was NOT DECLARED in `properties`, so with
+                   * `additionalProperties: false` the one member a reviewer needs to know which
+                   * revision decided was stripped from the response on its way out.
+                   *
+                   * Either one alone means a consumer validating against this document rejects
+                   * every decision the endpoint returns.
+                   */
+                  required: ['policyId', 'name', 'version', 'effect'],
                   properties: {
                     policyId: { type: 'string' },
                     name: { type: 'string' },
-                              statementIndex: { type: 'integer', description: 'Position in that policy\'s statement list, from zero.' },
+                    version: { type: 'string', description: 'Which revision of the policy decided.' },
                     effect: { type: 'string', enum: ['allow', 'deny'] },
                   },
                 },
@@ -539,7 +562,6 @@ export async function policyController(fastify: FastifyInstance) {
                 policyId: '2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2',
                 name: 'administration-requires-strong-authentication',
                 version: '1',
-                statementIndex: 0,
                 effect: 'deny',
               },
               evaluators: [
