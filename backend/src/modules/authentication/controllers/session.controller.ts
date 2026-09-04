@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { DirectoryService } from '../../directory/services/directory.service';
 import { RealmService } from '../../realm/services/realm.service';
 import { SessionService } from '../services/session.service';
 import { LogoutNotifier } from '../services/logoutNotifier.service';
@@ -44,6 +45,13 @@ export async function sessionController(fastify: FastifyInstance) {
     properties: {
       sessionId: { type: 'string' },
       subjectId: { type: 'string' },
+      /**
+       * The name behind the subject, so a list of sessions reads as people.
+       *
+       * Absent when the principal is gone, and a caller then shows the id. A session outliving its
+       * principal is a real state and inventing a name for it would hide it.
+       */
+      userName: { type: 'string' },
       createdAt: { type: 'string' },
       lastSeenAt: { type: 'string' },
       expiresAt: { type: 'string', description: 'Absolute end, regardless of activity.' },
@@ -84,7 +92,9 @@ export async function sessionController(fastify: FastifyInstance) {
   // Short and one way. Enough to tell two origins apart in a list, never enough to recover either.
   const fingerprint = (hash?: string) => (hash ? hash.slice(0, 8) : undefined);
 
-  function view(session: SessionRecord, currentSessionId?: string) {
+  const directory = new DirectoryService(fastify.db);
+
+  function view(session: SessionRecord, currentSessionId?: string, names?: ReadonlyMap<string, string>) {
     const origin = {
       ...(session.ipHash ? { addressFingerprint: fingerprint(session.ipHash) } : {}),
       ...(session.userAgentHash ? { deviceFingerprint: fingerprint(session.userAgentHash) } : {}),
@@ -92,6 +102,7 @@ export async function sessionController(fastify: FastifyInstance) {
     return {
       sessionId: session.sessionId,
       subjectId: session.subjectId,
+      ...(names?.get(session.subjectId) ? { userName: names.get(session.subjectId) as string } : {}),
       createdAt: session.createdAt,
       lastSeenAt: session.lastSeenAt,
       expiresAt: session.expiresAt,
@@ -168,23 +179,27 @@ export async function sessionController(fastify: FastifyInstance) {
       }
       if (query.subjectId) {
         const held = await sessions.listFor(realm.realmId, query.subjectId);
+        const names = await directory.namesFor(realm.realmId, held.map((session) => session.subjectId));
         return reply.send({
-          sessions: held.map((session) => view(session, caller.sessionId)),
+          sessions: held.map((session) => view(session, caller.sessionId, names)),
           total: held.length,
           scope: 'realm',
         });
       }
       const page = await sessions.listForRealm(realm.realmId, { skip: query.skip, limit: query.limit });
+      // One query for the whole page, not one per row.
+      const names = await directory.namesFor(realm.realmId, page.sessions.map((session) => session.subjectId));
       return reply.send({
-        sessions: page.sessions.map((session) => view(session, caller.sessionId)),
+        sessions: page.sessions.map((session) => view(session, caller.sessionId, names)),
         total: page.total,
         scope: 'realm',
       });
     }
 
     const own = await sessions.listFor(realm.realmId, caller.subjectId);
+    const names = await directory.namesFor(realm.realmId, own.map((session) => session.subjectId));
     return reply.send({
-      sessions: own.map((session) => view(session, caller.sessionId)),
+      sessions: own.map((session) => view(session, caller.sessionId, names)),
       total: own.length,
       scope: 'mine',
     });

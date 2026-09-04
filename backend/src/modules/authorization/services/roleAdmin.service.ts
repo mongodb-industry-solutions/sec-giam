@@ -70,6 +70,13 @@ export interface RoleDetail extends RoleSummary {
  */
 export interface AssignmentView {
   subjectId: string;
+  /**
+   * The name behind the subject, so "who holds this role" reads as people.
+   *
+   * Free here: the principal is already being read to find the holding, so naming it costs no
+   * extra query. Absent only when the record carries no user name.
+   */
+  userName?: string;
   roleId: string;
   grantedAt: string;
   grantedBy?: string;
@@ -521,9 +528,15 @@ export class RoleAdminService {
     return { removed: true };
   }
 
-  private static view(subjectId: string, holding: RoleHolding, now = new Date()): AssignmentView {
+  private static view(
+    subjectId: string,
+    holding: RoleHolding,
+    now = new Date(),
+    userName?: string,
+  ): AssignmentView {
     return {
       subjectId,
+      ...(userName ? { userName } : {}),
       roleId: holding.roleId,
       grantedAt: holding.grantedAt,
       ...(holding.grantedBy ? { grantedBy: holding.grantedBy } : {}),
@@ -537,14 +550,14 @@ export class RoleAdminService {
   /** Who holds a role, lapsed ones included: "who used to have this" is the question after an incident. */
   async assignmentsFor(realmId: string, roleId: string): Promise<AssignmentView[]> {
     const holders = await this.principals
-      .find({ realmId, 'roles.roleId': roleId }, { projection: { _id: 0, subjectId: 1, roles: 1 } })
+      .find({ realmId, 'roles.roleId': roleId }, { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } })
       .toArray();
     const now = new Date();
     const views: AssignmentView[] = [];
     for (const holder of holders) {
       for (const holding of holder.roles ?? []) {
         if (holding.roleId !== roleId) continue;
-        views.push(RoleAdminService.view(holder.subjectId, holding, now));
+        views.push(RoleAdminService.view(holder.subjectId, holding, now, holder.userName));
       }
     }
     return views.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));

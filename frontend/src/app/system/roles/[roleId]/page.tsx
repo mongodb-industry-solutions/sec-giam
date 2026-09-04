@@ -565,8 +565,8 @@ function Assignments({ roleId, mayManage, onChanged }: {
               {rows.map((assignment) => (
                 <RecordCard
                   key={assignment.assignmentId}
-                  title={assignment.subjectId}
-                  subtitle={assignment.assignmentId}
+                  title={assignment.userName ?? assignment.subjectId}
+                  subtitle={assignment.userName ? `${assignment.subjectId} · ${assignment.assignmentId}` : assignment.assignmentId}
                   badges={
                     <>
                       {!assignment.live && (

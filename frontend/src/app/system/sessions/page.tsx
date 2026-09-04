@@ -24,6 +24,8 @@ import { useConsoleResource } from '../../../lib/useConsoleResource';
  */
 
 interface Session {
+  /** The person behind the subject id. Absent when the record carries no name. */
+  userName?: string;
   sessionId: string;
   subjectId: string;
   createdAt: string;
@@ -121,8 +123,10 @@ export default function SessionsPage() {
                 {rows.map((session) => (
                   <RecordCard
                     key={session.sessionId}
-                    title={session.subjectId}
-                    subtitle={session.sessionId}
+                    // The person, with the identifiers as the supporting detail. A list of sessions
+                    // titled by subject id names nobody a reviewer can recognise.
+                    title={session.userName ?? session.subjectId}
+                    subtitle={session.userName ? `${session.subjectId} · ${session.sessionId}` : session.sessionId}
                     badges={session.current
                       ? (
                         <Tooltip text="The session your current token was issued under. Ending it signs you out here.">

@@ -122,6 +122,14 @@ export async function roleController(fastify: FastifyInstance) {
     required: ['subjectId', 'roleId', 'grantedAt', 'live'],
     properties: {
       subjectId: { type: 'string' },
+      /**
+       * The person behind the subject id.
+       *
+       * DECLARED, or it is stripped: `additionalProperties: false` means a field the schema does
+       * not name never reaches the caller, however carefully the service resolved it. The service
+       * was returning this and the screen was still showing an identifier.
+       */
+      userName: { type: 'string' },
       roleId: { type: 'string' },
       grantedAt: { type: 'string' },
       grantedBy: { type: 'string' },
@@ -132,6 +140,7 @@ export async function roleController(fastify: FastifyInstance) {
     },
     examples: [{
       subjectId: 'a1000070-0000-4000-8000-000000000070',
+      userName: 'Alex Rivera',
       roleId: 'a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4',
       grantedAt: '2026-08-30T09:12:00.000Z',
       live: true,

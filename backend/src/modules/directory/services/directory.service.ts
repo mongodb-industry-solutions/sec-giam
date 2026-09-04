@@ -37,6 +37,30 @@ export class DirectoryService {
     return this.identities.findOne({ realmId, accountHolderRef }, { projection: { _id: 0 } });
   }
 
+  /**
+   * Subject ids to the names behind them, for a whole response at once.
+   *
+   * Administrative screens list SESSIONS, ROLE ASSIGNMENTS and ELEVATIONS, and every one of those
+   * is about a person. They were rendering `a1000070-0000-4000-8000-000000000070`, which is
+   * unreadable at a glance and unusable as a way to recognise who a row is about.
+   *
+   * A batch rather than a lookup per row: a page of a hundred sessions held by a handful of people
+   * is one query here and a hundred there. Absent ids are simply absent from the map, and a caller
+   * falls back to the id rather than inventing a name for a principal that no longer exists.
+   */
+  async namesFor(realmId: string, subjectIds: ReadonlyArray<string>): Promise<Map<string, string>> {
+    const wanted = [...new Set(subjectIds.filter(Boolean))];
+    if (wanted.length === 0) return new Map();
+
+    const found = await this.identities
+      .find(
+        { realmId, subjectId: { $in: wanted } },
+        { projection: { _id: 0, subjectId: 1, userName: 1 } },
+      )
+      .toArray();
+    return new Map(found.map((identity) => [identity.subjectId, identity.userName]));
+  }
+
   async findByUserName(realmId: string, userName: string): Promise<PrincipalRecord | null> {
     return this.identities.findOne({ realmId, userName }, { projection: { _id: 0 } });
   }

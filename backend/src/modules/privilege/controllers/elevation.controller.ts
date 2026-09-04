@@ -32,6 +32,10 @@ export async function elevationController(fastify: FastifyInstance) {
     required: ['subjectId', 'roleId'],
     properties: {
       subjectId: { type: 'string' },
+      /**
+       * The person behind the subject id. Declared, or `additionalProperties: false` strips it.
+       */
+      userName: { type: 'string' },
       roleId: { type: 'string' },
       scope: { type: 'object', additionalProperties: true },
       justification: { type: 'string' },

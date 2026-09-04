@@ -43,6 +43,11 @@ export function isElevationRefusal(value: unknown): value is ElevationRefusal {
  */
 export interface ElevationView extends RoleHolding {
   subjectId: string;
+  /**
+   * The name behind the subject. An elevation screen reads "held by" and then an identifier, which
+   * names nobody a reviewer can recognise. Free here: the principal is already being read.
+   */
+  userName?: string;
 }
 
 /** In force right now, before anything is granted on the strength of it. */
@@ -62,12 +67,18 @@ export class ElevationService {
   /** Every ephemeral holding in the realm, with the subject each belongs to. */
   private async ephemeralHoldings(realmId: string): Promise<ElevationView[]> {
     const holders = await this.principals
-      .find({ realmId, 'roles.ephemeral': true }, { projection: { _id: 0, subjectId: 1, roles: 1 } })
+      .find({ realmId, 'roles.ephemeral': true }, { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } })
       .toArray();
     const found: ElevationView[] = [];
     for (const holder of holders) {
       for (const holding of holder.roles ?? []) {
-        if (holding.ephemeral) found.push({ ...holding, subjectId: holder.subjectId });
+        if (holding.ephemeral) {
+          found.push({
+            ...holding,
+            subjectId: holder.subjectId,
+            ...(holder.userName ? { userName: holder.userName } : {}),
+          });
+        }
       }
     }
     return found.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
@@ -81,10 +92,12 @@ export class ElevationService {
   ): Promise<ElevationView | null> {
     const principal = await this.principals.findOne(
       { realmId, subjectId },
-      { projection: { _id: 0, roles: 1 } },
+      { projection: { _id: 0, userName: 1, roles: 1 } },
     );
     const holding = (principal?.roles ?? []).find((entry) => entry.roleId === roleId && entry.ephemeral);
-    return holding ? { ...holding, subjectId } : null;
+    return holding
+      ? { ...holding, subjectId, ...(principal?.userName ? { userName: principal.userName } : {}) }
+      : null;
   }
 
   private audit(realm: RealmRecord, input: {
@@ -172,7 +185,7 @@ export class ElevationService {
     // approving their own case-scoped access, which is exactly the elevation this endpoint exists for.
     const principal = await this.principals.findOne(
       { realmId: realm.realmId, subjectId: input.subjectId },
-      { projection: { _id: 0, roles: 1 } },
+      { projection: { _id: 0, userName: 1, roles: 1 } },
     );
     const existingHoldings = principal?.roles ?? [];
     const sameScope = (a?: { kind: string; ref: string }, b?: { kind: string; ref: string }) => {
