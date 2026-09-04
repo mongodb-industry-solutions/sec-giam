@@ -3,75 +3,50 @@
 import { useEffect, useState } from 'react';
 import { SignInPanel, type SignedIn } from '../../../components/SignInPanel';
 import {
-  readAuthorizationRequest, completeAuthorization, denyAuthorization,
-  type AuthorizationRequest, type ConsentPrompt,
+  readPendingAuthorization, continueAuthorization, type PendingAuthorization,
 } from '../../../lib/authorizationRequest';
-import { ConsentPanel } from '../../../components/ConsentPanel';
 import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
 /**
- * The sign-in screen every application redirects to.
+ * Signing in, and continuing an authorization the authority parked here.
  *
- * It renders the REALM's branding rather than this console's, which is how the page a relying party's
- * user sees is visually that relying party's page without this console becoming that application.
- * The alternative, letting each application collect the credential, is precisely what the extraction
- * exists to stop.
+ * Much simpler since v41 P4, because this page stopped being a participant in the protocol. It used
+ * to hold the whole authorization request in its URL, POST it to the authorization endpoint, receive
+ * either a code or a consent prompt in JSON, hold the session so it could repeat the request with a
+ * consent flag, and redirect the browser itself. Consent lives on its own page now, and the request
+ * lives in the authority.
  *
- * When an authorization request is present in the URL, signing in produces a code and the browser
- * goes back to the application. Without one, somebody opened this page directly.
+ * What is left is the job this page should always have had: take a credential, and send the browser
+ * back where it came from.
  */
 export default function LoginPage() {
   const [signedIn, setSignedIn] = useState<SignedIn | null>(null);
-  const [request, setRequest] = useState<AuthorizationRequest | null>(null);
+  const [pending, setPending] = useState<PendingAuthorization | null>(null);
   const [realm, setRealm] = useState<string | null>(null);
   const [returning, setReturning] = useState(false);
-  // The consent question, and the session that will answer it. Both are held because approving
-  // repeats the same authorization request, and the session is not in the URL.
-  const [consent, setConsent] = useState<ConsentPrompt | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [approving, setApproving] = useState(false);
 
   useEffect(() => {
     const search = window.location.search;
-    setRequest(readAuthorizationRequest(search));
-    // The application names its directory. Guessing it from the client id would work until two realms
-    // registered the same one.
+    setPending(readPendingAuthorization(search));
+    // The authority names the realm when it sends somebody here. Guessing it from a client id would
+    // work until two realms registered the same one.
     setRealm(new URLSearchParams(search).get('realm') ?? 'leafypay');
   }, []);
 
-  async function handleSignedIn(result: SignedIn) {
-    if (request) {
+  function handleSignedIn(result: SignedIn) {
+    /**
+     * Straight back to the authorization endpoint, which now has a session cookie to read.
+     *
+     * Whether that produces a code, a consent screen or an error for the application is the
+     * authority's decision, and this page learns it by being replaced. Deciding here is what the
+     * previous version did, and it is why consent could be asserted by whoever built the request.
+     */
+    if (pending) {
       setReturning(true);
-      const asked = await completeAuthorization(result.realm, result.sessionId, request);
-      // A prompt means the browser stayed here: this person has not authorised this application
-      // before, and nothing is handed over until they say so.
-      if (asked) {
-        setSessionId(result.sessionId);
-        setConsent(asked);
-        setReturning(false);
-      }
+      continueAuthorization(pending);
       return;
     }
     setSignedIn(result);
-  }
-
-  async function handleApprove() {
-    if (!request || !sessionId) return;
-    setApproving(true);
-    const asked = await completeAuthorization(realm ?? 'leafypay', sessionId, request, { consentGranted: true });
-    // Approving and still being asked would loop the screen, so it is reported rather than repeated.
-    if (asked) setApproving(false);
-  }
-
-  if (consent && request) {
-    return (
-      <ConsentPanel
-        prompt={consent}
-        busy={approving}
-        onApprove={handleApprove}
-        onDeny={() => denyAuthorization(request)}
-      />
-    );
   }
 
   if (returning) {
@@ -108,7 +83,6 @@ export default function LoginPage() {
     <AuthBackdrop>
       <SignInPanel
         defaultRealm={realm}
-        {...(request?.clientId ? { clientId: request.clientId } : {})}
         onSignedIn={handleSignedIn}
       />
     </AuthBackdrop>

@@ -11,7 +11,7 @@
  * Skipped unless the authority is listening.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createHash, randomBytes } from 'crypto';
+import { tokenFor as runFlow } from './support/authorizationFlow';
 
 const GIAM = process.env.GIAM_BASE_URL ?? 'http://127.0.0.1:8085';
 const DEMO_PASSWORD = 'demo-password';
@@ -50,74 +50,18 @@ async function reachable(): Promise<boolean> {
   }
 }
 
-/** A real access token for a persona, through the ordinary code flow. */
+/**
+ * A real access token for a persona, through the ordinary code flow.
+ *
+ * The flow lives in `support/authorizationFlow` now. This helper had grown its own copy of it,
+ * including the two-step consent dance the endpoint used to require, and that copy is what broke
+ * when the endpoint became conforming. Each expectation names its own client, so the shared helper
+ * takes one.
+ */
 async function tokenFor(expectation: Expectation): Promise<string> {
-  const session = await fetch(`${GIAM}/realms/${expectation.realm}/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ login: expectation.login, password: DEMO_PASSWORD }),
-    signal: AbortSignal.timeout(20000),
+  return runFlow(GIAM, expectation.realm, expectation.login, DEMO_PASSWORD, {
+    client: { clientId: expectation.clientId, redirectUri: expectation.redirectUri },
   });
-  if (!session.ok) return '';
-  const { sessionId } = await session.json() as { sessionId: string };
-
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-
-  /**
-   * Authorize, and ANSWER THE CONSENT QUESTION if it is asked.
-   *
-   * A first authorization for an application this person has not used before returns a consent
-   * prompt rather than a code, which is the documented two-step: show the scopes, then repeat the
-   * request with `consent_granted`. Doing only the first step made this helper depend on a grant
-   * happening to exist already, so it passed for whoever had signed in before and failed on a
-   * directory where nobody had. That is a defect in the test and not in the flow.
-   */
-  async function requestCode(consentGranted: boolean): Promise<Response> {
-    return fetch(`${GIAM}/realms/${expectation.realm}/protocol/openid-connect/auth`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        client_id: expectation.clientId,
-        redirect_uri: expectation.redirectUri,
-        response_type: 'code',
-        scope: 'openid profile email',
-        session_id: sessionId,
-        code_challenge: challenge,
-        code_challenge_method: 'S256',
-        ...(consentGranted ? { consent_granted: true } : {}),
-      }),
-      signal: AbortSignal.timeout(20000),
-    });
-  }
-
-  let authorize = await requestCode(false);
-  if (!authorize.ok) return '';
-  let granted = await authorize.json() as { code?: string; consent_required?: boolean };
-
-  if (granted.consent_required) {
-    authorize = await requestCode(true);
-    if (!authorize.ok) return '';
-    granted = await authorize.json() as { code?: string; consent_required?: boolean };
-  }
-
-  const code = granted.code;
-  if (!code) return '';
-
-  const token = await fetch(`${GIAM}/realms/${expectation.realm}/protocol/openid-connect/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: expectation.redirectUri,
-      client_id: expectation.clientId,
-      code_verifier: verifier,
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!token.ok) return '';
-  return (await token.json() as { access_token: string }).access_token;
 }
 
 describe('v39: administering the authority is authorised by role', () => {

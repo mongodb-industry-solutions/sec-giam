@@ -8,6 +8,7 @@ import { SecurityEventService } from '../../audit/services/securityEvent.service
 import { authenticationMethods } from '../../../shared/ports';
 import { bindAuthenticationMethods } from '../services/authenticationMethods';
 import { amrFor } from '../models/authenticationContext';
+import { setSessionCookie } from '../services/sessionCookie';
 import { bindCredentialStores } from '../../directory/services/credentialStores';
 import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord } from '../models/session.model';
@@ -186,6 +187,19 @@ export async function loginController(fastify: FastifyInstance) {
       target: { type: 'session', ref: session.sessionId },
       detail: { method: resolution.method, assuranceLevel: resolution.assuranceLevel },
     });
+
+    /**
+     * The session, as a cookie, so the authorization endpoint can read it from the browser.
+     *
+     * It is ALSO still in the response body, and both are needed for different reasons. The cookie
+     * is what a top-level redirect from a relying party carries, which is how the authorization
+     * endpoint learns who is signed in without a caller asserting it. The body is what a script
+     * needs when it drives the flow itself, and what the console uses to obtain its own token.
+     *
+     * Bounded by the session's own idle lifetime rather than by a longer figure of its own: a cookie
+     * outliving the session it names is a cookie that produces a confusing failure later.
+     */
+    setSessionCookie(request, reply, session.sessionId, realm.tokenPolicy.sessionIdleTtlSeconds);
 
     return reply.send({
       subjectId: resolution.subjectId,

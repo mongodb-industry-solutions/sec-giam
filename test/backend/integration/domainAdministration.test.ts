@@ -12,8 +12,9 @@
  *
  * Skipped unless the authority is listening.
  */
+import { randomBytes } from 'crypto';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createHash, randomBytes } from 'crypto';
+import { tokenFor as runFlow } from './support/authorizationFlow';
 
 const GIAM = process.env.GIAM_BASE_URL ?? 'http://127.0.0.1:8085';
 const DEMO_PASSWORD = 'demo-password';
@@ -31,58 +32,8 @@ async function reachable(): Promise<boolean> {
 
 /** A real token for a persona, through the whole flow including the consent step. */
 async function tokenFor(login: string): Promise<string> {
-  const session = await fetch(`${GIAM}/realms/${REALM}/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ login, password: DEMO_PASSWORD }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!session.ok) return '';
-  const { sessionId } = await session.json() as { sessionId: string };
-
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-
-  const ask = async (consentGranted: boolean) => fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_id: CONSOLE.clientId,
-      redirect_uri: CONSOLE.redirectUri,
-      response_type: 'code',
-      scope: 'openid profile email',
-      session_id: sessionId,
-      code_challenge: challenge,
-      code_challenge_method: 'S256',
-      ...(consentGranted ? { consent_granted: true } : {}),
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-
-  let authorize = await ask(false);
-  if (!authorize.ok) return '';
-  let granted = await authorize.json() as { code?: string; consent_required?: boolean };
-  if (granted.consent_required) {
-    authorize = await ask(true);
-    if (!authorize.ok) return '';
-    granted = await authorize.json() as { code?: string };
-  }
-  if (!granted.code) return '';
-
-  const token = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: granted.code,
-      redirect_uri: CONSOLE.redirectUri,
-      client_id: CONSOLE.clientId,
-      code_verifier: verifier,
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!token.ok) return '';
-  return (await token.json() as { access_token: string }).access_token;
+  // The flow lives in `support/authorizationFlow`, shared with the two other suites that drive it.
+  return runFlow(GIAM, REALM, login, DEMO_PASSWORD);
 }
 
 describe('ADR-002: administering authentication paths', () => {

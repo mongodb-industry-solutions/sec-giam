@@ -646,82 +646,130 @@
       }
     },
     "/realms/{realm}/protocol/openid-connect/auth": {
-      "post": {
+      "get": {
         "operationId": "authorize",
         "summary": "Authorization endpoint",
         "tags": [
           "oauth"
         ],
-        "description": "Standard-defined: RFC 6749 section 4.1 and RFC 7636 (PKCE). Exchanges an established session for a single-use authorization code bound to the client, the redirect URI and the PKCE challenge. It never accepts a credential: a request with no session is told one is required rather than being prompted here.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "client_id",
-                  "redirect_uri",
-                  "response_type",
-                  "session_id"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "client_id": {
-                    "type": "string",
-                    "example": "orders-web"
-                  },
-                  "redirect_uri": {
-                    "type": "string",
-                    "example": "https://app.example/callback"
-                  },
-                  "response_type": {
-                    "type": "string",
-                    "enum": [
-                      "code"
-                    ]
-                  },
-                  "scope": {
-                    "type": "string",
-                    "example": "openid profile"
-                  },
-                  "state": {
+        "description": "Standard-defined: RFC 6749 section 4.1 and RFC 7636 (PKCE). Send a browser here with the parameters in the query string; the answer is a 302 to your registered redirect URI carrying `code` and `state`. Errors are delivered by redirect once the client and the redirect URI are known to be registered, and directly when they are not. PKCE is REQUIRED of every client, public or confidential, per RFC 9700. The session comes from a cookie, and consent is recorded by this authority rather than asserted by a caller.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "orders-web",
+            "in": "query",
+            "name": "client_id",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "https://app.example/callback",
+            "in": "query",
+            "name": "redirect_uri",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "code",
+            "in": "query",
+            "name": "response_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "openid profile",
+            "in": "query",
+            "name": "scope",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "state",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "nonce",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "code_challenge",
+            "required": false,
+            "description": "REQUIRED. RFC 7636."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "S256",
+            "in": "query",
+            "name": "code_challenge_method",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "query",
+            "in": "query",
+            "name": "response_mode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "prompt",
+            "required": false,
+            "description": "OIDC: `consent` asks again even when a grant already covers the request."
+          },
+          {
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
                     "type": "string"
-                  },
-                  "nonce": {
-                    "type": "string"
-                  },
-                  "code_challenge": {
-                    "type": "string"
-                  },
-                  "code_challenge_method": {
-                    "type": "string",
-                    "enum": [
-                      "S256"
-                    ]
-                  },
-                  "session_id": {
-                    "type": "string",
-                    "description": "The session established at sign-in."
-                  },
-                  "prompt": {
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "consent"
-                    ],
-                    "description": "OIDC: `consent` asks again even when a grant already covers the request."
-                  },
-                  "consent_granted": {
-                    "type": "boolean",
-                    "description": "Set by the consent screen when the person approved. Never set by a client."
                   }
                 }
-              }
-            }
-          }
-        },
-        "parameters": [
+              ]
+            },
+            "in": "query",
+            "name": "resource",
+            "required": false,
+            "description": "RFC 8707 resource indicators. Narrows the audience within the registration."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "request_id",
+            "required": false,
+            "description": "Returning from the sign-in or consent page. The pending request is read back from this rather than from the query, so a detour cannot alter what was asked for."
+          },
           {
             "schema": {
               "type": "string"
@@ -734,37 +782,86 @@
         ],
         "security": [],
         "responses": {
-          "200": {
-            "description": "Either the authorization code, or a statement that the person has not yet authorised this application. `code` is absent in the second case and `consent_required` is true; the caller shows the scopes and asks, then repeats the request with consent_granted.",
+          "302": {
+            "description": "The authorization code, or an error, delivered to the registered redirect URI. Also the redirect to this authority's sign-in or consent page when one is needed.",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Either the authorization code, or a statement that the person has not yet authorised this application. `code` is absent in the second case and `consent_required` is true; the caller shows the scopes and asks, then repeats the request with consent_granted.",
+                  "description": "The authorization code, or an error, delivered to the registered redirect URI. Also the redirect to this authority's sign-in or consent page when one is needed."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The client or the redirect URI is not registered, so nothing may be redirected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/def-1"
+                    }
+                  ],
+                  "description": "The client or the redirect URI is not registered, so nothing may be redirected."
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "error_description": "redirect_uri is not registered for this client"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/protocol/openid-connect/auth/consent": {
+      "get": {
+        "operationId": "readConsentPrompt",
+        "summary": "What a pending authorization is asking for",
+        "tags": [
+          "oauth"
+        ],
+        "description": "No applicable standard for this shape; what is standard-defined is that the decision belongs to the resource owner, so the screen must show what will actually be exercised. Reads back a pending authorization, assembled from the STORED request rather than from the URL, so nothing a caller writes decides what the person is shown. Requires the session cookie.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "request_id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The application, and what it is asking for.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The application, and what it is asking for.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "redirect_uri"
+                    "clientName",
+                    "scopes"
                   ],
                   "properties": {
-                    "code": {
+                    "clientName": {
                       "type": "string"
                     },
-                    "state": {
+                    "clientUri": {
                       "type": "string"
                     },
-                    "redirect_uri": {
-                      "type": "string"
-                    },
-                    "consent_required": {
-                      "type": "boolean"
-                    },
-                    "client_name": {
-                      "type": "string"
-                    },
-                    "client_uri": {
-                      "type": "string"
-                    },
-                    "logo_uri": {
+                    "logoUri": {
                       "type": "string"
                     },
                     "scopes": {
@@ -776,15 +873,124 @@
                   }
                 },
                 "example": {
-                  "code": "a1b2…",
-                  "state": "xyz",
-                  "redirect_uri": "https://app.example/callback"
+                  "clientName": "Acme Accounting",
+                  "scopes": [
+                    "openid",
+                    "profile"
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "The request is invalid or the scope is not permitted.",
+            "description": "No such pending request, or it has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/def-1"
+                    }
+                  ],
+                  "description": "No such pending request, or it has expired."
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "error_description": "no such pending request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No live session, so there is nobody to ask.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/def-1"
+                    }
+                  ],
+                  "description": "No live session, so there is nobody to ask."
+                },
+                "example": {
+                  "error": "access_denied",
+                  "error_description": "no live session"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "recordConsent",
+        "summary": "Record the person's decision on a pending authorization",
+        "tags": [
+          "oauth"
+        ],
+        "description": "No applicable standard for the shape; what is standard-defined is that the decision belongs to the resource owner. Requires the session cookie, so the only party who can approve is the person the browser is signed in as. Answers with where to continue, which is the authorization endpoint carrying the same `request_id`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "request_id",
+                  "approved"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "request_id": {
+                    "type": "string"
+                  },
+                  "approved": {
+                    "type": "boolean",
+                    "description": "False sends `access_denied` back to the application."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recorded. Send the browser to `continue`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Recorded. Send the browser to `continue`.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "continue"
+                  ],
+                  "properties": {
+                    "continue": {
+                      "type": "string",
+                      "description": "The authorization endpoint, carrying the request id."
+                    }
+                  }
+                },
+                "example": {
+                  "continue": "https://authority.example/realms/acme/protocol/openid-connect/auth?request_id=6f2c1a44"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No such pending request, or it has expired.",
             "content": {
               "application/json": {
                 "schema": {
@@ -794,7 +1000,7 @@
             }
           },
           "401": {
-            "description": "No live session.",
+            "description": "No live session, so there is nobody to consent.",
             "content": {
               "application/json": {
                 "schema": {

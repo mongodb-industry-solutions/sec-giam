@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Bug, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { apiUrl } from '../lib/env';
-import { tokenFromSession, rememberUserName } from '../lib/session';
+import { startConsoleAuthorization, rememberUserName } from '../lib/session';
 import { BRAND } from '../config/brand';
 import { Tooltip } from './Tooltip';
 
@@ -133,10 +133,20 @@ export function SignInPanel({
       // this person otherwise has to fetch it back or show a subject id instead. The display name
       // where there is one, and the login only as a fallback, since `userName` is an identifier.
       rememberUserName(body.displayName ?? body.userName);
-      // A token for the console itself, obtained the ordinary way. Failing here does not undo the
-      // sign-in: the person IS signed in, and only the screens needing a token are affected.
-      await tokenFromSession(realm, body.sessionId);
-      onSignedIn?.({ userName: body.userName, displayName: body.displayName, sessionId: body.sessionId, realm });
+      /**
+       * A token for the console itself, obtained THE ORDINARY WAY.
+       *
+       * `onSignedIn` runs first because it decides whether this page is finishing somebody else's
+       * authorization: when it is, that flow continues by navigation and the console's own token is
+       * not wanted yet. Only when nobody else is waiting does the console start its own flow, which
+       * also navigates, to `/auth/callback`.
+       */
+      const result = { userName: body.userName, displayName: body.displayName, sessionId: body.sessionId, realm };
+      if (onSignedIn) {
+        onSignedIn(result);
+        return;
+      }
+      await startConsoleAuthorization(realm, body.sessionId);
     } catch {
       setError('The identity service could not be reached.');
     } finally {

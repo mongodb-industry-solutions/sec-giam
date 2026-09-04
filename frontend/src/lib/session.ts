@@ -48,6 +48,10 @@ export const PROFILE_KEY = 'giam.userinfo';
  * The sign-in response already carried it and it was being thrown away.
  */
 const NAME_KEY = 'giam.userName';
+// The PKCE verifier and the redirect it was minted for, held across the navigation the
+// authorization endpoint answers with. This tab, this attempt, and no longer.
+const VERIFIER_KEY = 'giam.pkceVerifier';
+const REDIRECT_KEY = 'giam.redirectUri';
 
 // The realm every console call is addressed to. Remembered at sign-in rather than guessed per page,
 // because a page that guesses wrong reads somebody else's realm or nothing at all.
@@ -128,39 +132,60 @@ export function announceSessionChange(): void {
 }
 
 /**
- * Exchanges an established session for an access token.
+ * Starts the console's own authorization flow, by NAVIGATING.
  *
- * Returns null rather than throwing when it cannot: a sign-in that succeeded should not be reported
- * as a failure because the console could not immediately obtain a token for itself. The person is
- * signed in; what they lose is the screens that need a token, and those say so on their own.
+ * It used to POST to the authorization endpoint, read the code out of a JSON response and exchange
+ * it in the background. That worked only because the endpoint was not a conforming one: since v41 P4
+ * the authorization endpoint is a `GET` that answers with a 302, which is what every other client
+ * gets and what makes the console an ordinary client of this authority rather than a special case.
+ *
+ * So the browser goes there. The session travels as a COOKIE, the authority answers with a redirect
+ * to `/auth/callback` carrying the code, and the callback exchanges it. This does not return: the
+ * page is leaving.
+ *
+ * The verifier is kept in session storage because the exchange happens after the navigation, in a
+ * different page load. Session storage rather than local storage: it belongs to this tab and to this
+ * attempt, and outliving either would leave a verifier lying around for a flow nobody is completing.
  */
-export async function tokenFromSession(realm: string, sessionId: string): Promise<string | null> {
+export async function startConsoleAuthorization(realm: string, sessionId: string): Promise<void> {
   window.sessionStorage.setItem(SESSION_KEY, sessionId);
   window.sessionStorage.setItem(REALM_KEY, realm);
   // A fresh sign-in acts on the realm that authenticated it. Inheriting a realm chosen in an earlier
   // session would put somebody somewhere they did not ask to be.
   window.sessionStorage.setItem(ACTIVE_REALM_KEY, realm);
+
   const redirectUri = `${window.location.origin}/auth/callback`;
+  const { verifier, challenge } = await pkce();
+  window.sessionStorage.setItem(VERIFIER_KEY, verifier);
+  window.sessionStorage.setItem(REDIRECT_KEY, redirectUri);
+
+  const url = new URL(apiUrl(`/realms/${realm}/protocol/openid-connect/auth`));
+  url.searchParams.set('client_id', CONSOLE_CLIENT_ID);
+  url.searchParams.set('redirect_uri', redirectUri);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', 'openid profile email');
+  url.searchParams.set('code_challenge', challenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  window.location.assign(url.toString());
+}
+
+/**
+ * Completes it, from the callback page.
+ *
+ * Returns null rather than throwing: a sign-in that succeeded should not be reported as a failure
+ * because the console could not obtain a token for itself. The person IS signed in; what they lose
+ * is the screens that need a token, and those say so on their own.
+ */
+export async function completeConsoleAuthorization(code: string): Promise<string | null> {
+  const realm = window.sessionStorage.getItem(REALM_KEY) ?? '';
+  const verifier = window.sessionStorage.getItem(VERIFIER_KEY) ?? '';
+  const redirectUri = window.sessionStorage.getItem(REDIRECT_KEY) ?? `${window.location.origin}/auth/callback`;
+  // Single use, and removed before the exchange rather than after: a verifier left behind is one a
+  // second attempt could pick up.
+  window.sessionStorage.removeItem(VERIFIER_KEY);
+  if (!realm || !verifier) return null;
 
   try {
-    const { verifier, challenge } = await pkce();
-
-    const authorize = await fetch(apiUrl(`/realms/${realm}/protocol/openid-connect/auth`), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        client_id: CONSOLE_CLIENT_ID,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        session_id: sessionId,
-        scope: 'openid profile email',
-        code_challenge: challenge,
-        code_challenge_method: 'S256',
-      }),
-    });
-    if (!authorize.ok) return null;
-    const { code } = await authorize.json();
-
     const token = await fetch(apiUrl(`/realms/${realm}/protocol/openid-connect/token`), {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
