@@ -142,6 +142,35 @@ export function trailHealth(): { healthy: boolean; written: number; failed: numb
   };
 }
 
+/** What may be asked of the trail. Named so a count and a read take the same shape. */
+export interface AuditQuery {
+  realmId: string;
+  from?: Date;
+  to?: Date;
+  subjectId?: string;
+  /**
+   * Narrows to what one person is entitled to: their own events, plus the ones recorded naming them
+   * as a stakeholder. Never widened by a query parameter the caller controls.
+   */
+  subjectIdOrStakeholder?: string;
+  clientId?: string;
+  action?: string;
+  outcome?: 'success' | 'failure';
+  correlationId?: string;
+  /**
+   * Whether a PERSON drove the act or an application acted for them.
+   *
+   * `principalSubjectId` is written only when an application obtained a token on somebody's behalf,
+   * so its presence is the distinction. The console derived this in the browser from the same field,
+   * which meant the filter existed on a screen and not on the API.
+   */
+  actor?: 'person' | 'application';
+  /** Only the events the caller did NOT cause but is entitled to see. */
+  stakeholderOnly?: string;
+  offset?: number;
+  limit?: number;
+}
+
 export class SecurityEventService {
   constructor(private readonly db: Db) {}
 
@@ -229,24 +258,13 @@ export class SecurityEventService {
    * caller's authority is enforced by the controller: this service answers what it is asked, and a
    * filter applied by a client after the fact is not an access control.
    */
-  async query(filter: {
-    realmId: string;
-    from?: Date;
-    to?: Date;
-    subjectId?: string;
-    /**
-     * Narrows to what one person is entitled to: their own events, plus the ones recorded naming them
-     * as a stakeholder. Distinct from `subjectId`, which asks for one person's events and is what an
-     * oversight caller uses; this one is the self-scoped narrowing and it is never widened by a query
-     * parameter the caller controls.
-     */
-    subjectIdOrStakeholder?: string;
-    clientId?: string;
-    action?: string;
-    outcome?: 'success' | 'failure';
-    correlationId?: string;
-    limit?: number;
-  }): Promise<AuditRecord[]> {
+  /**
+   * One filter, built once, so a count and a read can never disagree about what matches.
+   *
+   * Separated when paging arrived: a caller paging against a total computed from a different filter
+   * than the page is paging through a number that means nothing.
+   */
+  private toQuery(filter: AuditQuery): Record<string, unknown> {
     const query: Record<string, unknown> = { realmId: filter.realmId };
     if (filter.from || filter.to) {
       query.ts = {
@@ -265,11 +283,33 @@ export class SecurityEventService {
     if (filter.action) query.action = filter.action;
     if (filter.outcome) query.outcome = filter.outcome;
     if (filter.correlationId) query.correlationId = filter.correlationId;
+    if (filter.actor === 'application') query.principalSubjectId = { $exists: true };
+    if (filter.actor === 'person') query.principalSubjectId = { $exists: false };
+    if (filter.stakeholderOnly) {
+      // Entitled to see it without having caused it, which is a different question from "mine".
+      query.stakeholderSubjectIds = filter.stakeholderOnly;
+      query['meta.subjectId'] = { $ne: filter.stakeholderOnly };
+      delete query.$or;
+    }
+    return query;
+  }
 
+  /**
+   * How many events match, so a caller can page against something real.
+   *
+   * The console computed `totalPages` from the length of the batch it had fetched, which meant the
+   * last page was always the one in hand and there was no way to reach anything beyond the limit.
+   */
+  async count(filter: AuditQuery): Promise<number> {
+    return this.db.collection<AuditRecord>(AUDIT_COLLECTION).countDocuments(this.toQuery(filter));
+  }
+
+  async query(filter: AuditQuery): Promise<AuditRecord[]> {
     return this.db
       .collection<AuditRecord>(AUDIT_COLLECTION)
-      .find(query, { projection: { _id: 0 } })
+      .find(this.toQuery(filter), { projection: { _id: 0 } })
       .sort({ ts: -1 })
+      .skip(filter.offset ?? 0)
       .limit(Math.min(filter.limit ?? 100, 500))
       .toArray();
   }

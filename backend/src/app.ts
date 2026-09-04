@@ -182,6 +182,17 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
         : failure.message, status));
     }
 
+    /**
+     * A 5xx reaches the log with its stack, and the caller with nothing.
+     *
+     * Added while diagnosing a 500 that was invisible: the response suppresses the message, which is
+     * right, and nothing was writing it anywhere else, which is not. Two Queryable Encryption
+     * constraints were behind that 500 and neither was discoverable from the outside.
+     */
+    if (status >= 500) {
+      request.log.error({ err: error, url: request.url }, 'request failed');
+    }
+
     if (validation?.length) {
       const detail = validation
         .map((issue) => `${issue.instancePath || 'body'} ${issue.message ?? 'is invalid'}`.trim())

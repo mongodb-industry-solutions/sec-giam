@@ -13868,9 +13868,45 @@
               "type": "string"
             },
             "in": "query",
+            "name": "txn",
+            "required": false,
+            "description": "The flow, which is what an access token carries as its `txn` claim. The name an auditor reads off a token, so it is the primary one here."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
             "name": "correlationId",
             "required": false,
-            "description": "Groups every step of one flow."
+            "description": "The same field under its internal name. Kept so nothing breaks."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "own",
+                "stakeholder",
+                "subject"
+              ]
+            },
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "description": "Whose events. `own` is what the caller caused, `stakeholder` is what they are entitled to see without having caused it, `subject` needs an oversight role. The console applied this in the BROWSER, which is a presentation choice rather than an access control and fails open the moment somebody calls the API directly."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "person",
+                "application"
+              ]
+            },
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "description": "Whether a person drove it or an application acted for them. Also browser-side until now."
           },
           {
             "schema": {
@@ -13893,11 +13929,34 @@
           {
             "schema": {
               "type": "integer",
+              "default": 0
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "description": "Paging past the first batch, which was impossible before."
+          },
+          {
+            "schema": {
+              "type": "integer",
               "default": 100
             },
             "in": "query",
             "name": "limit",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "csv"
+              ]
+            },
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "description": "An evidence export, produced HERE from the query rather than in a browser from a display page. The old export was bounded by whatever the screen had fetched, and no other caller could obtain one."
           },
           {
             "schema": {
@@ -13927,6 +13986,10 @@
                     "events"
                   ],
                   "properties": {
+                    "total": {
+                      "type": "integer",
+                      "description": "How many match the query, not how many were returned."
+                    },
                     "events": {
                       "type": "array",
                       "items": {
@@ -14028,6 +14091,243 @@
           },
           "404": {
             "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/audit/flows/{txn}": {
+      "get": {
+        "operationId": "auditFlow",
+        "summary": "Everything that happened in one authorization flow",
+        "tags": [
+          "audit"
+        ],
+        "description": "No applicable standard for the shape; the obligation is that identity evidence be readable after the fact. Assembled from the `txn` claim an access token carries: the events in order, the tokens the flow minted, the records that still exist, and the records that do not WITH THE REASON. The ticket is TTL bounded in minutes by design, so an audit after the fact always finds it gone, and saying so is different from omitting it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "txn",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The flow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The flow.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "txn",
+                    "events",
+                    "tokens",
+                    "gone"
+                  ],
+                  "properties": {
+                    "txn": {
+                      "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string"
+                    },
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "tokens": {
+                      "type": "array",
+                      "description": "Read from the trail, because nothing redeemable is kept at rest.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "session": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "grant": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "principal": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "gone": {
+                      "type": "array",
+                      "description": "What no longer exists, and why. Absence with a reason is evidence.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "what",
+                          "because"
+                        ],
+                        "properties": {
+                          "what": {
+                            "type": "string"
+                          },
+                          "because": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "txn": "f7c1a9e0-3b52-4d18-9a44-0e6b2c8d5511",
+                  "events": [
+                    {
+                      "ts": "2026-09-04T10:00:00.000Z",
+                      "action": "authorization.code_issued",
+                      "outcome": "success"
+                    }
+                  ],
+                  "tokens": [
+                    {
+                      "jti": "0f2c1a44",
+                      "at": "2026-09-04T10:00:01.000Z",
+                      "action": "token.issued"
+                    }
+                  ],
+                  "gone": [
+                    {
+                      "what": "authorization request",
+                      "because": "the ticket is TTL bounded in minutes by design"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such flow, or not one this caller may read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/audit/tokens/{jti}": {
+      "get": {
+        "operationId": "auditToken",
+        "summary": "Which flow a token belongs to",
+        "tags": [
+          "audit"
+        ],
+        "description": "No applicable standard. Resolves the `jti` of an access token to the `txn` of the flow that minted it, which is the entry point when an investigation starts from one token. It answers with the correlator and not with the flow, so reading the flow still goes through the permission check on the flow route.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "jti",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The flow this token was minted in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The flow this token was minted in.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "txn",
+                    "at"
+                  ],
+                  "properties": {
+                    "txn": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "txn": "f7c1a9e0-3b52-4d18-9a44-0e6b2c8d5511",
+                  "at": "2026-09-04T10:00:01.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No issuance recorded for that token.",
             "content": {
               "application/json": {
                 "schema": {
