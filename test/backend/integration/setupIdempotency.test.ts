@@ -29,7 +29,7 @@ const KEYED_BY: Array<[string, string[]]> = [
   ['principal', ['subjectId']],
   ['credential', ['credentialId']],
   ['realm', ['realmId']],
-  ['domain', ['realmId', 'providerId']],
+  ['domain', ['realmId', 'domainId']],
   ['role', ['realmId', 'roleId']],
   ['policy', ['realmId', 'policyId']],
   ['resource', ['realmId', 'resourceId']],

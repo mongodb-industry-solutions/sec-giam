@@ -142,7 +142,7 @@ export async function loginController(fastify: FastifyInstance) {
       realm,
       subjectId: resolution.subjectId,
       epoch: identity?.sessionEpoch ?? 0,
-      ...(localDomain ? { domainId: localDomain.providerId } : {}),
+      ...(localDomain ? { domainId: localDomain.domainId } : {}),
       ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
       // The authentication context, so every token minted from this session can carry acr and amr
       // without reading the credential as it stands later.

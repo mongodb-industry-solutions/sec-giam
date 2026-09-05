@@ -234,7 +234,7 @@ export class SessionService {
   }): Promise<SessionLimitRefusal | null> {
     const domain = await this.db
       .collection<DomainRecord>(DOMAIN_COLLECTION)
-      .findOne({ realmId: input.realmId, providerId: input.domainId }, { projection: { _id: 0, session: 1 } });
+      .findOne({ realmId: input.realmId, domainId: input.domainId }, { projection: { _id: 0, session: 1 } });
     const rule = concurrentSessionRule(domain ?? {});
     // Null is unlimited, and it is the default. Zero would mean no session may be opened at all.
     if (rule.limit === null) return null;

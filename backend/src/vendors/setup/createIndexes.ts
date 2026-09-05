@@ -49,7 +49,7 @@ export function plannedIndexes(): IndexPlan[] {
     // The wire alias a caller may use instead of the realm's own name.
     { collection: REALM_COLLECTION, keys: { aliases: 1 }, options: { name: 'aliases', sparse: true } },
 
-    { collection: DOMAIN_COLLECTION, keys: { providerId: 1 }, options: { name: 'providerId_unique', unique: true } },
+    { collection: DOMAIN_COLLECTION, keys: { domainId: 1 }, options: { name: 'domainId_unique', unique: true } },
     { collection: DOMAIN_COLLECTION, keys: { realmId: 1, tenantId: 1, name: 1 }, options: { name: 'realm_tenant_name_unique', unique: true } },
     // Home-realm discovery resolves an entered email domain to a provider.
     { collection: DOMAIN_COLLECTION, keys: { realmId: 1, 'config.emailDomains': 1 }, options: { name: 'realm_emailDomains', sparse: true } },
@@ -60,7 +60,7 @@ export function plannedIndexes(): IndexPlan[] {
     { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, tenantId: 1, kind: 1, lifecycleState: 1 }, options: { name: 'realm_tenant_kind_state' } },
     // SCIM correlation for inbound provisioning. Sparse: only a federated or provisioned record has one.
     { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, externalId: 1 }, options: { name: 'realm_externalId', sparse: true } },
-    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, providerId: 1 }, options: { name: 'realm_providerId', sparse: true } },
+    { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, domainId: 1 }, options: { name: 'realm_domainId', sparse: true } },
     // The blind digest, not the encrypted value: a keyed one-way digest can carry a unique index,
     // encrypted material cannot. Partial, because a workload has no phone number.
     {

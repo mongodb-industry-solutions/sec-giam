@@ -54,9 +54,9 @@ export interface CredentialStore extends PortImplementation {
 export interface IdentityProviderAdapter extends PortImplementation {
   readonly protocol: 'internal' | 'oidc' | 'saml' | 'ldap' | 'spiffe';
   /** The URL to send the browser to, or null when the protocol has no redirect step. */
-  authorizationUrl(providerId: string, state: string): Promise<string | null>;
+  authorizationUrl(domainId: string, state: string): Promise<string | null>;
   /** Turns whatever came back into claims. Mapping to a role happens above this line. */
-  exchange(providerId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  exchange(domainId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 /** Signing key custody and rotation. The private key never crosses this interface. */

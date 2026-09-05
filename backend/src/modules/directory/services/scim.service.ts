@@ -83,7 +83,7 @@ export function toScimUser(
       // are both inactive and are not the same thing to anyone reviewing them.
       kind: identity.kind,
       lifecycleState: identity.lifecycleState,
-      ...(identity.providerId ? { providerId: identity.providerId } : {}),
+      ...(identity.domainId ? { domainId: identity.domainId } : {}),
       // The opaque binding to a consuming application's own record. This authority never resolves it
       // and does not know what it names; publishing it lets an application find its own records for a
       // principal without either side learning the other's vocabulary.

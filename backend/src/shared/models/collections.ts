@@ -108,6 +108,15 @@ export const GIAM_COLLECTIONS: CollectionSpec[] = [
     purpose: 'one authentication path into a realm, local or federated, with its session policy',
     scoped: true,
     kind: 'standard',
+    /**
+     * `providerId` was this collection's key until v41 D32, while every reference to it was already
+     * called `domainId`: `session.domainId`, `ticket.domainId`, `credential.domainId`, and a join
+     * written as `{ providerId: input.domainId }`. A half-finished rename from provider to domain.
+     *
+     * Listed as retired so the seeder unsets it and validation reports any that survive, rather
+     * than leaving a stale key on a record nothing reads.
+     */
+    retiredFields: ['providerId'],
   },
   {
     name: KEY_COLLECTION,

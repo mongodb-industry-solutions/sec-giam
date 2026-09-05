@@ -72,7 +72,7 @@ export async function federationController(fastify: FastifyInstance) {
     try {
       const adapter = identityProviders.resolve(provider.adapter);
       const state = randomUUID();
-      const authorizationUrl = await adapter.authorizationUrl(provider.providerId, state);
+      const authorizationUrl = await adapter.authorizationUrl(provider.domainId, state);
       if (!authorizationUrl) return reply.status(404).send(problem(404, 'That provider has no redirect step'));
       return reply.send({ authorizationUrl, state });
     } catch (cause) {
@@ -139,7 +139,7 @@ export async function federationController(fastify: FastifyInstance) {
     const audit = new SecurityEventService(fastify.db);
     let claims: Record<string, unknown>;
     try {
-      claims = await identityProviders.resolve(provider.adapter).exchange(provider.providerId, { code, state });
+      claims = await identityProviders.resolve(provider.adapter).exchange(provider.domainId, { code, state });
     } catch (cause) {
       void audit.record({
         realmId: realm.realmId,
@@ -161,7 +161,7 @@ export async function federationController(fastify: FastifyInstance) {
     // Linked by upstream identifier, never by email: an address can be reassigned inside an
     // organisation, and matching on one is how a new joiner inherits somebody else's account.
     let identity: PrincipalRecord | null = await identities.findOne(
-      { realmId: realm.realmId, providerId: provider.providerId, externalId },
+      { realmId: realm.realmId, domainId: provider.domainId, externalId },
       { projection: { _id: 0 } },
     );
 
@@ -180,7 +180,7 @@ export async function federationController(fastify: FastifyInstance) {
         lifecycleState: 'active',
         sessionEpoch: 0,
         externalId,
-        providerId: provider.providerId,
+        domainId: provider.domainId,
         meta: newMeta('Identity'),
       } as unknown as PrincipalRecord;
       await identities.insertOne(record);
@@ -196,7 +196,7 @@ export async function federationController(fastify: FastifyInstance) {
       subjectId: identity.subjectId,
       // The upstream that authenticated is the domain, so its own limit applies to its own
       // sessions and not to the ones the local directory opened.
-      domainId: provider.providerId,
+      domainId: provider.domainId,
       // The assurance the upstream actually achieved, not the one we would like it to have.
     });
     if (isSessionLimitRefusal(started)) {
@@ -263,14 +263,14 @@ export async function federationController(fastify: FastifyInstance) {
     // survives a federated sign-in. `grantedBy` carrying the provider id is what distinguishes them.
     await principals.updateOne(
       { realmId, subjectId },
-      { $pull: { roles: { grantedBy: provider.providerId } } },
+      { $pull: { roles: { grantedBy: provider.domainId } } },
     );
     if (roles.length === 0) return;
 
     const granted: RoleHolding[] = roles.map((role) => ({
       roleId: role.roleId,
       grantedAt: new Date().toISOString(),
-      grantedBy: provider.providerId,
+      grantedBy: provider.domainId,
     }));
     await principals.updateOne(
       { realmId, subjectId },
