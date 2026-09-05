@@ -18,7 +18,7 @@ import { problem } from '../../../shared/models/problem';
  * wraps the request in a catch and renders an empty list.
  *
  * Authorised on `providers`, not on a new permission. A domain IS an authentication provider in
- * this model, which is what `providerId` and the sign-in context's `providers` already call it, and
+ * this model, which is what `domainId` and the sign-in context's `providers` already call it, and
  * inventing `domains:*` would add a permission nobody holds to describe something an existing pair
  * describes correctly.
  *
@@ -51,7 +51,7 @@ function publishedConfig(config: DomainRecord['config']): Record<string, unknown
 
 function view(domain: DomainRecord) {
   return {
-    providerId: domain.providerId,
+    domainId: domain.domainId,
     name: domain.name,
     displayName: domain.displayName,
     protocol: domain.protocol,
@@ -87,8 +87,8 @@ export async function domainController(fastify: FastifyInstance) {
 
   const domainParams = {
     type: 'object',
-    required: ['realm', 'providerId'],
-    properties: { realm: { type: 'string' }, providerId: { type: 'string' } },
+    required: ['realm', 'domainId'],
+    properties: { realm: { type: 'string' }, domainId: { type: 'string' } },
   } as const;
 
   /**
@@ -103,7 +103,7 @@ export async function domainController(fastify: FastifyInstance) {
     type: 'object',
     additionalProperties: true,
     example: {
-      providerId: 'a4c610e1-65c0-5e4c-813c-4cb9712a8bcf',
+      domainId: 'a4c610e1-65c0-5e4c-813c-4cb9712a8bcf',
       name: 'atlas-id',
       displayName: 'Acme directory',
       protocol: 'internal',
@@ -152,7 +152,7 @@ export async function domainController(fastify: FastifyInstance) {
   function audit(
     realm: { realmId: string; tenantId: string },
     subjectId: string,
-    input: { action: string; outcome: 'success' | 'failure'; providerId?: string; cause?: string; detail?: Record<string, unknown> },
+    input: { action: string; outcome: 'success' | 'failure'; domainId?: string; cause?: string; detail?: Record<string, unknown> },
   ): void {
     void new SecurityEventService(fastify.db).record({
       realmId: realm.realmId,
@@ -161,7 +161,7 @@ export async function domainController(fastify: FastifyInstance) {
       action: input.action,
       outcome: input.outcome,
       subjectId,
-      ...(input.providerId ? { target: { type: 'domain', ref: input.providerId } } : {}),
+      ...(input.domainId ? { target: { type: 'domain', ref: input.domainId } } : {}),
       ...(input.cause ? { cause: input.cause } : {}),
       ...(input.detail ? { detail: input.detail } : {}),
     });
@@ -220,7 +220,7 @@ export async function domainController(fastify: FastifyInstance) {
     return reply.send({ items: records.map(view), total, page: at, limit: size });
   });
 
-  fastify.get(`${base}/:providerId`, {
+  fastify.get(`${base}/:domainId`, {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'getDomain',
@@ -240,8 +240,8 @@ export async function domainController(fastify: FastifyInstance) {
     const reached = await reach(request, reply, 'view');
     if (!reached) return reply;
 
-    const { providerId } = request.params as { providerId: string };
-    const record = await domains().findOne({ realmId: reached.realm.realmId, providerId }, { projection: { _id: 0 } });
+    const { domainId } = request.params as { domainId: string };
+    const record = await domains().findOne({ realmId: reached.realm.realmId, domainId }, { projection: { _id: 0 } });
     if (!record) return reply.status(404).send(problem(404, 'No such domain'));
     return reply.send(view(record));
   });
@@ -317,11 +317,11 @@ export async function domainController(fastify: FastifyInstance) {
       return reply.status(409).send(problem(409, 'That name is already used in this realm'));
     }
 
-    const providerId = uuidv4();
+    const domainId = uuidv4();
     const record: DomainRecord = {
       realmId: reached.realm.realmId,
       tenantId: reached.realm.tenantId,
-      providerId,
+      domainId,
       name: body.name,
       displayName: body.displayName,
       protocol: body.protocol,
@@ -340,11 +340,11 @@ export async function domainController(fastify: FastifyInstance) {
     };
 
     await domains().insertOne(record);
-    audit(reached.realm, reached.subjectId, { action: 'domain.created', outcome: 'success', providerId, detail: { name: body.name, protocol: body.protocol } });
+    audit(reached.realm, reached.subjectId, { action: 'domain.created', outcome: 'success', domainId, detail: { name: body.name, protocol: body.protocol } });
     return reply.status(201).send(view(record));
   });
 
-  fastify.patch(`${base}/:providerId`, {
+  fastify.patch(`${base}/:domainId`, {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'updateDomain',
@@ -369,9 +369,9 @@ export async function domainController(fastify: FastifyInstance) {
     const reached = await reach(request, reply, 'manage');
     if (!reached) return reply;
 
-    const { providerId } = request.params as { providerId: string };
+    const { domainId } = request.params as { domainId: string };
     const body = request.body as Partial<DomainRecord>;
-    const existing = await domains().findOne({ realmId: reached.realm.realmId, providerId }, { projection: { _id: 0 } });
+    const existing = await domains().findOne({ realmId: reached.realm.realmId, domainId }, { projection: { _id: 0 } });
     if (!existing) return reply.status(404).send(problem(404, 'No such domain'));
 
     if (body.name && body.name !== existing.name) {
@@ -384,7 +384,7 @@ export async function domainController(fastify: FastifyInstance) {
     if (body.enabled === false && existing.enabled) {
       const enabled = await domains().countDocuments({ realmId: reached.realm.realmId, enabled: true });
       if (enabled <= 1) {
-        audit(reached.realm, reached.subjectId, { action: 'domain.updated', outcome: 'failure', providerId, cause: 'last_enabled_path' });
+        audit(reached.realm, reached.subjectId, { action: 'domain.updated', outcome: 'failure', domainId, cause: 'last_enabled_path' });
         return reply.status(409).send(problem(
           409,
           'This is the only way in',
@@ -408,12 +408,12 @@ export async function domainController(fastify: FastifyInstance) {
       changes[`config.${key}`] = value;
     }
 
-    await domains().updateOne({ realmId: reached.realm.realmId, providerId }, { $set: changes });
-    const updated = await domains().findOne({ realmId: reached.realm.realmId, providerId }, { projection: { _id: 0 } });
+    await domains().updateOne({ realmId: reached.realm.realmId, domainId }, { $set: changes });
+    const updated = await domains().findOne({ realmId: reached.realm.realmId, domainId }, { projection: { _id: 0 } });
     audit(reached.realm, reached.subjectId, {
       action: 'domain.updated',
       outcome: 'success',
-      providerId,
+      domainId,
       // The FIELDS that changed, never their values: a claim mapping or an issuer is configuration,
       // and a trail that copies configuration is a trail that eventually copies a secret.
       detail: { changed: Object.keys(changes).filter((key) => key !== 'meta.lastModified') },
@@ -421,7 +421,7 @@ export async function domainController(fastify: FastifyInstance) {
     return reply.send(view(updated as DomainRecord));
   });
 
-  fastify.delete(`${base}/:providerId`, {
+  fastify.delete(`${base}/:domainId`, {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'deleteDomain',
@@ -450,14 +450,14 @@ export async function domainController(fastify: FastifyInstance) {
     const reached = await reach(request, reply, 'manage');
     if (!reached) return reply;
 
-    const { providerId } = request.params as { providerId: string };
-    const existing = await domains().findOne({ realmId: reached.realm.realmId, providerId }, { projection: { _id: 0 } });
+    const { domainId } = request.params as { domainId: string };
+    const existing = await domains().findOne({ realmId: reached.realm.realmId, domainId }, { projection: { _id: 0 } });
     if (!existing) return reply.status(404).send(problem(404, 'No such domain'));
 
     if (existing.enabled) {
       const enabled = await domains().countDocuments({ realmId: reached.realm.realmId, enabled: true });
       if (enabled <= 1) {
-        audit(reached.realm, reached.subjectId, { action: 'domain.deleted', outcome: 'failure', providerId, cause: 'last_enabled_path' });
+        audit(reached.realm, reached.subjectId, { action: 'domain.deleted', outcome: 'failure', domainId, cause: 'last_enabled_path' });
         return reply.status(409).send(problem(
           409,
           'This is the only way in',
@@ -466,8 +466,8 @@ export async function domainController(fastify: FastifyInstance) {
       }
     }
 
-    await domains().deleteOne({ realmId: reached.realm.realmId, providerId });
-    audit(reached.realm, reached.subjectId, { action: 'domain.deleted', outcome: 'success', providerId, detail: { name: existing.name } });
+    await domains().deleteOne({ realmId: reached.realm.realmId, domainId });
+    audit(reached.realm, reached.subjectId, { action: 'domain.deleted', outcome: 'success', domainId, detail: { name: existing.name } });
     return reply.send({ deleted: true });
   });
 }

@@ -7050,7 +7050,7 @@
                   "example": {
                     "items": [
                       {
-                        "providerId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                        "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
                         "name": "atlas-id",
                         "displayName": "Acme directory",
                         "protocol": "internal",
@@ -7251,7 +7251,7 @@
                   "type": "object",
                   "additionalProperties": true,
                   "example": {
-                    "providerId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                    "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
                     "name": "atlas-id",
                     "displayName": "Acme directory",
                     "protocol": "internal",
@@ -7313,7 +7313,7 @@
         }
       }
     },
-    "/realms/{realm}/domains/{providerId}": {
+    "/realms/{realm}/domains/{domainId}": {
       "get": {
         "operationId": "getDomain",
         "summary": "One authentication path",
@@ -7335,7 +7335,7 @@
               "type": "string"
             },
             "in": "path",
-            "name": "providerId",
+            "name": "domainId",
             "required": true
           }
         ],
@@ -7353,7 +7353,7 @@
                   "type": "object",
                   "additionalProperties": true,
                   "example": {
-                    "providerId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                    "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
                     "name": "atlas-id",
                     "displayName": "Acme directory",
                     "protocol": "internal",
@@ -7533,7 +7533,7 @@
               "type": "string"
             },
             "in": "path",
-            "name": "providerId",
+            "name": "domainId",
             "required": true
           }
         ],
@@ -7551,7 +7551,7 @@
                   "type": "object",
                   "additionalProperties": true,
                   "example": {
-                    "providerId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                    "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
                     "name": "atlas-id",
                     "displayName": "Acme directory",
                     "protocol": "internal",
@@ -7633,7 +7633,7 @@
               "type": "string"
             },
             "in": "path",
-            "name": "providerId",
+            "name": "domainId",
             "required": true
           }
         ],

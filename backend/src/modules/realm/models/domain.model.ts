@@ -22,7 +22,7 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  * implementing OIDC and SAML again.
  */
 export interface DomainRecord extends Scoped {
-  providerId: string;
+  domainId: string;
   /** Slug, unique inside the realm. */
   name: string;
   displayName: string;

@@ -35,7 +35,7 @@ interface RealmFixture {
   localAuthentication?: Partial<NonNullable<DomainRecord['authentication']>>;
   branding?: Partial<RealmRecord['branding']>;
   providers?: Array<{
-    providerId: string;
+    domainId: string;
     name: string;
     displayName: string;
     protocol: DomainRecord['protocol'];
@@ -137,7 +137,7 @@ export async function seedRealms(db: Db): Promise<void> {
     const localId = uuidv5(`domain:${fixture.realmId}:${LOCAL_DOMAIN_NAME}`, DOMAIN_NAMESPACE);
     const local = await upsertSeed<DomainRecord>(
       providers,
-      { providerId: localId },
+      { domainId: localId },
       {
         name: LOCAL_DOMAIN_NAME,
         displayName: `${fixture.displayName} directory`,
@@ -161,7 +161,7 @@ export async function seedRealms(db: Db): Promise<void> {
          */
         registration: { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
       },
-      { providerId: localId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
+      { domainId: localId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
       'Domain',
     );
     console.log(`  domain:   ${fixture.name}/${LOCAL_DOMAIN_NAME} (internal) ${local.action}`);
@@ -169,7 +169,7 @@ export async function seedRealms(db: Db): Promise<void> {
     for (const provider of fixture.providers ?? []) {
       const outcome = await upsertSeed(
         providers,
-        { providerId: provider.providerId },
+        { domainId: provider.domainId },
         {
           name: provider.name,
           displayName: provider.displayName,
@@ -181,7 +181,7 @@ export async function seedRealms(db: Db): Promise<void> {
           claimMappings: provider.claimMappings ?? [],
         },
         // Inside the realm, not beside it. This is the split the platform's old model conflated.
-        { providerId: provider.providerId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
+        { domainId: provider.domainId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
         'Domain',
       );
       console.log(`  domain:   ${fixture.name}/${provider.name} (${provider.protocol}) ${outcome.action}`);

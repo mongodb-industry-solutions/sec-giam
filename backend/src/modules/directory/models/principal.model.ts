@@ -161,7 +161,7 @@ export interface PrincipalRecord extends Scoped {
 
   /** SCIM correlation for inbound provisioning, and the upstream provider when federated. */
   externalId?: string;
-  providerId?: string;
+  domainId?: string;
 
   /** Set for `kind: workload`. A workload proves what it is by attestation, not by a stored secret. */
   workload?: {

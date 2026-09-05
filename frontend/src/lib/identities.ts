@@ -33,7 +33,7 @@ export interface ScimList {
 export interface PrincipalExtension {
   kind?: string;
   lifecycleState?: string;
-  providerId?: string;
+  domainId?: string;
   accountHolderRef?: string;
 }
 

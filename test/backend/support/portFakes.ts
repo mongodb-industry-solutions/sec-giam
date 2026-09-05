@@ -46,8 +46,8 @@ export const fakeCredentialStore: CredentialStore = {
 export const fakeIdentityProvider: IdentityProviderAdapter = {
   name: `${FAKE_PREFIX}identity-provider`,
   protocol: 'oidc',
-  async authorizationUrl(providerId, state) {
-    return `https://upstream.invalid/authorize?provider=${providerId}&state=${state}`;
+  async authorizationUrl(domainId, state) {
+    return `https://upstream.invalid/authorize?provider=${domainId}&state=${state}`;
   },
   async exchange(_providerId, payload) {
     return { sub: payload.code, email: 'someone@upstream.invalid' };

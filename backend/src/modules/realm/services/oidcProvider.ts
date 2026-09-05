@@ -24,12 +24,12 @@ export function bindIdentityProviders(db: Db): void {
   boundDb = db;
 }
 
-async function load(providerId: string): Promise<DomainRecord> {
+async function load(domainId: string): Promise<DomainRecord> {
   if (!boundDb) throw new Error('Identity providers are not bound to a database');
   const provider = await boundDb
     .collection<DomainRecord>(DOMAIN_COLLECTION)
-    .findOne({ providerId }, { projection: { _id: 0 } });
-  if (!provider) throw new Error(`No identity provider ${providerId}`);
+    .findOne({ domainId }, { projection: { _id: 0 } });
+  if (!provider) throw new Error(`No identity provider ${domainId}`);
   if (!provider.enabled) throw new Error(`Identity provider ${provider.name} is not enabled`);
   return provider;
 }
@@ -120,8 +120,8 @@ export const oidcIdentityProvider: IdentityProviderAdapter = {
   name: 'oidc',
   protocol: 'oidc',
 
-  async authorizationUrl(providerId, state) {
-    const provider = await load(providerId);
+  async authorizationUrl(domainId, state) {
+    const provider = await load(domainId);
     const where = await endpoints(provider);
     const url = new URL(where.authorization);
     url.searchParams.set('client_id', provider.config.clientId ?? '');
@@ -135,8 +135,8 @@ export const oidcIdentityProvider: IdentityProviderAdapter = {
     return url.toString();
   },
 
-  async exchange(providerId, payload) {
-    const provider = await load(providerId);
+  async exchange(domainId, payload) {
+    const provider = await load(domainId);
     const where = await endpoints(provider);
     const code = String(payload.code ?? '');
     const state = String(payload.state ?? '');
