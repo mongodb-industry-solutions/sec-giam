@@ -20,6 +20,7 @@ interface Grant {
   clientId: string;
   clientName: string;
   scopes: string[];
+  registeredScopes: string[];
   status: 'active' | 'revoked';
   grantedAt: string;
   revokedAt?: string;
@@ -99,18 +100,7 @@ export default function GrantDetailPage() {
               <Fact label="Last used" value={when(grant.lastUsedAt)} />
               <Fact label="Withdrawn" value={when(grant.revokedAt)} />
             </dl>
-            <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-wider text-gray-400">Scopes approved</p>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {grant.scopes.length === 0
-                  ? <span className="text-sm text-gray-400">none</span>
-                  : grant.scopes.map((scope) => (
-                      <span key={scope} className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-[11px] text-gray-600">
-                        {scope}
-                      </span>
-                    ))}
-              </div>
-            </div>
+            <ScopeEditor grant={grant} onChanged={() => void load()} />
           </section>
 
           <section className="space-y-3">
@@ -150,6 +140,128 @@ function Fact({ label, value, mono }: { label: string; value: string; mono?: boo
     <div className="min-w-0">
       <dt className="text-[10px] uppercase tracking-wider text-gray-400">{label}</dt>
       <dd className={`truncate text-gray-700 ${mono ? 'font-mono text-xs' : ''}`} title={value}>{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Choosing, afterwards, what an application is allowed to do.
+ *
+ * The list is everything the client is REGISTERED for, not just what was approved, because a person
+ * who declined something at consent time must be able to change their mind. Offering only what is
+ * held would make consent a one-way door: every choice could be narrowed and none restored.
+ *
+ * A change is sent as the complete set rather than a delta. A delta has to be resolved against a
+ * state the caller may have read minutes ago; a set says what the answer should be and cannot be
+ * misapplied against a stale view.
+ *
+ * The result is stated rather than implied. Narrowing ends the application's sessions so the next
+ * token is minted narrower, but a token already issued keeps its scope until it expires, because it
+ * is verified without calling the authority. That window is minutes, and saying "immediately" would
+ * be false.
+ */
+function ScopeEditor({ grant, onChanged }: { grant: Grant; onChanged: () => void }) {
+  const [selected, setSelected] = useState<string[]>(grant.scopes);
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<string | null>(null);
+
+  // Re-seeded when the grant is reloaded, so the boxes follow the authority rather than the last
+  // thing that was clicked.
+  useEffect(() => { setSelected(grant.scopes); setOutcome(null); }, [grant]);
+
+  const offered = grant.registeredScopes.length > 0 ? grant.registeredScopes : grant.scopes;
+  const held = new Set(grant.scopes);
+  const dirty = selected.length !== grant.scopes.length
+    || selected.some((scope) => !held.has(scope));
+  const editable = grant.status === 'active';
+
+  function toggle(scope: string) {
+    setSelected((current) => (current.includes(scope)
+      ? current.filter((entry) => entry !== scope)
+      : [...current, scope]));
+  }
+
+  async function save() {
+    setSaving(true);
+    setFailure(null);
+    setOutcome(null);
+    try {
+      const body = await callApi<{ added: string[]; removed: string[]; sessionsEnded: number }>(
+        `/grants/${encodeURIComponent(grant.grantId)}`,
+        { method: 'PATCH', body: { scopes: selected }, subject: 'these permissions' },
+      );
+      const parts = [
+        body.added.length > 0 ? `added ${body.added.join(', ')}` : '',
+        body.removed.length > 0 ? `removed ${body.removed.join(', ')}` : '',
+      ].filter(Boolean);
+      setOutcome(
+        `${parts.length > 0 ? `${parts.join(' and ')}. ` : ''}`
+        + `${body.sessionsEnded} session${body.sessionsEnded === 1 ? '' : 's'} ended. `
+        + 'A token already issued keeps what it had until it expires, which is minutes.',
+      );
+      onChanged();
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.message : 'These permissions could not be changed.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-4">
+      <p className="text-[10px] uppercase tracking-wider text-gray-400">
+        {editable ? 'Permissions' : 'Scopes approved'}
+      </p>
+
+      {offered.length === 0
+        ? <p className="mt-1.5 text-sm text-gray-400">none</p>
+        : (
+          <ul className="mt-1.5 space-y-1.5">
+            {offered.map((scope) => (
+              <li key={scope}>
+                <label className={`flex items-center gap-2 text-sm ${editable ? 'cursor-pointer' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(scope)}
+                    disabled={!editable || saving}
+                    onChange={() => toggle(scope)}
+                    className="h-4 w-4 rounded border-gray-300 text-[#001E2B] focus:ring-[#00ED64] disabled:opacity-50"
+                  />
+                  <span className="font-mono text-[11px] text-gray-700">{scope}</span>
+                  {!held.has(scope) && (
+                    <span className="text-[10px] uppercase tracking-wider text-gray-400">not granted</span>
+                  )}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+
+      {editable && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!dirty || saving}
+            onClick={() => void save()}
+            className="rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-40"
+          >
+            {saving ? 'Saving…' : 'Save permissions'}
+          </button>
+          {dirty && !saving && (
+            <button
+              type="button"
+              onClick={() => setSelected(grant.scopes)}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      )}
+
+      {failure && <p className="mt-2 text-xs text-red-700">{failure}</p>}
+      {outcome && <p className="mt-2 text-xs text-gray-600">{outcome}</p>}
     </div>
   );
 }
