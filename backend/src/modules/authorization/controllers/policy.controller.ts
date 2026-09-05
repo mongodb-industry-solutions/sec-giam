@@ -354,7 +354,7 @@ export async function policyController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, caller.subjectId, 'policies', 'manage');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    const outcome = await new PolicyAdminService(fastify.db).update(realm.realmId, policyId, request.body as object);
+    const outcome = await new PolicyAdminService(fastify.db).update(realm.realmId, policyId, caller.subjectId, realm.tenantId, request.body as object);
     if (outcome === null) return reply.status(404).send(problem(404, 'No such policy'));
     if (isPolicyRefusal(outcome)) return reply.status(outcome.status as 400).send(problem(outcome.status, outcome.title, outcome.detail));
 

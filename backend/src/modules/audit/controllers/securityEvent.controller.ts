@@ -2,6 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { SecurityEventService } from '../services/securityEvent.service';
 import { FlowAuditService } from '../services/flowAudit.service';
+import { TrailDigestService } from '../services/trailDigest.service';
+import { KeyRing } from '../../keys/services/keyRing.service';
+import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
@@ -68,7 +71,16 @@ export async function securityEventController(fastify: FastifyInstance) {
           },
           from: { type: 'string', format: 'date-time' },
           to: { type: 'string', format: 'date-time' },
-          offset: { type: 'integer', default: 0, description: 'Paging past the first batch, which was impossible before.' },
+          offset: {
+            type: 'integer',
+            default: 0,
+            description:
+              'Paging past the first batch, which was impossible before. BOUND IT WITH `to` if you '
+              + 'need stable pages: the trail is written to continuously, so on an unbounded query '
+              + 'new events land at the top between requests and shift a page boundary under you. '
+              + 'That is a property of offset paging rather than a defect, and the fix is to page a '
+              + 'closed window.',
+          },
           limit: { type: 'integer', default: 100 },
           format: {
             type: 'string',
@@ -393,5 +405,95 @@ export async function securityEventController(fastify: FastifyInstance) {
     const found = await new FlowAuditService(fastify.db).txnForJti(realm.realmId, jti);
     if (!found) return reply.status(404).send(problem(404, 'No issuance recorded for that token'));
     return reply.send(found);
+  });
+
+  /**
+   * Seals a window of the trail, so alteration afterwards is detectable.
+   *
+   * See `TrailDigestService` for why this is a digest per window rather than a hash chain per
+   * record: a chain cannot be made atomic on a time series collection and would have gaps, and a
+   * gap is indistinguishable from tampering.
+   *
+   * Reading it requires the oversight permission. The digest itself discloses nothing about the
+   * events, but the COUNT does, and how many security events a realm recorded in an hour is not
+   * public.
+   */
+  fastify.post('/realms/:realm/audit/digest', {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'sealAuditWindow',
+      tags: ['audit'],
+      summary: 'Seal a window of the trail, or verify a seal',
+      description:
+        'No applicable standard for the shape; the obligation is PCI DSS 10.3.2 to 10.3.4, that '
+        + 'evidence be protected from alteration and that alteration be detectable. Computes a '
+        + 'signed digest over a closed window. Export it: a digest held on the same cluster as the '
+        + 'events it protects proves nothing. Send `digest` and `events` back to verify a window '
+        + 'against what it was when sealed.',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['realm'],
+        properties: { realm: { type: 'string' } },
+      },
+      body: {
+        type: 'object',
+        required: ['from', 'to'],
+        additionalProperties: false,
+        properties: {
+          from: { type: 'string', format: 'date-time' },
+          to: { type: 'string', format: 'date-time', description: 'Exclusive. Seal only CLOSED windows: a window still being written to will not match later.' },
+          digest: { type: 'string', description: 'Present to VERIFY rather than to seal.' },
+          events: { type: 'integer', description: 'The count as it was when sealed. Required alongside `digest`.' },
+        },
+      },
+      response: {
+        200: {
+          description: 'The seal, or the verdict when verifying.',
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            from: { type: 'string' },
+            to: { type: 'string' },
+            events: { type: 'integer' },
+            digest: { type: 'string' },
+            jwt: { type: 'string', description: 'The same, signed by the realm key. Verified through the published key set.' },
+            intact: { type: 'boolean', description: 'Present when verifying. False means the window is not what it was.' },
+            eventsThen: { type: 'integer' },
+            eventsNow: { type: 'integer' },
+          },
+          examples: [{ from: '2026-09-04T00:00:00.000Z', to: '2026-09-05T00:00:00.000Z', events: 412, digest: 'a3f1...' }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        403: { $ref: 'Problem#', description: 'No role held permits reading the trail of this realm.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const { realm: realmName } = request.params as { realm: string };
+    const body = request.body as { from: string; to: string; digest?: string; events?: number };
+
+    const realm = await new RealmService(fastify.db).byName(realmName);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const decision = await new DecisionService(fastify.db)
+      .check(realm.realmId, caller.subjectId, caller.clientId, 'auditEvents', 'view');
+    if (decision.effect !== 'allow') {
+      return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
+    }
+
+    const service = new TrailDigestService(fastify.db, new KeyRing(new MongoSigningKeyStore(fastify.db)));
+
+    if (body.digest !== undefined) {
+      const verdict = await service.verify(realm.realmId, {
+        from: body.from, to: body.to, digest: body.digest, events: body.events ?? -1,
+      });
+      return reply.send({ from: body.from, to: body.to, ...verdict });
+    }
+
+    return reply.send(await service.seal(
+      realm.realmId, new Date(body.from), new Date(body.to), realm.issuer,
+    ));
   });
 }

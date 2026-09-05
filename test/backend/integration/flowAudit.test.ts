@@ -202,10 +202,30 @@ describe('v41 P10: the console adds no filtering of its own', () => {
 
   it('pages on the server, so there is something beyond the first batch', async () => {
     if (!live || !token) return;
-    const firstPage = await (await query('limit=2&offset=0')).json() as { events: Array<{ ts: string }> };
-    const secondPage = await (await query('limit=2&offset=2')).json() as { events: Array<{ ts: string }> };
-    if (firstPage.events.length < 2 || secondPage.events.length === 0) return;
-    expect(secondPage.events[0].ts).not.toBe(firstPage.events[0].ts);
+    /**
+     * Asserted as "the offset page IS the tail of the wider page", not as "the timestamps differ".
+     *
+     * The first version compared `ts` between pages and was flaky in a full run: events are ordered
+     * by time and several are written within the same millisecond, so two pages legitimately begin
+     * at the same timestamp. `ts` is an ordering key and not an identity, and a test that treats it
+     * as one fails on the data rather than on the behaviour.
+     */
+    /**
+     * Both reads are bounded by the same `to`, and that is the point rather than a workaround.
+     *
+     * The first two versions of this test compared two unbounded reads and were flaky in a full
+     * run, for a reason that is a property of offset paging rather than a defect: the trail is
+     * being WRITTEN to continuously, so events land at the top between the two requests and shift
+     * everything down. Paging an unbounded, growing collection by offset cannot be stable, and a
+     * caller that needs a stable page must bound it. The API documents that now.
+     */
+    const bound = `to=${encodeURIComponent(new Date(Date.now() - 5_000).toISOString())}`;
+    const wide = await (await query(`limit=4&offset=0&${bound}`)).json() as { events: Array<Record<string, unknown>> };
+    if (wide.events.length < 4) return;
+
+    const offset = await (await query(`limit=2&offset=2&${bound}`)).json() as { events: Array<Record<string, unknown>> };
+    expect(offset.events).toHaveLength(2);
+    expect(offset.events).toEqual(wide.events.slice(2, 4));
   });
 
   /** The filters that were applied in the browser, which is a presentation choice and not a control. */

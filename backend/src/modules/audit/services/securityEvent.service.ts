@@ -308,7 +308,19 @@ export class SecurityEventService {
     return this.db
       .collection<AuditRecord>(AUDIT_COLLECTION)
       .find(this.toQuery(filter), { projection: { _id: 0 } })
-      .sort({ ts: -1 })
+      /**
+       * A TIEBREAK, and it is not cosmetic.
+       *
+       * Sorting by `ts` alone is not a total order: security events arrive in bursts around a
+       * sign-in and many share a millisecond, so the order among ties is whatever the engine
+       * returns. That is harmless when reading one page and wrong the moment paging exists, because
+       * two requests can order the ties differently and an event then appears on both pages or on
+       * neither. On an evidence trail, "or on neither" means an auditor paging through misses one.
+       *
+       * `_id` is unique per measurement, so `{ts, _id}` is total. It is still projected away: it is
+       * an ordering key here and not something a caller needs.
+       */
+      .sort({ ts: -1, _id: -1 })
       .skip(filter.offset ?? 0)
       .limit(Math.min(filter.limit ?? 100, 500))
       .toArray();
