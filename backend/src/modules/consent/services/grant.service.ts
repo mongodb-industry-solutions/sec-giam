@@ -5,6 +5,7 @@ import { listOAuthClients } from '../../oauth/services/clientAuth.service';
 import { GrantRecord, grantedScopes, missingFrom } from '../models/grant.model';
 import { OAuthClient } from '../../oauth/models/client.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
+import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 
@@ -286,6 +287,30 @@ export class GrantService {
       },
     });
 
+    /**
+     * Tell the resource servers, because otherwise they will not find out.
+     *
+     * `token-claims-change` is the CAEP event for exactly this: what a token says about its holder
+     * is no longer what the authority would say now. A resource server verifying locally reads a
+     * signature and an expiry and never calls back, so without this it keeps honouring a scope the
+     * person withdrew until the token expires.
+     *
+     * Only on a NARROWING. Widening gives a token less authority than the grant now allows, which
+     * is safe to discover late: the next token carries it. Signalling both would train receivers to
+     * treat the event as routine, and the whole value of this one is that it is not.
+     */
+    if (removed.length > 0) {
+      await new SignalDispatcher(this.db).dispatch({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        event: 'token-claims-change',
+        subjectId,
+        reason: `scope narrowed: ${removed.join(' ')} withdrawn from ${record.clientId}`,
+        category: 'consent',
+        target: { type: 'grant', ref: grantId },
+      });
+    }
+
     return { before, after, added, removed, clientId: record.clientId };
   }
 
@@ -308,6 +333,23 @@ export class GrantService {
       clientId: record.clientId,
       target: { type: 'grant', ref: grantId },
       detail: { scope: grantedScopes(record) },
+    });
+
+    /**
+     * The same signal as a narrowing, because withdrawal IS a narrowing to nothing.
+     *
+     * Sent after the event is recorded rather than before: the trail is the account of what
+     * happened, and a receiver told about something the trail does not hold is a receiver acting on
+     * an event nobody can later evidence.
+     */
+    await new SignalDispatcher(this.db).dispatch({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      event: 'token-claims-change',
+      subjectId,
+      reason: `consent withdrawn from ${record.clientId}`,
+      category: 'consent',
+      target: { type: 'grant', ref: grantId },
     });
     return true;
   }

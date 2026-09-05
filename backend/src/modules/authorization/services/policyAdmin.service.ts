@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import { recordConfigurationChange } from '../../audit/services/configurationChange';
 import { v4 as uuidv4 } from 'uuid';
 import { POLICY_COLLECTION } from '../../../shared/models/collections';
 import { newMeta, touchMeta } from '../../../shared/models/base.model';
@@ -268,6 +269,9 @@ export class PolicyAdminService {
   async update(
     realmId: string,
     policyId: string,
+    /** Who is changing it. Never inferred: a change nobody can attribute is one that should not be possible. */
+    actorSubjectId: string,
+    tenantId: string,
     patch: {
       version?: number; status?: PolicyRecord['status']; effect?: 'allow' | 'deny';
       permissions?: string[]; resource?: PolicyRecord['resource']; principals?: string[];
@@ -294,6 +298,25 @@ export class PolicyAdminService {
     if (Object.keys(changes).length > 0) {
       await this.policies.updateOne({ realmId, policyId }, { $set: { ...changes, meta: touchMeta(policy.meta) } });
     }
+
+    /**
+     * Recorded with the value BEFORE and after, which `meta.version` cannot express.
+     *
+     * A policy decides who may do what, so "who changed this from allow to deny, and when" is the
+     * question an investigation asks first. It was unanswerable: the version counter moved and
+     * nothing recorded which attribute did.
+     */
+    await recordConfigurationChange(this.db, {
+      realmId,
+      tenantId,
+      what: 'policy',
+      ref: policyId,
+      operation: 'updated',
+      actorSubjectId,
+      before: policy as unknown as Record<string, unknown>,
+      after: { ...policy, ...changes } as unknown as Record<string, unknown>,
+    });
+
     return await this.detail(realmId, policyId);
   }
 
