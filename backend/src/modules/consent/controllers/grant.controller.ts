@@ -32,13 +32,21 @@ export async function grantController(fastify: FastifyInstance) {
   const grantView = {
     type: 'object',
     additionalProperties: false,
-    required: ['grantId', 'clientId', 'clientName', 'scopes', 'status', 'grantedAt'],
+    required: ['grantId', 'clientId', 'clientName', 'scopes', 'registeredScopes', 'status', 'grantedAt'],
     properties: {
       grantId: { type: 'string' },
       clientId: { type: 'string' },
       clientName: { type: 'string' },
       logoUri: { type: 'string' },
-      scopes: { type: 'array', items: { type: 'string' } },
+      scopes: { type: 'array', items: { type: 'string' }, description: 'What this application currently holds.' },
+      registeredScopes: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Everything the client is registered for, which is the ceiling a scope change is bounded '
+          + 'by. Both halves travel together so a caller can offer the choice, rather than only ever '
+          + 'taking permissions away.',
+      },
       status: { type: 'string', enum: ['active', 'revoked'] },
       grantedAt: { type: 'string' },
       revokedAt: { type: 'string' },
@@ -49,6 +57,7 @@ export async function grantController(fastify: FastifyInstance) {
       clientId: 'acme-portal',
       clientName: 'Acme Portal',
       scopes: ['openid', 'profile'],
+      registeredScopes: ['openid', 'profile', 'email'],
       status: 'active',
       grantedAt: '2026-08-01T10:22:00.000Z',
     }],

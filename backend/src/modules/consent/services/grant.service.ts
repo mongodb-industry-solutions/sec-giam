@@ -23,6 +23,15 @@ export interface GrantView {
   clientName: string;
   logoUri?: string;
   scopes: string[];
+  /**
+   * Everything the client is REGISTERED for, which is the ceiling a scope change is bounded by.
+   *
+   * Travels with the grant because a caller offering the person a choice needs both halves: what is
+   * held, and what could be. Without it a console can only ever take permissions away, and declining
+   * one at consent time becomes a decision that cannot be undone. It costs no extra read, the client
+   * record is already loaded here for the name.
+   */
+  registeredScopes: string[];
   status: 'active' | 'revoked' | 'expired';
   grantedAt: string;
   revokedAt?: string;
@@ -118,6 +127,7 @@ export class GrantService {
         clientName: client?.clientName ?? grant.clientId,
         ...(client?.logoUri ? { logoUri: client.logoUri } : {}),
         scopes: grantedScopes(grant),
+        registeredScopes: (client?.scope ?? '').split(' ').filter(Boolean),
         status: grant.status,
         grantedAt: grant.grantedAt,
         ...(grant.revokedAt ? { revokedAt: grant.revokedAt } : {}),

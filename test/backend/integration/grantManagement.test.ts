@@ -34,7 +34,7 @@ const THIRD_PARTY = (() => {
   };
 })();
 
-interface Grant { grantId: string; clientId: string; scopes: string[] }
+interface Grant { grantId: string; clientId: string; scopes: string[]; registeredScopes: string[] }
 
 describe('v41 P6: changing what an application holds', () => {
   let live = false;
@@ -161,6 +161,31 @@ describe('v41 P6: changing what an application holds', () => {
     expect(after?.scopes ?? []).not.toContain(beyond);
   });
 
+  /**
+   * Without this a console can only ever take permissions away.
+   *
+   * The ceiling has to travel WITH the grant, because a person restoring something they declined
+   * needs to be offered it, and what is held does not say what could be. The two together are what
+   * makes consent reversible rather than a one-way door.
+   */
+  it('publishes the ceiling alongside what is held, so a choice can be offered', async () => {
+    if (!live || !token || !THIRD_PARTY.clientId) return;
+    const grant = await grantForThirdParty();
+    if (!grant) return;
+
+    expect(Array.isArray(grant.registeredScopes)).toBe(true);
+    expect(grant.registeredScopes.length, 'the registration must be published').toBeGreaterThan(0);
+
+    // Everything held is within the ceiling, or the ceiling is not one.
+    for (const scope of grant.scopes) {
+      expect(grant.registeredScopes, `${scope} is held but not registered`).toContain(scope);
+    }
+
+    // And it agrees with what the change endpoint enforces: a scope outside it is refused.
+    const beyond = 'still-not-a-registered-scope';
+    expect(grant.registeredScopes).not.toContain(beyond);
+    expect((await change(grant.grantId, [...grant.scopes, beyond])).status).toBe(400);
+  });
   it('answers 404 for a grant that is not this person\'s, rather than acting on it', async () => {
     if (!live || !token) return;
     const response = await change('a-grant-that-does-not-exist', ['openid']);
