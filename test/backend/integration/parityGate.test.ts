@@ -28,7 +28,7 @@ interface IdentityFixture {
 interface CredentialFixture {
   subjectId: string;
   type: string;
-  secretHash?: string;
+  hash?: string;
 }
 
 const identities = JSON.parse(readFileSync(resolve(DATA, 'identities.json'), 'utf8')) as IdentityFixture[];
@@ -54,9 +54,9 @@ beforeAll(async () => {
 
   realmName = identities[0].realm;
 
-  const sample = credentials.find((credential) => credential.type === 'password' && credential.secretHash);
+  const sample = credentials.find((credential) => credential.type === 'password' && credential.hash);
   for (const candidate of CANDIDATES) {
-    if (sample?.secretHash && await bcrypt.compare(candidate, sample.secretHash)) {
+    if (sample?.hash && await bcrypt.compare(candidate, sample.hash)) {
       demoPassword = candidate;
       break;
     }
@@ -77,11 +77,19 @@ async function signIn(login: string, password: string) {
 
 describe('v39 P5.8: the population is what it was', () => {
   it('carries every principal the platform could sign in', () => {
-    // Asserted exactly rather than "more than zero": a migration that silently dropped twelve people
-    // would pass any looser check. 68 came across; the 69th was added afterwards so that every role
-    // offers two demo personas, and a change to this number belongs in a diff.
-    expect(identities).toHaveLength(69);
-    expect(new Set(identities.map((identity) => identity.subjectId)).size).toBe(69);
+    /**
+     * Asserted exactly rather than "more than zero": a migration that silently dropped twelve
+     * people would pass any looser check.
+     *
+     * 68 came across; the 69th was added so every role offers two demo personas; the 70th arrived
+     * with the `client_administrator` role and this number was NOT updated, so the gate had been
+     * failing and was filed as known-red rather than read. Updated in v40, which is what the
+     * instruction below always asked for.
+     */
+    expect(identities).toHaveLength(70);
+    // And every one distinct. Equal to the count above rather than a second literal, so the two can
+    // never disagree: a duplicated subject id would otherwise satisfy the length and go unnoticed.
+    expect(new Set(identities.map((identity) => identity.subjectId)).size).toBe(identities.length);
   });
 
   it('carries a credential for every principal that had one', () => {
@@ -119,6 +127,10 @@ describe('v39 P5.8: the population is what it was', () => {
       merchant_officer: 3,
       operations_officer: 2,
       manager: 2,
+      // Arrived with the role of the same name and was missing from this histogram, which is why
+      // the gate failed. One holder, because it administers applications rather than being a
+      // persona a presenter switches into.
+      client_administrator: 1,
     });
   });
 
@@ -183,15 +195,25 @@ describe('v39 P5.8: every seeded principal signs in with today credentials', () 
     expect(unknown.json()).toEqual(wrong.json());
   });
 
-  it('refuses a principal from another realm', async () => {
-    // Realm isolation at the authentication step, before any token exists: a principal seeded in one
-    // realm is simply not present in another, and that is what makes the boundary structural.
-    const otherRealm = realmName === 'leafypay' ? 'bankcore' : 'leafypay';
+  it('refuses a sign-in addressed to a realm that does not exist', async () => {
+    /**
+     * This asserted realm ISOLATION, and ADR-003 left it nothing to isolate from.
+     *
+     * The property was that a principal seeded in one realm is simply not present in another. It is
+     * still true of the model and it is no longer demonstrable here, because the group runs one
+     * realm: the bank is a client in it, separated by its own resource server, roles and token
+     * audience rather than by a directory of its own. A second bank would restore the case.
+     *
+     * What remains testable is the half that does not need two realms: credentials are resolved
+     * WITHIN a named realm, so a sign-in addressed to a realm that does not exist cannot succeed on
+     * the strength of a valid password. Weakened deliberately and said so, rather than deleted,
+     * because a test quietly removed is a property nobody remembers was checked.
+     */
     const response = await app.inject({
       method: 'POST',
-      url: `/realms/${otherRealm}/login`,
+      url: '/realms/a-realm-that-does-not-exist/login',
       payload: { login: identities[0].userName, password: demoPassword as string },
     });
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(404);
   });
 });

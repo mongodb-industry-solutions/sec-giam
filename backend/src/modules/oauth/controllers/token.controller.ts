@@ -6,17 +6,19 @@ import { TokenIssuer } from '../services/tokenIssuer.service';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { AUTHORIZATION_REQUEST_COLLECTION } from '../../../shared/models/collections';
-import { AuthorizationRequestRecord, isRedeemable } from '../models/authorizationRequest.model';
-import { scopesOf, ClientRecord } from '../models/client.model';
+import { TICKET_COLLECTION } from '../../../shared/models/collections';
+import { TicketRecord, isRedeemable } from '../models/ticket.model';
+import { scopesOf, OAuthClient } from '../models/client.model';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { BackchannelService, isFailure, BACKCHANNEL_GRANT } from '../../authentication/services/backchannel.service';
 import { TokenExchangeService, isRefusal, TOKEN_EXCHANGE_GRANT } from '../services/tokenExchange.service';
 import { DelegationExchangeService, isDelegationRefusal } from '../services/delegationExchange.service';
 import { JwtTokenFormat } from '../services/jwtTokenFormat';
-import { SecurityEventService, classifyFailure, hashIp, hashState } from '../../audit/services/securityEvent.service';
+import { SecurityEventService, classifyFailure, hashIp } from '../../audit/services/securityEvent.service';
 import { GrantService } from '../../consent/services/grant.service';
 import { RealmRecord } from '../../realm/models/realm.model';
+import { oauthError } from '../../../shared/models/problem';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 
 /**
  * The token endpoint, RFC 6749.
@@ -32,8 +34,20 @@ import { RealmRecord } from '../../realm/models/realm.model';
 export async function tokenController(fastify: FastifyInstance) {
   const ring = () => new KeyRing(new MongoSigningKeyStore(fastify.db));
 
-  function fail(reply: never | { status: (code: number) => { send: (body: unknown) => unknown } }, status: number, error: string, description?: string) {
-    return reply.status(status).send({ error, ...(description ? { error_description: description } : {}) });
+  /**
+   * One error shape, built by `oauthError` like every other OAuth surface.
+   *
+   * It assembled the object inline, which is why the codes here were already right while the
+   * authorization endpoint's were all `invalid_request`: two helpers, one correct. Typing the code
+   * to `OAuthErrorCode` is what stops a typo reaching a client as an error it cannot switch on.
+   */
+  function fail(
+    reply: never | { status: (code: number) => { send: (body: unknown) => unknown } },
+    status: number,
+    error: OAuthErrorCode,
+    description?: string,
+  ) {
+    return reply.status(status).send(oauthError(error, description, status));
   }
 
   /**
@@ -47,7 +61,7 @@ export async function tokenController(fastify: FastifyInstance) {
     realm: RealmRecord,
     input: {
       grantType: string;
-      client: ClientRecord;
+      client: OAuthClient;
       subjectId?: string;
       scope: string[];
       onBehalf?: boolean;
@@ -55,6 +69,8 @@ export async function tokenController(fastify: FastifyInstance) {
       ipHash?: string;
       transactionId?: string;
       delegationId?: string;
+      /** The `jti` of the access token minted, so the trail can name the exact token. */
+      jti?: string;
     },
   ) {
     const forPerson = Boolean(input.subjectId) && input.subjectId !== input.client.clientId;
@@ -75,6 +91,12 @@ export async function tokenController(fastify: FastifyInstance) {
         grantType: input.grantType,
         clientName: input.client.clientName,
         scope: input.scope,
+        /**
+         * The token's own identifier, recorded so an investigation can name THE token involved
+         * rather than "a token for that subject around that time". That is the main reason RFC 9068
+         * makes `jti` required, and it was minted and then thrown away.
+         */
+        ...(input.jti ? { jti: input.jti } : {}),
         // The plain-language distinction the trail exists to answer.
         actedFor: !forPerson ? 'itself' : input.onBehalf ? 'the principal' : 'the signed-in person',
       },
@@ -118,6 +140,15 @@ export async function tokenController(fastify: FastifyInstance) {
           code_verifier: { type: 'string' },
           refresh_token: { type: 'string' },
           scope: { type: 'string' },
+          resource: {
+            description:
+              'RFC 8707 resource indicators: which API this token is for. Repeatable. Narrows the '
+              + 'audience within what the client registration allows; a resource outside it is '
+              + 'refused with invalid_target rather than silently dropped.',
+            oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+            examples: ['https://api.example'],
+          },
+          entitlements: { type: 'string', description: 'Space delimited resource:action strings, to obtain a NARROWER token than the roles alone would give. Intersected with what the roles grant, never unioned. Named for the claim it populates, RFC 9068 section 2.2.3.1.' },
           client_id: { type: 'string' },
           client_secret: { type: 'string' },
         },
@@ -147,6 +178,27 @@ export async function tokenController(fastify: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>;
     const grantType = String(body.grant_type ?? '');
 
+    /**
+     * Entitlements the client asked for, to obtain a NARROWER token than its roles would give.
+     *
+     * Space delimited, like `scope`, because it is the same kind of list and a client should not
+     * have to encode two list formats in one request. Intersected with what the roles grant by the
+     * issuer, never unioned, so asking cannot widen.
+     *
+     * Named `entitlements` to match the claim it populates. The dangling "like ," in the previous
+     * comment was a sentence that lost its subject when the parameter was last renamed.
+     */
+    const requestedPermissions = String(body.entitlements ?? '').split(' ').filter(Boolean);
+
+    /**
+     * Resource indicators, RFC 8707. Repeatable, so both shapes arrive.
+     *
+     * Form encoding gives a string for one occurrence and an array for several, and the parser does
+     * not normalise it. Handled here rather than at four call sites.
+     */
+    const resources = (Array.isArray(body.resource) ? body.resource : [body.resource])
+      .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+
     // The request's own correlator until a redemption can be tied to the authorization that produced
     // it, at which point it becomes the flow's. Reassignable for exactly that reason.
     let correlationId = request.correlationId;
@@ -161,7 +213,7 @@ export async function tokenController(fastify: FastifyInstance) {
     const context: { clientId?: string; clientName?: string; subjectId?: string } = {};
 
     /** Refuses and records. Repeated refusals for one account are themselves worth seeing. */
-    const refuse = (status: number, error: string, description?: string) => {
+    const refuse = (status: number, error: OAuthErrorCode, description?: string) => {
       void new SecurityEventService(fastify.db).record({
         realmId: realm.realmId,
         tenantId: realm.tenantId,
@@ -194,7 +246,7 @@ export async function tokenController(fastify: FastifyInstance) {
       // consumer that has not registered yet, not a consumer that failed to authenticate.
       allowSoftAdmission: true,
     });
-    if ('error' in outcome) return refuse(401, outcome.error, outcome.description);
+    if ('error' in outcome) return refuse(401, outcome.error as OAuthErrorCode, outcome.description);
     const { client, softAdmitted } = outcome;
     context.clientId = client.clientId;
     context.clientName = client.clientName;
@@ -222,48 +274,112 @@ export async function tokenController(fastify: FastifyInstance) {
       const invalid = requested.filter((scope) => !allowed.includes(scope));
       if (invalid.length > 0) return refuse(400, 'invalid_scope', `not permitted: ${invalid.join(' ')}`);
 
+      /**
+       * The `sub` is the principal the registration ACTS AS, and it must be a real one.
+       *
+       * An application is not a principal here, deliberately: that would make a principal able to
+       * own a principal, which is recursive, and every ownership query would have to decide how deep
+       * to look. So the grant issues a token whose subject is the OWNING principal, of kind
+       * `service` or `workload`. That is better than the alternative rather than a workaround, since
+       * a service token is then attributable to a subject with a lifecycle and an owner instead of
+       * to an abstract application that answers for nothing.
+       *
+       * Refused when the owner is neither kind, because a token issued as a person for a machine
+       * grant is an attribution nobody could defend afterwards.
+       */
+      const owner = await new DirectoryService(fastify.db).findBySubjectId(client.clientId);
+      if (!owner) {
+        return refuse(400, 'invalid_client', 'this registration names no principal to act as');
+      }
+      if (owner.kind !== 'service' && owner.kind !== 'workload') {
+        return refuse(
+          400,
+          'unauthorized_client',
+          'client_credentials issues a token as the owning principal, which must be a service or a workload',
+        );
+      }
+
       // A machine principal's permissions are resolved exactly as a person's are, from the roles
-      // assigned to it. That is the one-pipeline rule at the authorization step: a service identity
-      // is not a special case that skips the decision point.
+      // it holds. That is the one-pipeline rule at the authorization step: a service identity is not
+      // a special case that skips the decision point.
       const machine = await new DecisionService(fastify.db)
-        .effectivePermissions(realm.realmId, client.clientId, client.clientId);
+        .effectivePermissions(realm.realmId, owner.subjectId, client.clientId);
 
       const scope = requested.length > 0 ? requested : allowed;
       const tokens = await issuer.issue({
         realm,
         client,
-        subjectId: client.clientId,
+        ...(resources.length ? { resources } : {}),
+        subjectId: owner.subjectId,
         scope,
         permissions: machine.permissions,
         roles: machine.roles,
       });
-      recordIssued(realm, { grantType, client, subjectId: client.clientId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: owner.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       return reply.send(tokens);
     }
 
     if (grantType === 'refresh_token') {
       const presentedToken = String(body.refresh_token ?? '');
-      const record = await issuer.findRefreshToken(realm.realmId, presentedToken);
-      if (!record || record.clientId !== client.clientId) {
-        return refuse(400, 'invalid_grant', 'unknown refresh token');
-      }
-      // Named before the validity checks, so a refusal is recorded against the account it concerns.
-      context.subjectId = record.subjectId;
-      if (record.revokedAt || Date.parse(record.expiresAt) < Date.now()) {
+
+      /**
+       * Rotation with reuse detection, against one integer on the session.
+       *
+       * Redemption verifies the token, compares its generation against the session's, and increments
+       * atomically. Nothing is looked up in a token collection, because no token was ever stored.
+       */
+      const redeemed = await issuer.redeemRefresh(realm.realmId, presentedToken);
+      // Named before the refusal is written, so it is recorded against the account it concerns.
+      context.subjectId = redeemed.subjectId;
+
+      if (!redeemed.ok) {
+        if (redeemed.cause === 'reuse_detected') {
+          /**
+           * A token that had already been rotated was presented again.
+           *
+           * The legitimate holder cannot do this: they hold the token they were last given. So the
+           * assumption is theft, the WHOLE SESSION has been deleted, and this is recorded as its own
+           * event rather than as an ordinary invalid_grant. Refusing only this one token would have
+           * left the next attempt equally cheap.
+           */
+          await new SecurityEventService(fastify.db).record({
+            realmId: realm.realmId,
+            tenantId: realm.tenantId,
+            category: 'token',
+            action: 'oauth.refresh.reuse_detected',
+            outcome: 'failure',
+            cause: 'refresh_token_replayed',
+            clientId: client.clientId,
+            ...(redeemed.subjectId ? { subjectId: redeemed.subjectId } : {}),
+            ...(redeemed.subjectId ? { stakeholderSubjectIds: [redeemed.subjectId] } : {}),
+            ...(redeemed.sessionId ? { target: { type: 'session', ref: redeemed.sessionId } } : {}),
+            correlationId,
+            ...(ipHash ? { ipHash } : {}),
+            detail: {
+              outcome: 'session deleted',
+              reason:
+                'a refresh token that had already been rotated was presented again, so the session '
+                + 'is assumed compromised and every access under it ends',
+            },
+          });
+          return refuse(400, 'invalid_grant', 'refresh token has already been used');
+        }
         return refuse(400, 'invalid_grant', 'refresh token is no longer valid');
       }
 
-      // Rotation: the presented token is retired as it is redeemed, so a stolen copy is usable at
-      // most once and its use is detectable afterwards.
-      await issuer.revoke(realm.realmId, record.jti, 'rotated');
+      if (redeemed.clientId !== client.clientId) {
+        return refuse(400, 'invalid_grant', 'unknown refresh token');
+      }
 
       const directory = new DirectoryService(fastify.db);
-      const identity = record.subjectId ? await directory.findBySubjectId(record.subjectId) : null;
-      if (record.subjectId && !identity) {
+      const identity = redeemed.subjectId ? await directory.findBySubjectId(redeemed.subjectId) : null;
+      if (redeemed.subjectId && !identity) {
         return refuse(400, 'invalid_grant', 'subject no longer exists');
       }
 
-      const scope = record.scope.split(' ').filter(Boolean);
+      // The scope comes from the grant that established the session rather than from a stored token
+      // row, since there is no longer one to read it back from.
+      const scope = String(body.scope ?? '').split(' ').filter(Boolean);
       /**
        * Resolved again, exactly as every other grant resolves it.
        *
@@ -276,23 +392,27 @@ export async function tokenController(fastify: FastifyInstance) {
        * permission withdrawn while a session is live must not survive in a refresh, which is the whole
        * reason access tokens are short.
        */
-      const decision = record.subjectId
+      const decision = redeemed.subjectId
         ? await new DecisionService(fastify.db)
-          .effectivePermissions(realm.realmId, record.subjectId, client.clientId)
+          .effectivePermissions(realm.realmId, redeemed.subjectId, client.clientId)
         : null;
 
       const tokens = await issuer.issue({
         realm,
         client,
-        subjectId: record.subjectId,
+        ...(resources.length ? { resources } : {}),
+        subjectId: redeemed.subjectId,
+        // The flow the presented refresh token belongs to, so a rotation chain reads as one flow.
+        ...(redeemed.txn ? { txn: redeemed.txn } : {}),
         scope,
-        sessionId: record.sessionId,
+        sessionId: redeemed.sessionId,
         sessionEpoch: identity?.sessionEpoch,
         ...(decision ? { permissions: decision.permissions, roles: decision.roles } : {}),
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity?.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         includeRefreshToken: true,
       });
-      recordIssued(realm, { grantType, client, subjectId: record.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: redeemed.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       return reply.send(tokens);
     }
 
@@ -301,7 +421,7 @@ export async function tokenController(fastify: FastifyInstance) {
       if (!code) return refuse(400, 'invalid_grant', 'code is required');
 
       const codeHash = createHash('sha256').update(code).digest('hex');
-      const requests = fastify.db.collection<AuthorizationRequestRecord>(AUTHORIZATION_REQUEST_COLLECTION);
+      const requests = fastify.db.collection<TicketRecord>(TICKET_COLLECTION);
       const pending = await requests.findOne({ realmId: realm.realmId, codeHash }, { projection: { _id: 0 } });
 
       if (!pending || pending.clientId !== client.clientId) {
@@ -310,13 +430,13 @@ export async function tokenController(fastify: FastifyInstance) {
       context.subjectId = pending.subjectId;
       // From here the redemption belongs to the authorization that produced the code, so it carries
       // that flow's correlator rather than this request's. Derived, never the state itself.
-      if (pending.state) correlationId = hashState(pending.state);
+
       if (pending.status === 'consumed') {
         // A replay, and it is DETECTED rather than merely absent. Everything issued from the
         // original redemption is revoked, because a code arriving twice means one of the two
         // presenters is not the client.
         if (pending.subjectId) {
-          await issuer.revokeSession(realm.realmId, pending.requestId, 'code_replayed');
+          await issuer.revokeSession(realm.realmId, pending.requestId);
         }
         return refuse(400, 'invalid_grant', 'code has already been used');
       }
@@ -341,6 +461,9 @@ export async function tokenController(fastify: FastifyInstance) {
         return refuse(400, 'invalid_grant', 'this client requires PKCE');
       }
 
+      // Everything recorded from here belongs to the flow the ticket names, so the authorization and
+       // its redemption read as one story rather than two unrelated entries.
+      correlationId = pending.requestId;
       await requests.updateOne({ requestId: pending.requestId }, { $set: { status: 'consumed' } });
 
       const directory = new DirectoryService(fastify.db);
@@ -356,23 +479,22 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: identity.subjectId,
         scope,
         permissions: decision.permissions,
         roles: decision.roles,
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
+        // The ticket's own id IS the flow: allocated here, never derived from client input.
+        txn: pending.requestId,
         nonce: pending.nonce,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
-        idTokenClaims: {
-          name: identity.name?.formatted,
-          preferred_username: identity.userName,
-          ...(scope.includes('email') && identity.primaryEmail ? { email: identity.primaryEmail } : {}),
-        },
       });
 
-      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       // Redeeming a code is the moment the person's approval becomes an ongoing authorisation.
       await new GrantService(fastify.db).consent(realm, identity.subjectId, client, scope);
       return reply.send(tokens);
@@ -396,24 +518,23 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: identity.subjectId,
         scope,
         permissions: decision.permissions,
         roles: decision.roles,
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
+        // The claimed ticket IS the flow: allocated here, never derived from client input.
+        txn: claimed.requestId,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
-        idTokenClaims: {
-          name: identity.name?.formatted,
-          preferred_username: identity.userName,
-          ...(scope.includes('email') && identity.primaryEmail ? { email: identity.primaryEmail } : {}),
-        },
       });
 
       // push delivery carries the tokens to the client's endpoint as well. The poll that got here
       // already claimed the request, so this cannot produce a second set.
-      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash });
+      recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       // The person approved on their own device, so this is consent in exactly the sense the code
       // grant records it.
       await new GrantService(fastify.db).consent(realm, identity.subjectId, client, scope);
@@ -437,6 +558,19 @@ export async function tokenController(fastify: FastifyInstance) {
        * unless the realm and the target both permit it. Anything else is a delegated hop.
        */
       const wantsImpersonation = Boolean(body.requested_subject ?? body.audience);
+
+      /**
+       * The flow the SUBJECT TOKEN belongs to, so an exchange continues it rather than starting one.
+       *
+       * Read without verifying, and that is safe for this one purpose: both paths below verify the
+       * token before acting on it, and a correlator is a label rather than an authorisation. Reading
+       * it here means the delegated path and the impersonation path share one source instead of two
+       * that can disagree.
+       */
+      const subjectTxn = await new JwtTokenFormat(ring(), realm.realmId)
+        .inspect(String(body.subject_token ?? ''))
+        .then((claims) => (typeof claims?.txn === 'string' ? claims.txn : undefined))
+        .catch(() => undefined);
 
       if (!wantsImpersonation) {
         const inbound = await new JwtTokenFormat(ring(), realm.realmId)
@@ -464,11 +598,14 @@ export async function tokenController(fastify: FastifyInstance) {
         const tokens = await issuer.issue({
           realm,
           client,
+          ...(resources.length ? { resources } : {}),
           subjectId: hop.subjectId,
           scope: hop.scope,
           permissions: delegated.permissions,
           roles: delegated.roles,
           actor: hop.actor,
+          // Same flow as the token this hop was exchanged from.
+          ...(subjectTxn ? { txn: subjectTxn } : {}),
           // A delegated token that can renew itself outlives the delegation that produced it.
           includeRefreshToken: false,
         });
@@ -481,8 +618,9 @@ export async function tokenController(fastify: FastifyInstance) {
           onBehalf: true,
           correlationId,
           ipHash,
-          delegationId: hop.delegation.delegationId,
+          delegationId: hop.delegation.grantId,
           ...(body.transaction_id ? { transactionId: String(body.transaction_id) } : {}),
+          ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}),
         });
         return reply.send(tokens);
       }
@@ -505,12 +643,23 @@ export async function tokenController(fastify: FastifyInstance) {
       const tokens = await issuer.issue({
         realm,
         client,
+        ...(resources.length ? { resources } : {}),
         subjectId: identity.subjectId,
         scope: effective,
         permissions: decision.permissions,
         roles: decision.roles,
+        ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         sessionEpoch: identity.sessionEpoch,
+        /**
+         * A hop CONTINUES the flow of the token it was exchanged from.
+         *
+         * There is no ticket here, and inventing a new flow would be wrong rather than merely
+         * unhelpful: the whole reason an exchange is auditable is that the delegated token can be
+         * traced back to the authorization the person actually gave. `subjectTxn` is read off the
+         * verified subject token, so the chain stays one flow however many hops it runs to.
+         */
+        ...(subjectTxn ? { txn: subjectTxn } : {}),
         actor,
         // No refresh token. A delegated token that can renew itself outlives the reason it was
         // granted, and this one exists for the length of one demonstration.
@@ -524,6 +673,7 @@ export async function tokenController(fastify: FastifyInstance) {
         onBehalf: true,
         correlationId,
         ipHash,
+        ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}),
       });
       return reply.send(tokens);
     }

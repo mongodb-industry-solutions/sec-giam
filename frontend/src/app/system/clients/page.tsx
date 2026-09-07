@@ -14,6 +14,7 @@ import {
   ClientPage, PRIVILEGED_GRANTS, RegisteredClient, SELF_SERVICE_GRANTS, SELF_SERVICE_SCOPES,
   firstRedirectProblem, linesToUris, ownersLabel,
 } from '../../../lib/clients';
+import { usePermissions } from '../../../lib/profile';
 
 /**
  * The applications registered against this authority.
@@ -41,8 +42,9 @@ export default function ClientsPage() {
   const [creating, setCreating] = useState(false);
   const [minted, setMinted] = useState<RegisteredClient | null>(null);
   const [mayAdminister, setMayAdminister] = useState(false);
+  const { permissions } = usePermissions();
 
-  useEffect(() => { setMayAdminister(can(currentClaims(), 'clients', 'manage')); }, []);
+  useEffect(() => { setMayAdminister(can(currentClaims(), 'clients', 'manage')); }, [permissions]);
 
   const load = useCallback(async () => {
     setLoading(true);

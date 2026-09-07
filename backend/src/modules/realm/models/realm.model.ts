@@ -27,10 +27,13 @@ export interface RealmRecord extends Scoped {
   aliases: string[];
   /** Shown on the sign-in screen. Kept because the platform's domain notice is demo copy that matters. */
   notice?: string;
-  registration: {
-    selfServiceEnabled: boolean;
-    autoApprove: boolean;
-  };
+  /**
+   * Self-registration moved to `domain.registration` in ADR-002.
+   *
+   * It described the internal directory while sitting on the realm, and nobody self-registers into
+   * a federated upstream. Removed rather than deprecated: a setting readable from two places is one
+   * that will disagree with itself.
+   */
   /** Lifetimes, out of a service's hardcoding and onto the record an operator can edit. */
   tokenPolicy: {
     accessTokenTtlSeconds: number;
@@ -39,14 +42,15 @@ export interface RealmRecord extends Scoped {
     sessionIdleTtlSeconds: number;
     sessionMaxTtlSeconds: number;
   };
-  passwordPolicy: {
-    minLength: number;
-    requireUppercase: boolean;
-    requireNumber: boolean;
-    requireSymbol: boolean;
-    /** How many previous credentials may not be reused. Zero means no history is kept. */
-    historyDepth: number;
-  };
+  /**
+   * NO passwordPolicy here any more. It moved to the local `domain` (ADR section 3, P8.2).
+   *
+   * It sat on the realm while external providers carried their own rules, which was two places
+   * describing one thing: how a subject proves who they are. A realm offering both its own
+   * directory and an upstream had one policy describing one of them and nothing describing the
+   * other. The realm keeps only what is genuinely issuer level: the issuer URL, key references,
+   * token lifetimes, branding and registration policy.
+   */
   /**
    * How the sign-in page renders for this realm.
    *

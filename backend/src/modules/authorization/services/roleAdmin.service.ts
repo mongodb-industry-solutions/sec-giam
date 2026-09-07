@@ -1,13 +1,14 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_COLLECTION,
 } from '../../../shared/models/collections';
+import { RoleRecord } from '../models/authorization.model';
 import {
-  RoleRecord, RoleAssignmentRecord, RolePermission, PermissionRecord, ResourceServerRecord,
-  permissionKey,
-} from '../models/authorization.model';
+  PrincipalRecord, RoleHolding, isHoldingActive, MAX_ROLE_HOLDINGS,
+} from '../../directory/models/principal.model';
 import { newMeta, touchMeta } from '../../../shared/models/base.model';
+import { ResourceRecord, parsePermission, permissionString } from '../models/resource.model';
 
 /**
  * Administering roles: what they grant, what they inherit, and who holds them.
@@ -60,17 +61,29 @@ export interface RoleDetail extends RoleSummary {
   lastModified?: string;
 }
 
+/**
+ * One holding, as an administrator sees it.
+ *
+ * Identified by the PAIR `(subjectId, roleId)` rather than by an assignment id. An embedded entry
+ * has no independent identity, and inventing a synthetic one would be a key nothing enforces: the
+ * pair is already unique, because a subject either holds a role or does not.
+ */
 export interface AssignmentView {
-  assignmentId: string;
   subjectId: string;
+  /**
+   * The name behind the subject, so "who holds this role" reads as people.
+   *
+   * Free here: the principal is already being read to find the holding, so naming it costs no
+   * extra query. Absent only when the record carries no user name.
+   */
+  userName?: string;
   roleId: string;
   grantedAt: string;
   grantedBy?: string;
-  notBefore?: string;
   expiresAt?: string;
   ephemeral?: boolean;
   justification?: string;
-  /** False once an expiry has passed or a start has not arrived. Judged here, not by the sweep. */
+  /** False once an expiry has passed. Judged here, not by the sweep. */
   live: boolean;
 }
 
@@ -87,33 +100,53 @@ export class RoleAdminService {
     return this.db.collection<RoleRecord>(ROLE_COLLECTION);
   }
 
-  private get assignments() {
-    return this.db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
+  private get principals() {
+    return this.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   }
 
   /** Resource server ids to names, so a permission reads as text rather than as an identifier. */
   private async serverNames(realmId: string): Promise<Map<string, string>> {
     const servers = await this.db
-      .collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION)
-      .find({ realmId }, { projection: { _id: 0, resourceServerId: 1, name: 1 } })
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId }, { projection: { _id: 0, resourceId: 1, name: 1 } })
       .toArray();
-    return new Map(servers.map((server) => [server.resourceServerId, server.name]));
+    return new Map(servers.map((server) => [server.resourceId, server.name]));
   }
 
-  /** Every permission a resource server in this realm has actually declared. */
+  /**
+   * Every permission any resource in this realm actually declares.
+   *
+   * Built from `resource.actions[]` rather than read from a table of permission rows. The catalog
+   * belongs on the resource because a resource knows its own verbs, the list is bounded, and it is
+   * replaced as a block at deploy time; a separate row per permission was an identifier nobody
+   * referenced and a second place for the same fact to be wrong.
+   */
   private async declared(realmId: string): Promise<Set<string>> {
-    const permissions = await this.db
-      .collection<PermissionRecord>(PERMISSION_COLLECTION)
-      .find({ realmId, deprecated: { $ne: true } }, { projection: { _id: 0, resource: 1, action: 1 } })
+    const resources = await this.db
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId, status: { $ne: 'withdrawn' } }, { projection: { _id: 0, name: 1, actions: 1 } })
       .toArray();
-    return new Set(permissions.map((permission) => permissionKey(permission)));
+    const declared = new Set<string>();
+    for (const resource of resources) {
+      for (const action of resource.actions ?? []) declared.add(permissionString(resource.name, action));
+    }
+    return declared;
   }
 
+  /**
+   * How many principals hold each of these roles.
+   *
+   * The inverse question, which is what the multikey index on `{realmId, roles.roleId}` exists for.
+   * Lapsed holdings are counted too: "who used to have this" is the question after an incident, and
+   * an administrator deciding whether a role is safe to remove needs the real number.
+   */
   private async countAssignments(realmId: string, roleIds: string[]): Promise<Map<string, number>> {
     if (roleIds.length === 0) return new Map();
-    const counts = await this.assignments.aggregate<{ _id: string; total: number }>([
-      { $match: { realmId, roleId: { $in: roleIds } } },
-      { $group: { _id: '$roleId', total: { $sum: 1 } } },
+    const counts = await this.principals.aggregate<{ _id: string; total: number }>([
+      { $match: { realmId, 'roles.roleId': { $in: roleIds } } },
+      { $unwind: '$roles' },
+      { $match: { 'roles.roleId': { $in: roleIds } } },
+      { $group: { _id: '$roles.roleId', total: { $sum: 1 } } },
     ]).toArray();
     return new Map(counts.map((entry) => [entry._id, entry.total]));
   }
@@ -185,7 +218,7 @@ export class RoleAdminService {
         seen.add(id);
         const role = byId.get(id);
         if (!role) return;
-        for (const permission of role.permissions ?? []) keys.add(permissionKey(permission));
+        for (const permission of role.permissions ?? []) keys.add(permission);
         for (const parent of role.parentRoleIds ?? []) walk(parent, depth + 1);
       };
       walk(roleId, 0);
@@ -220,27 +253,31 @@ export class RoleAdminService {
     ]);
 
     const { role, inherited } = composed;
-    const describe = (permission: RolePermission, via: RoleRecord): ResolvedPermission => ({
-      resource: permission.resource,
-      action: permission.action,
-      resourceServer: names.get(permission.resourceServerId) ?? permission.resourceServerId,
-      via: via.name,
-      inherited: via.roleId !== roleId,
-      // A permission no resource server declares is enforceable by nothing, which is worth showing
-      // rather than leaving as a row that looks exactly like one that works.
-      unenforced: !declared.has(permissionKey(permission)),
-    });
+    const describe = (permission: string, via: RoleRecord): ResolvedPermission => {
+      const parsed = parsePermission(permission);
+      return {
+        resource: parsed?.resource ?? permission,
+        action: parsed?.action ?? '',
+        resourceServer: names.get(parsed?.resource ?? '') ?? (parsed?.resource ?? ''),
+        via: via.name,
+        inherited: via.roleId !== roleId,
+        // A permission no resource declares is enforceable by nothing, which is worth showing
+        // rather than leaving as an entry that looks exactly like one that works.
+        unenforced: !declared.has(permission),
+      };
+    };
 
     const own = (role.permissions ?? []).map((permission) => describe(permission, role));
 
     const effective = new Map<string, ResolvedPermission>();
-    for (const permission of own) effective.set(`${permission.resource}:${permission.action}`, permission);
+    for (const permission of role.permissions ?? []) {
+      effective.set(permission, describe(permission, role));
+    }
     for (const parent of inherited) {
       for (const permission of parent.permissions ?? []) {
-        const key = permissionKey(permission);
         // The role's own statement wins the attribution: a permission it holds directly is not
         // inherited, whatever a parent also happens to grant.
-        if (!effective.has(key)) effective.set(key, describe(permission, parent));
+        if (!effective.has(permission)) effective.set(permission, describe(permission, parent));
       }
     }
 
@@ -272,43 +309,50 @@ export class RoleAdminService {
   }
 
   /**
-   * Turns `resource:action` pairs into permissions bound to the resource server that declared them.
+   * Checks `resource:action` pairs against the catalogs and returns them as permission strings.
    *
-   * A pair no server declares is refused rather than stored: the authority may only grant what an
-   * application said it enforces, and a role granting something nothing checks is a role that
-   * appears to work and does not.
+   * P5.7. A pair whose resource type IS registered and whose verb that resource never declared is
+   * refused rather than stored: the authority may only grant what an application said it enforces,
+   * and a role granting something nothing checks is a role that appears to work and does not.
+   *
+   * A resource type nothing registers is a different case and is ALLOWED through: those are matched
+   * by pattern, they have no catalog to validate against, and refusing them would make it impossible
+   * to grant anything over a dynamically identified object.
    */
   private async bind(
     realmId: string,
     wanted: Array<{ resource: string; action: string }>,
-  ): Promise<RolePermission[] | RoleRefusal> {
+  ): Promise<string[] | RoleRefusal> {
     if (wanted.length === 0) return [];
-    const declared = await this.db
-      .collection<PermissionRecord>(PERMISSION_COLLECTION)
-      .find({ realmId }, { projection: { _id: 0, resourceServerId: 1, resource: 1, action: 1 } })
-      .toArray();
-    const byKey = new Map(declared.map((permission) => [permissionKey(permission), permission]));
 
-    const bound: RolePermission[] = [];
-    const unknown: string[] = [];
+    const resources = await this.db
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId }, { projection: { _id: 0, name: 1, actions: 1 } })
+      .toArray();
+    const catalog = new Map(resources.map((resource) => [resource.name, new Set(resource.actions ?? [])]));
+
+    const bound: string[] = [];
+    const undeclared: string[] = [];
     for (const permission of wanted) {
-      const match = byKey.get(permissionKey(permission));
-      if (!match) {
-        unknown.push(permissionKey(permission));
+      const key = permissionString(permission.resource, permission.action);
+      const actions = catalog.get(permission.resource);
+      // Registered resource, undeclared verb: that is the typo this catalog exists to catch.
+      if (actions && !actions.has(permission.action)) {
+        undeclared.push(key);
         continue;
       }
-      bound.push({ resourceServerId: match.resourceServerId, resource: match.resource, action: match.action });
+      bound.push(key);
     }
-    if (unknown.length > 0) {
+    if (undeclared.length > 0) {
       return {
         status: 400,
         title: 'Undeclared permission',
         detail:
-          `No resource server in this realm declares ${unknown.join(', ')}. A permission exists only `
-          + 'once the application that enforces it has registered its catalog.',
+          `No resource in this realm declares ${undeclared.join(', ')}. A permission exists only once `
+          + 'the application that enforces it has declared the action in its catalog.',
       };
     }
-    return bound;
+    return [...new Set(bound)].sort();
   }
 
   /** Refuses a parent that does not exist, or one that would close a cycle. */
@@ -458,7 +502,7 @@ export class RoleAdminService {
       };
     }
 
-    const held = await this.assignments.countDocuments({ realmId, roleId });
+    const held = await this.principals.countDocuments({ realmId, 'roles.roleId': roleId });
     if (held > 0) {
       return {
         status: 409,
@@ -484,31 +528,39 @@ export class RoleAdminService {
     return { removed: true };
   }
 
-  private static view(assignment: RoleAssignmentRecord, now = Date.now()): AssignmentView {
-    const started = !assignment.notBefore || Date.parse(assignment.notBefore) <= now;
-    const unexpired = !assignment.expiresAt || Date.parse(assignment.expiresAt) > now;
+  private static view(
+    subjectId: string,
+    holding: RoleHolding,
+    now = new Date(),
+    userName?: string,
+  ): AssignmentView {
     return {
-      assignmentId: assignment.assignmentId,
-      subjectId: assignment.subjectId,
-      roleId: assignment.roleId,
-      grantedAt: assignment.grantedAt,
-      ...(assignment.grantedBy ? { grantedBy: assignment.grantedBy } : {}),
-      ...(assignment.notBefore ? { notBefore: assignment.notBefore } : {}),
-      ...(assignment.expiresAt ? { expiresAt: assignment.expiresAt } : {}),
-      ...(assignment.ephemeral ? { ephemeral: assignment.ephemeral } : {}),
-      ...(assignment.justification ? { justification: assignment.justification } : {}),
-      live: started && unexpired,
+      subjectId,
+      ...(userName ? { userName } : {}),
+      roleId: holding.roleId,
+      grantedAt: holding.grantedAt,
+      ...(holding.grantedBy ? { grantedBy: holding.grantedBy } : {}),
+      ...(holding.expiresAt ? { expiresAt: holding.expiresAt } : {}),
+      ...(holding.ephemeral ? { ephemeral: holding.ephemeral } : {}),
+      ...(holding.justification ? { justification: holding.justification } : {}),
+      live: isHoldingActive(holding, now),
     };
   }
 
   /** Who holds a role, lapsed ones included: "who used to have this" is the question after an incident. */
   async assignmentsFor(realmId: string, roleId: string): Promise<AssignmentView[]> {
-    const held = await this.assignments
-      .find({ realmId, roleId }, { projection: { _id: 0 } })
-      .sort({ grantedAt: -1 })
+    const holders = await this.principals
+      .find({ realmId, 'roles.roleId': roleId }, { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } })
       .toArray();
-    const now = Date.now();
-    return held.map((assignment) => RoleAdminService.view(assignment, now));
+    const now = new Date();
+    const views: AssignmentView[] = [];
+    for (const holder of holders) {
+      for (const holding of holder.roles ?? []) {
+        if (holding.roleId !== roleId) continue;
+        views.push(RoleAdminService.view(holder.subjectId, holding, now, holder.userName));
+      }
+    }
+    return views.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
   }
 
   async grant(
@@ -519,23 +571,35 @@ export class RoleAdminService {
     const role = await this.roles.findOne({ realmId, roleId: input.roleId }, { projection: { _id: 0, roleId: 1 } });
     if (!role) return null;
 
-    const duplicate = await this.assignments.findOne(
-      { realmId, roleId: input.roleId, subjectId: input.subjectId },
-      { projection: { _id: 0, assignmentId: 1 } },
+    const principal = await this.principals.findOne(
+      { realmId, subjectId: input.subjectId },
+      { projection: { _id: 0, roles: 1 } },
     );
-    if (duplicate) {
+    if (!principal) return null;
+
+    const existing = principal.roles ?? [];
+    if (existing.some((holding) => holding.roleId === input.roleId)) {
       return {
         status: 409,
         title: 'Already assigned',
-        detail: 'That principal already holds this role. Revoke the existing assignment to change its terms.',
+        detail: 'That principal already holds this role. Revoke the existing holding to change its terms.',
       };
     }
 
-    const assignment: RoleAssignmentRecord = {
-      realmId,
-      tenantId,
-      assignmentId: uuidv4(),
-      subjectId: input.subjectId,
+    // The cap is what makes embedding safe. Refused rather than allowed to grow, because an
+    // unbounded array is the antipattern this model is built to avoid, and a subject approaching
+    // the cap is a subject whose entitlements belong in policy.
+    if (existing.length >= MAX_ROLE_HOLDINGS) {
+      return {
+        status: 409,
+        title: 'Too many roles held',
+        detail:
+          `That principal already holds ${existing.length} roles, which is the limit. Fine-grained `
+          + 'authority belongs in a policy rather than in more roles on one subject.',
+      };
+    }
+
+    const holding: RoleHolding = {
       roleId: input.roleId,
       grantedBy: input.grantedBy,
       grantedAt: new Date().toISOString(),
@@ -543,35 +607,138 @@ export class RoleAdminService {
       // the expiry rather than being asked for separately and getting out of step with it.
       ...(input.expiresAt ? { expiresAt: input.expiresAt, ephemeral: true } : {}),
       ...(input.justification ? { justification: input.justification } : {}),
-      meta: newMeta('RoleAssignment'),
     };
-    await this.assignments.insertOne(assignment);
-    return RoleAdminService.view(assignment);
+
+    // Guarded on the role being absent, so two concurrent grants cannot both append it.
+    const outcome = await this.principals.updateOne(
+      { realmId, subjectId: input.subjectId, 'roles.roleId': { $ne: input.roleId } },
+      { $push: { roles: holding } },
+    );
+    if (outcome.matchedCount === 0) {
+      return {
+        status: 409,
+        title: 'Already assigned',
+        detail: 'That principal already holds this role. Revoke the existing holding to change its terms.',
+      };
+    }
+    return RoleAdminService.view(input.subjectId, holding);
   }
 
-  /** Removes one assignment. The role and every other holder are untouched. */
-  async revoke(realmId: string, assignmentId: string): Promise<AssignmentView | null> {
-    const assignment = await this.assignments.findOne({ realmId, assignmentId }, { projection: { _id: 0 } });
-    if (!assignment) return null;
-    await this.assignments.deleteOne({ realmId, assignmentId });
-    return RoleAdminService.view(assignment);
+  /**
+   * Removes one holding. The role and every other holder are untouched.
+   *
+   * Keyed by the pair, because that is the holding's identity now that it lives inside the subject.
+   */
+  async revoke(realmId: string, subjectId: string, roleId: string): Promise<AssignmentView | null> {
+    const principal = await this.principals.findOne(
+      { realmId, subjectId },
+      { projection: { _id: 0, roles: 1 } },
+    );
+    const holding = (principal?.roles ?? []).find((entry) => entry.roleId === roleId);
+    if (!holding) return null;
+    await this.principals.updateOne({ realmId, subjectId }, { $pull: { roles: { roleId } } });
+    return RoleAdminService.view(subjectId, holding);
   }
 
-  /** Every permission any resource server in this realm declares, for building a role. */
-  async catalog(realmId: string): Promise<Array<{ resource: string; action: string; description: string; resourceServer: string; deprecated: boolean }>> {
-    const [names, permissions] = await Promise.all([
-      this.serverNames(realmId),
-      this.db.collection<PermissionRecord>(PERMISSION_COLLECTION)
-        .find({ realmId }, { projection: { _id: 0 } })
-        .sort({ resource: 1, action: 1 })
+  /**
+   * Removes every lapsed holding. Hygiene only.
+   *
+   * Correctness never depends on this running: an expired holding is already filtered out at read
+   * time, because a TTL index cannot reach an array element. This keeps documents from carrying
+   * dead entries forever, which is a storage-limitation concern rather than an access-control one.
+   */
+  async sweepExpiredHoldings(now: Date = new Date()): Promise<{ principalsTouched: number }> {
+    const outcome = await this.principals.updateMany(
+      { 'roles.expiresAt': { $lte: now.toISOString() } },
+      { $pull: { roles: { expiresAt: { $lte: now.toISOString() } } } },
+    );
+    return { principalsTouched: outcome.modifiedCount };
+  }
+
+  /**
+   * The catalog a resource server caches: permissions, roles expanded, and one version.
+   *
+   * P9.5. Expansion happens HERE, at the decision point, which is the whole reason a token can
+   * carry three roles instead of three hundred permissions. A resource server either calls the
+   * decision endpoint per request or reads this once and expands locally; the version is what lets
+   * it know when its copy went stale.
+   *
+   * The version is DERIVED as the highest catalogVersion any resource declares, rather than stored
+   * separately. A second number would be one more thing to forget to bump.
+   */
+  async publishedCatalog(realmId: string): Promise<{
+    catalogVersion: number;
+    roles: Array<{ name: string; permissions: string[] }>;
+    permissions: Awaited<ReturnType<RoleAdminService['catalog']>>;
+  }> {
+    const [permissions, resources, roles] = await Promise.all([
+      this.catalog(realmId),
+      this.db
+        .collection<ResourceRecord>(RESOURCE_COLLECTION)
+        .find({ realmId }, { projection: { _id: 0, catalogVersion: 1 } })
+        .toArray(),
+      this.roles
+        .find({ realmId }, { projection: { _id: 0, roleId: 1, name: 1, permissions: 1, parentRoleIds: 1 } })
         .toArray(),
     ]);
-    return permissions.map((permission) => ({
-      resource: permission.resource,
-      action: permission.action,
-      description: permission.description,
-      resourceServer: names.get(permission.resourceServerId) ?? permission.resourceServerId,
-      deprecated: Boolean(permission.deprecated),
-    }));
+
+    const byId = new Map(roles.map((role) => [role.roleId, role]));
+    const expand = (roleId: string): string[] => {
+      const seen = new Set<string>();
+      const held = new Set<string>();
+      const walk = (id: string, depth: number) => {
+        if (depth > MAX_COMPOSITION_DEPTH || seen.has(id)) return;
+        seen.add(id);
+        const role = byId.get(id);
+        if (!role) return;
+        for (const permission of role.permissions ?? []) held.add(permission);
+        for (const parent of role.parentRoleIds ?? []) walk(parent, depth + 1);
+      };
+      walk(roleId, 0);
+      return [...held].sort();
+    };
+
+    return {
+      catalogVersion: resources.reduce((highest, resource) => Math.max(highest, resource.catalogVersion ?? 0), 0),
+      roles: roles
+        .map((role) => ({ name: role.name, permissions: expand(role.roleId) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      permissions,
+    };
+  }
+
+  /**
+   * Every permission any resource in this realm declares, for building a role.
+   *
+   * Read from the resources themselves. A permission has no record of its own to carry a
+   * description, so the resource's own description answers for its whole catalog, which is where a
+   * reader would look anyway.
+   */
+  async catalog(realmId: string): Promise<Array<{
+    permission: string; resource: string; action: string; description: string; resourceServer: string;
+  }>> {
+    const resources = await this.db
+      .collection<ResourceRecord>(RESOURCE_COLLECTION)
+      .find({ realmId, status: { $ne: 'withdrawn' } }, { projection: { _id: 0 } })
+      .sort({ name: 1 })
+      .toArray();
+    const byId = new Map(resources.map((resource) => [resource.resourceId, resource]));
+
+    const catalog: Array<{
+      permission: string; resource: string; action: string; description: string; resourceServer: string;
+    }> = [];
+    for (const resource of resources) {
+      const parent = resource.parentResourceId ? byId.get(resource.parentResourceId) : undefined;
+      for (const action of resource.actions ?? []) {
+        catalog.push({
+          permission: permissionString(resource.name, action),
+          resource: resource.name,
+          action,
+          description: resource.description ?? '',
+          resourceServer: parent?.name ?? resource.name,
+        });
+      }
+    }
+    return catalog.sort((a, b) => a.permission.localeCompare(b.permission));
   }
 }

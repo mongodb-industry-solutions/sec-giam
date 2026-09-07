@@ -1,11 +1,15 @@
 import { Db } from 'mongodb';
 import {
-  ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, RESOURCE_SERVER_COLLECTION, REALM_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_COLLECTION, REALM_COLLECTION,
 } from '../../../shared/models/collections';
 import {
-  RoleRecord, RoleAssignmentRecord, ResourceServerRecord, EffectivePermission, permissionKey,
-  AdministrableRealm, assignmentAppliesIn, REALM_SCOPE_KIND,
+  RoleRecord, EffectivePermission,
+  AdministrableRealm, holdingAppliesIn, REALM_SCOPE_KIND,
 } from '../models/authorization.model';
+import { ResourceRecord, parsePermission, permissionString } from '../models/resource.model';
+import {
+  PrincipalRecord, RoleHolding, activeHoldings,
+} from '../../directory/models/principal.model';
 
 /**
  * The decision point: what a principal may actually do, right now.
@@ -26,22 +30,43 @@ export class DecisionService {
   constructor(private readonly db: Db) {}
 
   /**
-   * Live assignments for a subject.
+   * Live role holdings for a subject, read from the principal that holds them.
    *
-   * Expiry is judged here rather than left to the sweep: a time-bound elevation must stop granting
-   * the moment it lapses, not whenever the database next removes it.
+   * ONE read, which is the point of embedding them: this is the hottest path in the system and the
+   * referenced form was two reads plus a traversal.
+   *
+   * Expiry is judged here rather than left to the sweep, and that ordering is the correctness
+   * argument rather than an optimisation: a TTL index cannot reach an array element, so an expired
+   * holding is still physically present until a sweeper removes it. A time-bound elevation must stop
+   * granting the moment it lapses, not whenever the database next gets round to it.
    */
-  private async liveAssignments(realmId: string, subjectId: string): Promise<RoleAssignmentRecord[]> {
-    const now = new Date();
-    const held = await this.db
-      .collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION)
-      .find({ realmId, subjectId }, { projection: { _id: 0 } })
+  private async liveHoldings(realmId: string, subjectId: string): Promise<RoleHolding[]> {
+    const principal = await this.db
+      .collection<PrincipalRecord>(PRINCIPAL_COLLECTION)
+      .findOne({ realmId, subjectId }, { projection: { _id: 0, roles: 1 } });
+    if (!principal) return [];
+    return activeHoldings(principal);
+  }
+
+  /**
+   * The resource types one audience enforces, or null when nothing is registered for it.
+   *
+   * Null and empty mean different things and the difference decides whether a token carries
+   * anything: an audience with no registered resource is not narrowed at all, while a registered
+   * one that declares no child types narrows to nothing.
+   */
+  private async typesFor(realmId: string, audience: string): Promise<Set<string> | null> {
+    const resources = this.db.collection<ResourceRecord>(RESOURCE_COLLECTION);
+    const api = await resources.findOne(
+      { realmId, audience },
+      { projection: { _id: 0, resourceId: 1, name: 1 } },
+    );
+    if (!api) return null;
+    const children = await resources
+      .find({ realmId, parentResourceId: api.resourceId }, { projection: { _id: 0, name: 1 } })
       .toArray();
-    return held.filter((assignment) => {
-      if (assignment.notBefore && Date.parse(assignment.notBefore) > now.getTime()) return false;
-      if (assignment.expiresAt && Date.parse(assignment.expiresAt) <= now.getTime()) return false;
-      return true;
-    });
+    // The api itself counts, so a permission naming the server directly still resolves.
+    return new Set([api.name, ...children.map((child) => child.name)]);
   }
 
   /**
@@ -100,12 +125,13 @@ export class DecisionService {
     audience: string,
     targetRealmId: string,
   ): Promise<{ permissions: EffectivePermission[]; roles: string[]; scopeKind: 'self' | 'all' }> {
-    const server = await this.db
-      .collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION)
-      .findOne({ realmId: homeRealmId, audience }, { projection: { _id: 0, resourceServerId: 1 } });
+    // Which resource TYPES this audience enforces, so a token carries only what its audience
+    // checks. A permission is `resource:action`, and the resource half names a resource record; the
+    // ones belonging to an audience are its children, which is what parentResourceId is for.
+    const enforced = await this.typesFor(homeRealmId, audience);
 
-    const held = await this.liveAssignments(homeRealmId, subjectId);
-    const assignments = held.filter((assignment) => assignmentAppliesIn(assignment, homeRealmId, targetRealmId));
+    const held = await this.liveHoldings(homeRealmId, subjectId);
+    const assignments = held.filter((assignment) => holdingAppliesIn(assignment, homeRealmId, targetRealmId));
     const roles = await this.resolveRoles(homeRealmId, assignments.map((assignment) => assignment.roleId));
 
     const composed: RoleRecord[] = [];
@@ -115,11 +141,16 @@ export class DecisionService {
       composed.push(...inherited);
     }
 
-    const unique = new Map<string, EffectivePermission>();
+    const unique = new Set<EffectivePermission>();
     for (const role of composed) {
       for (const permission of role.permissions ?? []) {
-        if (server && permission.resourceServerId !== server.resourceServerId) continue;
-        unique.set(permissionKey(permission), { resource: permission.resource, action: permission.action });
+        // No resource registered for this audience means no narrowing, which is the previous
+        // behaviour: an unregistered audience is matched by pattern and has nothing to scope by.
+        if (enforced) {
+          const parsed = parsePermission(permission);
+          if (!parsed || !enforced.has(parsed.resource)) continue;
+        }
+        unique.add(permission);
       }
     }
 
@@ -128,9 +159,7 @@ export class DecisionService {
     const scopeKind = composed.some((role) => role.scopeKind === 'all') ? 'all' : 'self';
 
     return {
-      permissions: [...unique.values()].sort(
-        (a, b) => a.resource.localeCompare(b.resource) || a.action.localeCompare(b.action),
-      ),
+      permissions: [...unique].sort(),
       roles: [...new Set(composed.map((role) => role.name))].sort(),
       scopeKind,
     };
@@ -159,9 +188,9 @@ export class DecisionService {
     const { permissions, roles } = await this.effectivePermissionsIn(
       homeRealmId, subjectId, audience, targetRealmId,
     );
-    const held = permissions.some(
-      (permission) => permission.resource === resource && permission.action === action,
-    );
+    // One string comparison, because a permission IS the string. Building it here rather than
+    // comparing two halves is what keeps every spelling of a permission identical.
+    const held = permissions.includes(permissionString(resource, action));
     // Default deny, and the reason names what was missing rather than saying no: a decision a log
     // cannot explain is not auditable.
     return held
@@ -177,7 +206,7 @@ export class DecisionService {
    * case and costs one indexed read.
    */
   async grantedRealmIds(homeRealmId: string, subjectId: string): Promise<string[]> {
-    const held = await this.liveAssignments(homeRealmId, subjectId);
+    const held = await this.liveHoldings(homeRealmId, subjectId);
     const named = held
       .filter((assignment) => assignment.scope?.kind === REALM_SCOPE_KIND && assignment.scope.ref)
       .map((assignment) => assignment.scope!.ref)

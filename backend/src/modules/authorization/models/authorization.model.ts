@@ -10,49 +10,23 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  */
 
 /** A protected application, registering itself and the audience its tokens carry. */
-export interface ResourceServerRecord extends Scoped {
-  resourceServerId: string;
-  name: string;
-  /** What a token must name in `aud` to be accepted here. */
-  audience: string;
-  /** Bumped by the application when its catalog changes, so drift is visible rather than silent. */
-  permissionCatalogVersion: string;
-  /**
-   * How this application verifies a token.
-   *
-   * Local verification against the published key set costs nothing per request and keeps the
-   * application serving when the authority is unreachable. Introspection is authoritative about
-   * revocation and current status. Neither is right in general, so the choice belongs to the
-   * resource server, per operation.
-   */
-  validationMode: 'local-jwks' | 'introspection' | 'hybrid';
-  registeredAt: string;
-  meta: Meta;
-}
-
 /**
  * One enforcement point.
  *
  * The catalog is STATIC and ships with the application, so no permission exists without a guard
  * behind it. A permission the authority could invent would be one nothing checks.
  */
-export interface PermissionRecord extends Scoped {
-  permissionId: string;
-  resourceServerId: string;
-  resource: string;
-  action: string;
-  description: string;
-  /** Kept rather than deleted when an application retires one, so existing grants stay explicable. */
-  deprecated?: boolean;
-  meta: Meta;
-}
-
-/** A permission a role holds, named by the resource server that defined it. */
-export interface RolePermission {
-  resourceServerId: string;
-  resource: string;
-  action: string;
-}
+/**
+ * A permission is a STRING, `resource:action`, and not a record.
+ *
+ * P5.1 retired the collection. A permission is vocabulary: it appears on a role, on a policy and in
+ * a token, and in all three it is the same string, so there is one spelling and nothing to keep in
+ * step. The row it used to be added an identifier nobody referenced and a description nothing read.
+ *
+ * Where the vocabulary comes FROM is `resource.actions[]`: a resource declares its own verbs, and a
+ * permission naming a verb the resource never declared is refused at the point somebody wrote it
+ * rather than becoming a rule that silently never fires.
+ */
 
 /**
  * Why a role does NOT hold something.
@@ -73,7 +47,13 @@ export interface RoleRecord extends Scoped {
   name: string;
   displayName: string;
   description: string;
-  permissions: RolePermission[];
+  /**
+   * Full permission strings, `resource:action`.
+   *
+   * The same spelling a policy uses and a token carries, so nothing has to be converted between
+   * the three places a permission appears.
+   */
+  permissions: string[];
   /**
    * `self` scopes every record to the caller; `all` is global.
    *
@@ -97,57 +77,31 @@ export interface RoleRecord extends Scoped {
  * same record type expresses both, so an elevation is auditable, revocable and listable in exactly
  * the way a stateless capability token is not.
  */
-export interface RoleAssignmentRecord extends Scoped {
-  assignmentId: string;
-  subjectId: string;
-  roleId: string;
-  /**
-   * Narrows the assignment to one object, when it is not realm-wide.
-   *
-   * `kind: 'realm'` is the one value this authority interprets itself: it points the assignment at
-   * ANOTHER realm, granting administration of that realm to a principal whose identity, credentials
-   * and token stay in this one. Every other kind is the consuming application's vocabulary and means
-   * nothing here.
-   */
-  scope?: { kind: string; ref: string };
-  grantedBy?: string;
-  grantedAt: string;
-  notBefore?: string;
-  expiresAt?: string;
-  /** True only for a time-bound elevation, so the expiry sweep cannot touch a permanent grant. */
-  ephemeral?: boolean;
-  justification?: string;
-  approvalRef?: string;
-  meta: Meta;
-}
-
-/** The claim shape a resource server reads. Deliberately small: it travels in every token. */
-export interface EffectivePermission {
-  resource: string;
-  action: string;
-}
-
-export function permissionKey(permission: { resource: string; action: string }): string {
-  return `${permission.resource}:${permission.action}`;
-}
+/**
+ * The claim shape a resource server reads: one string per permission.
+ *
+ * Deliberately small, because it travels in every token. It was `{resource, action}` per entry,
+ * which is two keys and two quoted strings of JSON for something a single string says.
+ */
+export type EffectivePermission = string;
 
 /** The scope kind that points an assignment at another realm rather than at an application object. */
 export const REALM_SCOPE_KIND = 'realm';
 
 /**
- * Whether an assignment held in `homeRealmId` grants anything in `targetRealmId`.
+ * Whether a role holding held in `homeRealmId` grants anything in `targetRealmId`.
  *
- * Two rules and no third. A realm-scoped assignment grants ONLY in the realm it names, so it never
- * widens the home realm; anything else grants only at home, so an unscoped assignment never leaks
+ * Two rules and no third. A realm-scoped holding grants ONLY in the realm it names, so it never
+ * widens the home realm; anything else grants only at home, so an unscoped holding never leaks
  * outward. Neither direction is inferred, which is what keeps one realm's authority out of another.
  */
-export function assignmentAppliesIn(
-  assignment: Pick<RoleAssignmentRecord, 'scope'>,
+export function holdingAppliesIn(
+  holding: { scope?: { kind: string; ref: string } },
   homeRealmId: string,
   targetRealmId: string,
 ): boolean {
-  return assignment.scope?.kind === REALM_SCOPE_KIND
-    ? assignment.scope.ref === targetRealmId
+  return holding.scope?.kind === REALM_SCOPE_KIND
+    ? holding.scope.ref === targetRealmId
     : homeRealmId === targetRealmId;
 }
 

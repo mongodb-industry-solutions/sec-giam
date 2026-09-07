@@ -2,13 +2,14 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../services/directory.service';
-import { IDENTITY_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord } from '../models/identity.model';
+import { PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord } from '../models/principal.model';
 import { CredentialRecord } from '../models/credential.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { credentialStores } from '../../../shared/ports';
 import { newMeta } from '../../../shared/models/base.model';
 import { problem } from '../../../shared/models/problem';
+import { checkPassword, describeRefusals, passwordPolicyOf } from '../../realm/models/domain.model';
 
 /**
  * Self-service registration, where a realm allows it.
@@ -70,8 +71,31 @@ export async function registrationController(fastify: FastifyInstance) {
 
     const realm = await new RealmService(fastify.db).byName(realmName);
     if (!realm || !realm.enabled) return reply.status(404).send(problem(404, 'Unknown realm'));
-    if (!realm.registration.selfServiceEnabled) {
+    // Asked of the internal path, which is the only one anybody can join through (ADR-002).
+    const joining = await new RealmService(fastify.db).registration(realm.realmId);
+    if (!joining.selfServiceEnabled) {
       return reply.status(403).send(problem(403, 'Registration is closed', 'This realm does not offer self-service registration.'));
+    }
+
+    /**
+     * The password policy, ENFORCED, against the local domain that owns it.
+     *
+     * v40 P11.10 found it seeded and never checked: `minLength: 8` sat in the database and nothing
+     * compared a password to it, so the field described a control that did not exist and read as
+     * one during a review. Checked here, before anything is written, because a principal created
+     * with a refused password would have to be unwound.
+     *
+     * Refused BEFORE the user-name collision check, so a weak password is not also a way to learn
+     * which names are taken.
+     */
+    const localDomain = await new RealmService(fastify.db).localDomain(realm.realmId);
+    const broken = checkPassword(passwordPolicyOf(localDomain ?? { protocol: 'internal' }), body.password);
+    if (broken.length > 0) {
+      return reply.status(400).send(problem(
+        400,
+        'Password does not meet the policy',
+        `This realm requires ${describeRefusals(broken)}.`,
+      ));
     }
 
     const directory = new DirectoryService(fastify.db);
@@ -85,11 +109,11 @@ export async function registrationController(fastify: FastifyInstance) {
 
     const subjectId = `sub-${randomUUID()}`;
     const now = new Date().toISOString();
-    // Approval is the realm's decision. A principal awaiting it exists and cannot authenticate,
+    // Approval is the path's decision. A principal awaiting it exists and cannot authenticate,
     // rather than not existing, so the person can be told where their request stands.
-    const lifecycleState = realm.registration.autoApprove ? 'active' : 'pending';
+    const lifecycleState = joining.autoApprove ? 'active' : 'pending';
 
-    await fastify.db.collection<IdentityRecord>(IDENTITY_COLLECTION).insertOne({
+    await fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION).insertOne({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       subjectId,
@@ -104,7 +128,7 @@ export async function registrationController(fastify: FastifyInstance) {
       lifecycleState,
       sessionEpoch: 0,
       meta: newMeta('Identity'),
-    } as IdentityRecord);
+    } as PrincipalRecord);
 
     const store = credentialStores.resolve('bcrypt-password');
     const issued = await store.issue(subjectId, body.password);
@@ -114,7 +138,7 @@ export async function registrationController(fastify: FastifyInstance) {
       credentialId: `cred-${randomUUID()}`,
       subjectId,
       type: 'password',
-      secretHash: issued?.secretHash as string,
+      hash: issued?.hash as string,
       status: 'active',
       assurance: { level: 'aal1', method: 'password', verifiedAt: now },
       meta: newMeta('Credential'),

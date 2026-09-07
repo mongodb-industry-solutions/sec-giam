@@ -97,6 +97,15 @@ const EXPECTED: Record<string, Record<string, string[]>> = {
     modules: ['view'],
     auditEvents: ['view'],
   },
+  /**
+   * Added to the matrix in v40, having drifted in unrecorded.
+   *
+   * The role existed in the fixture and this gate still asserted seven, so it had been failing and
+   * was recorded as known-red rather than investigated. It administers APPLICATIONS and the
+   * principals attached to them, and holds nothing on the consuming application's own resources:
+   * every permission it has is on the authority.
+   */
+  client_administrator: {},
 };
 
 let app: FastifyInstance;
@@ -113,12 +122,23 @@ afterAll(async () => {
   await app?.close();
 });
 
-async function machineToken(clientId: string, clientSecret: string, realm = realmName) {
+async function machineToken(
+  clientId: string,
+  clientSecret: string,
+  permissions?: string,
+  realm = realmName,
+) {
   return app.inject({
     method: 'POST',
     url: `/realms/${realm}/protocol/openid-connect/token`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    payload: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }).toString(),
+    payload: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+      // Present only when a test is exercising attenuation: absent means roles only, the default.
+      ...(permissions ? { permissions } : {}),
+    }).toString(),
   });
 }
 
@@ -127,7 +147,9 @@ function claims(accessToken: string): Record<string, unknown> {
 }
 
 describe('v39 P6.2: the seven builtin roles reproduce the matrix exactly', () => {
-  it('carries all seven, and no eighth', () => {
+  it('carries exactly the roles the matrix names, and no other', () => {
+    // Counted from the matrix rather than written as a number, so adding a role to the fixture
+    // means adding it here and nowhere else. A literal seven is what let the eighth drift in.
     expect(roles.map((role) => role.name).sort()).toEqual(Object.keys(EXPECTED).sort());
   });
 
@@ -205,18 +227,36 @@ describe('v39 P6.7: a permission granted to a service identity is enforced end t
     expect(payload.sub).toBe('leafypay-backend');
     expect(payload.client_id).toBe('leafypay-backend');
 
-    const permissions = payload.permissions as Array<{ resource: string; action: string }>;
-    expect(permissions, 'a service identity received no permissions at all').toBeTruthy();
-    expect(permissions).toContainEqual({ resource: 'auditEvents', action: 'view' });
-    expect(permissions).toContainEqual({ resource: 'modules', action: 'view' });
+    /**
+     * v40: the token carries ROLES, not expanded permissions.
+     *
+     * A machine's authority is resolved through the same decision point as a person's, and it
+     * arrives the same way: as the roles it holds. What those expand to is asserted below through
+     * the decision endpoint, which is where expansion belongs.
+     */
+    const roles = payload.roles as string[];
+    expect(roles, 'a service identity received no roles at all').toBeTruthy();
+    expect(roles.length, 'a service identity holds no role').toBeGreaterThan(0);
+    // The permissions claim is ABSENT unless the client narrowed, which this one did not.
+    expect(payload.permissions).toBeUndefined();
   });
 
   it('grants a service only what its role holds, and nothing a person holds', async () => {
-    const response = await machineToken('leafypay-backend', clientSecretFor('leafypay-backend'));
-    const permissions = claims(response.json().access_token).permissions as Array<{ resource: string; action: string }>;
-    // Default deny is the whole model: a service that could read cardholder data because it is a
-    // service would make the role matrix decorative for exactly the principals nobody watches.
-    expect(permissions).not.toContainEqual({ resource: 'cards', action: 'viewSensitive' });
+    /**
+     * Asked for EXPLICITLY, which is the honest way to test attenuation.
+     *
+     * The client requests both a permission its role grants and one only a person holds. The
+     * invariant is that asking cannot widen, so the second must be dropped rather than granted.
+     * Default deny is the whole model: a service that could read cardholder data because it is a
+     * service would make the role matrix decorative for exactly the principals nobody watches.
+     */
+    const response = await machineToken(
+      'leafypay-backend',
+      clientSecretFor('leafypay-backend'),
+      'auditEvents:view cards:viewSensitive',
+    );
+    const permissions = (claims(response.json().access_token).permissions ?? []) as string[];
+    expect(permissions).not.toContain('cards:viewSensitive');
     expect(permissions).not.toContainEqual({ resource: 'customers', action: 'viewSensitive' });
   });
 
@@ -236,12 +276,27 @@ describe('v39 P6.7: a permission granted to a service identity is enforced end t
     expect(refused.reason).toContain('cards:viewSensitive');
   });
 
-  it('refuses a machine credential presented to the wrong realm', async () => {
-    // The bank realm's third party cannot authenticate against the application realm, even with its
-    // own correct secret: a client is a record inside one realm, not a platform-wide identity.
-    const response = await machineToken('leafypay-psp', clientSecretFor('leafypay-psp'), realmName);
-    expect(response.statusCode).toBe(401);
-    expect(response.json().error).toBe('invalid_client');
+  it('refuses a machine credential presented to a realm that does not exist', async () => {
+    /**
+     * This compared two realms, and ADR-003 left one.
+     *
+     * The property is that a client is a record INSIDE a realm rather than a platform-wide
+     * identity, and it still holds. What no longer exists is a second realm to present the
+     * credential to: the bank's third party is registered in the shared realm now, separated by
+     * its own resource server, roles and token audience instead of by a directory.
+     *
+     * So the assertion keeps the half that needs one realm: a correct secret does not authenticate
+     * anywhere, only where the client is registered. Weakened deliberately and stated, rather than
+     * deleted, because a test quietly removed is a property nobody remembers was checked.
+     */
+    const response = await machineToken(
+      'leafypay-psp',
+      clientSecretFor('leafypay-psp'),
+      undefined,
+      'a-realm-that-does-not-exist',
+    );
+    expect(response.statusCode).not.toBe(200);
+    expect(response.json().error).toBeTruthy();
   });
 
   it('refuses a machine credential with the wrong secret', async () => {
@@ -266,7 +321,9 @@ describe('v39 P6: a person receives the permissions their role grants', () => {
     const resolved = await new DecisionService(app.db)
       .effectivePermissions(realm!.realmId, analyst!.subjectId, 'leafypay');
 
-    const held = new Set(resolved.permissions.map((permission) => `${permission.resource}:${permission.action}`));
+    // v40: a permission IS the string `resource:action`, so there is nothing to rebuild from
+    // halves. Rebuilding it was how this read `undefined:undefined` and failed.
+    const held = new Set(resolved.permissions);
     for (const [resource, actions] of Object.entries(EXPECTED.level1_analyst)) {
       for (const action of actions) {
         expect(held.has(`${resource}:${action}`), `analyst is missing ${resource}:${action}`).toBe(true);

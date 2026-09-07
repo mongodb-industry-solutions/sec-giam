@@ -3,10 +3,39 @@ import { v4 as uuidv4 } from 'uuid';
 import { newMeta } from '../../../shared/models/base.model';
 import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord, isLive } from '../models/session.model';
+import { DOMAIN_COLLECTION } from '../../../shared/models/collections';
+import { DomainRecord, concurrentSessionRule } from '../../realm/models/domain.model';
+import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
+import { DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
+
+/**
+ * Why a sign-in was refused rather than granted a session.
+ *
+ * A distinct shape, so a caller cannot mistake it for a session by accident: the two would
+ * otherwise differ only in which fields happen to be present.
+ */
+export interface SessionLimitRefusal {
+  refused: true;
+  limit: number;
+  held: number;
+  reason: string;
+}
+
+export function isSessionLimitRefusal(value: unknown): value is SessionLimitRefusal {
+  return typeof value === 'object' && value !== null && (value as SessionLimitRefusal).refused === true;
+}
+
+/**
+ * Why a session ended.
+ *
+ * Not stored on the session, which is deleted, but carried into the audit record, which is
+ * where the history lives. A reason on a deleted document would be a reason nobody can read.
+ */
+export type SessionReason = 'logout' | 'expired' | 'revoked' | 'superseded';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { TokenIssuer } from '../../oauth/services/tokenIssuer.service';
-import { ClientRecord } from '../../oauth/models/client.model';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
+import { OAuthClient } from '../../oauth/models/client.model';
+import { listOAuthClients } from '../../oauth/services/clientAuth.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 
 /**
@@ -39,9 +68,22 @@ export class SessionService {
     realm: { realmId: string; tenantId: string; tokenPolicy: { sessionMaxTtlSeconds: number; sessionIdleTtlSeconds: number } };
     subjectId: string;
     epoch?: number;
+    clientId?: string;
+    domainId?: string;
+    ticketId?: string;
     userAgentHash?: string;
     ipHash?: string;
-  }): Promise<SessionRecord> {
+    /**
+     * How the principal authenticated, so issuing a token needs no credential read.
+     *
+     * `credentialId` was previously passed by `login.controller` and silently discarded: it was not
+     * declared here, and because the call site spreads it into the object literal TypeScript applies
+     * no excess-property check. The session therefore never recorded which factor authenticated it.
+     */
+    acr?: string;
+    amr?: string[];
+    credentialId?: string;
+  }): Promise<SessionRecord | SessionLimitRefusal> {
     const now = new Date();
     const session: SessionRecord = {
       realmId: input.realm.realmId,
@@ -49,6 +91,15 @@ export class SessionService {
       sessionId: uuidv4(),
       subjectId: input.subjectId,
       epoch: input.epoch ?? 0,
+      // Starts at zero and is incremented per refresh. The refresh JWT carries the generation it
+      // was minted at, and a mismatch is how a replay is detected.
+      refreshGen: 0,
+      ...(input.clientId ? { clientId: input.clientId } : {}),
+      ...(input.domainId ? { domainId: input.domainId } : {}),
+      ...(input.ticketId ? { ticketId: input.ticketId } : {}),
+      ...(input.acr ? { acr: input.acr } : {}),
+      ...(input.amr?.length ? { amr: input.amr } : {}),
+      ...(input.credentialId ? { credentialId: input.credentialId } : {}),
       createdAt: now.toISOString(),
       lastSeenAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + input.realm.tokenPolicy.sessionMaxTtlSeconds * 1000).toISOString(),
@@ -58,6 +109,25 @@ export class SessionService {
       ...(input.ipHash ? { ipHash: input.ipHash } : {}),
       meta: newMeta('Session'),
     };
+    /**
+     * P8.6. The concurrent-session limit, enforced by the DOMAIN that authenticated this session.
+     *
+     * On the domain and not the realm or the client, because how many times you may be signed in is
+     * an authentication rule. A realm offering two ways in applies each one's limit to its own
+     * sessions, counted per subject within the realm.
+     *
+     * Applied BEFORE the insert, so `refuse-new` can refuse without a session existing first, and
+     * eviction never has to consider the session it is making room for.
+     */
+    if (input.domainId) {
+      const refusal = await this.applyConcurrencyLimit({
+        realmId: input.realm.realmId,
+        subjectId: input.subjectId,
+        domainId: input.domainId,
+      });
+      if (refusal) return refusal;
+    }
+
     await this.sessions.insertOne(session);
 
     // Recorded here rather than in each controller, for the same reason the record is built here: a
@@ -131,6 +201,87 @@ export class SessionService {
     );
   }
 
+  /** Emits `session-revoked`. The ceremony and its failure policy live in the dispatcher. */
+  private async emitRevoked(input: {
+    realmId: string;
+    tenantId: string;
+    subjectId: string;
+    sessionId: string;
+    reason: string;
+  }): Promise<void> {
+    await new SignalDispatcher(this.db).dispatch({
+      ...input,
+      event: 'session-revoked',
+      category: 'session',
+      target: { type: 'session', ref: input.sessionId },
+    });
+  }
+
+  /**
+   * Makes room for a new session, or refuses it, according to the domain's rule.
+   *
+   * Returns a refusal rather than throwing, because "you already have as many sessions as you may
+   * have" is an ordinary outcome of signing in and not an error in the service.
+   *
+   * `evict-oldest` deletes, which is what makes eviction reach the evicted device: deleting a
+   * session emits a revocation signal, so it learns it has been signed out instead of holding a
+   * valid token until it expires. Marking it would have left that device working.
+   */
+  private async applyConcurrencyLimit(input: {
+    realmId: string;
+    subjectId: string;
+    domainId: string;
+  }): Promise<SessionLimitRefusal | null> {
+    const domain = await this.db
+      .collection<DomainRecord>(DOMAIN_COLLECTION)
+      .findOne({ realmId: input.realmId, domainId: input.domainId }, { projection: { _id: 0, session: 1 } });
+    const rule = concurrentSessionRule(domain ?? {});
+    // Null is unlimited, and it is the default. Zero would mean no session may be opened at all.
+    if (rule.limit === null) return null;
+
+    const held = await this.sessions
+      .find(
+        { realmId: input.realmId, subjectId: input.subjectId, domainId: input.domainId },
+        { projection: { _id: 0, sessionId: 1, createdAt: 1 } },
+      )
+      .sort({ createdAt: 1 })
+      .toArray();
+
+    if (held.length < rule.limit) return null;
+
+    if (rule.onExceed === 'refuse-new') {
+      // Correct for a service account, where the session already open is the real one and a second
+      // caller is more likely a misconfiguration than a person on a second device.
+      return {
+        refused: true,
+        limit: rule.limit,
+        held: held.length,
+        reason: 'this authentication path allows no further concurrent session',
+      };
+    }
+
+    // Oldest first, and enough of them that inserting one more lands exactly at the limit.
+    const evict = held.slice(0, held.length - rule.limit + 1);
+    for (const stale of evict) {
+      await this.sessions.deleteOne({ realmId: input.realmId, sessionId: stale.sessionId });
+      void new SecurityEventService(this.db).record({
+        realmId: input.realmId,
+        tenantId: DEFAULT_TENANT_ID,
+        category: 'session',
+        action: 'authentication.session.evicted',
+        outcome: 'success',
+        subjectId: input.subjectId,
+        target: { type: 'session', ref: stale.sessionId },
+        detail: {
+          reason: 'the concurrent-session limit on this authentication path was reached',
+          limit: rule.limit,
+          domainId: input.domainId,
+        },
+      });
+    }
+    return null;
+  }
+
   /**
    * Ends one session, and returns the clients that need telling.
    *
@@ -141,20 +292,60 @@ export class SessionService {
   async terminate(
     realmId: string,
     sessionId: string,
-    reason: SessionRecord['terminationReason'],
+    reason: SessionReason,
     issuer: TokenIssuer,
-  ): Promise<{ terminated: boolean; revokedTokens: number; notify: ClientRecord[] }> {
+  ): Promise<{ terminated: boolean; revokedTokens: number; notify: OAuthClient[] }> {
     const session = await this.find(realmId, sessionId);
-    if (!session || session.terminatedAt) {
+    if (!session) {
       return { terminated: false, revokedTokens: 0, notify: [] };
     }
 
-    await this.sessions.updateOne(
-      { realmId, sessionId },
-      { $set: { terminatedAt: new Date().toISOString(), terminationReason: reason } },
-    );
+    // The clients are read BEFORE the delete, because after it there is no record to read them
+    // from. That ordering is the whole reason this is not a one-line delete.
+    const notifyIds = session.clientIds;
 
-    const revokedTokens = await issuer.revokeSession(realmId, sessionId, reason ?? 'logout');
+    /**
+     * DELETED, not marked.
+     *
+     * The absence of the document is the revocation signal. A record left behind marked terminated
+     * is a record some query will forget to filter, and the filter being forgotten is exactly how a
+     * revoked session keeps working. Absence cannot be forgotten.
+     */
+    /**
+     * Recorded BEFORE the delete, with WHY it ended, which is D39.
+     *
+     * A session simply vanishing was indistinguishable between three very different things: the
+     * person signed out, an administrator revoked it, or it reached its own expiry. Only the first
+     * left any trace, and the third leaves none by nature, because a TTL sweep is not an event.
+     *
+     * So the reason is carried into the record here, and `expiresAt` goes with it: an investigator
+     * comparing that to the timestamp can tell "it simply ran out" from "somebody ended it", which
+     * is the distinction the trail could not previously make at all.
+     */
+    void new SecurityEventService(this.db).record({
+      realmId: session.realmId,
+      tenantId: session.tenantId,
+      category: 'session',
+      action: 'authentication.session.ended',
+      outcome: 'success',
+      cause: reason,
+      subjectId: session.subjectId,
+      target: { type: 'session', ref: sessionId },
+      detail: {
+        reason,
+        createdAt: session.createdAt,
+        // Carried so a reader can see whether it was near its end anyway.
+        expiresAt: session.expiresAt,
+        idleExpiresAt: session.idleExpiresAt,
+        clients: notifyIds,
+      },
+    });
+
+    await this.sessions.deleteOne({ realmId, sessionId });
+
+    // Nothing to revoke: no token was ever written down. The count stays in the response because
+    // callers report it, and zero is the honest answer now.
+    const revokedTokens = 0;
 
     // The epoch retires a whole generation at once, which covers anything issued under this session
     // that was never recorded here.
@@ -176,11 +367,27 @@ export class SessionService {
       detail: { epoch, reason: reason ?? 'logout', revokedTokens },
     });
 
-    const notify = session.clientIds.length > 0
-      ? await this.db
-        .collection<ClientRecord>(CLIENT_COLLECTION)
-        .find({ realmId, clientId: { $in: session.clientIds } }, { projection: { _id: 0 } })
-        .toArray()
+    /**
+     * P10.2. The revocation reaches OUTSIDE this process too.
+     *
+     * Deleting the session ends access here, and every resource server verifying tokens on its own
+     * would otherwise carry on honouring the holder's existing access token until it expired. The
+     * signal is what closes that window for a subscribed receiver.
+     *
+     * Fired and not awaited, and delivery failures are swallowed inside the service. A revocation
+     * that could be blocked by an unreachable third party would be a revocation an attacker could
+     * prevent by making that party unreachable, and the event is durable in the feed regardless.
+     */
+    void this.emitRevoked({
+      realmId,
+      tenantId: session.tenantId,
+      subjectId: session.subjectId,
+      sessionId,
+      reason: reason ?? 'logout',
+    });
+
+    const notify = notifyIds.length > 0
+      ? (await listOAuthClients(this.db, realmId)).filter((client) => notifyIds.includes(client.clientId))
       : [];
 
     return { terminated: true, revokedTokens, notify };
@@ -195,12 +402,12 @@ export class SessionService {
   async terminateAllFor(
     realmId: string,
     subjectId: string,
-    reason: SessionRecord['terminationReason'],
+    reason: SessionReason,
     issuer: TokenIssuer,
-  ): Promise<{ sessions: number; revokedTokens: number; notify: ClientRecord[] }> {
+  ): Promise<{ sessions: number; revokedTokens: number; notify: OAuthClient[] }> {
     const live = await this.listFor(realmId, subjectId);
     let revokedTokens = 0;
-    const notify = new Map<string, ClientRecord>();
+    const notify = new Map<string, OAuthClient>();
 
     for (const session of live) {
       const outcome = await this.terminate(realmId, session.sessionId, reason, issuer);

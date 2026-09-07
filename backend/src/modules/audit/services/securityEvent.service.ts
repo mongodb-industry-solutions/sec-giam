@@ -1,7 +1,8 @@
 import { Db } from 'mongodb';
+import { appendLog } from '../../../shared/services/logBuffer';
 import { createHash } from 'crypto';
-import { SECURITY_EVENT_COLLECTION } from '../../../shared/models/collections';
-import { SecurityEventRecord } from '../models/securityEvent.model';
+import { AUDIT_COLLECTION } from '../../../shared/models/collections';
+import { AuditRecord } from '../models/audit.model';
 
 /**
  * The identity evidence trail.
@@ -34,16 +35,17 @@ export function redactSecrets(value: unknown, depth = 0): unknown {
   return output;
 }
 
-/**
- * The correlator that groups one flow.
+/*
+ * `hashState` lived here and is gone.
  *
- * Derived from the state parameter rather than storing it: the state is a value the client chose and
- * may be guessable, and a trail does not need it, only the ability to say two records belong to the
- * same flow.
+ * It derived a flow correlator from the client's `state` parameter, which is optional, chosen by the
+ * client, and was truncated to 64 bits. A flow that omitted `state` was correlated by nothing. The
+ * flow now has an identifier this authority allocates, which becomes the ticket's `requestId`, the
+ * trail's `correlationId` and the `txn` claim, so one value spans the attempt and every token.
+ *
+ * Deleted rather than left unused: a function still named for correlating a flow is a function
+ * somebody reaches for.
  */
-export function hashState(state: string): string {
-  return `flow:${createHash('sha256').update(state).digest('hex').slice(0, 16)}`;
-}
 
 /** Hashed, never raw: a trail is not a place to accumulate personal data. */
 export function hashIp(value: string | undefined): string | undefined {
@@ -107,9 +109,66 @@ export interface RecordEventInput {
   transactionId?: string;
   toolId?: string;
   normalizedAction?: string;
-  policyVersion?: string;
+  policyVersion?: number;
   decision?: 'allow' | 'deny';
   enforcementResult?: string;
+}
+
+/**
+ * How the trail is doing, so a lost write is visible rather than merely absent.
+ *
+ * A counter rather than a stored record: the one thing that certainly cannot be relied on when the
+ * audit collection is unwritable is writing to the audit collection. Exposed on the health surface,
+ * which is what turns "PCI DSS 10.7 requires detecting audit log failures" from a claim into a
+ * check somebody can run.
+ *
+ * Process-local and reset by a restart. That is a real limitation and it is the right trade: the
+ * alternative is durable state on the path that is failing.
+ */
+export const trailWrites = {
+  written: 0,
+  failed: 0,
+  lastFailureAt: undefined as string | undefined,
+  lastFailureCause: undefined as string | undefined,
+};
+
+/** Whether the trail is currently trustworthy. Any failure at all degrades it: evidence is not sampled. */
+export function trailHealth(): { healthy: boolean; written: number; failed: number; lastFailureAt?: string } {
+  return {
+    healthy: trailWrites.failed === 0,
+    written: trailWrites.written,
+    failed: trailWrites.failed,
+    ...(trailWrites.lastFailureAt ? { lastFailureAt: trailWrites.lastFailureAt } : {}),
+  };
+}
+
+/** What may be asked of the trail. Named so a count and a read take the same shape. */
+export interface AuditQuery {
+  realmId: string;
+  from?: Date;
+  to?: Date;
+  subjectId?: string;
+  /**
+   * Narrows to what one person is entitled to: their own events, plus the ones recorded naming them
+   * as a stakeholder. Never widened by a query parameter the caller controls.
+   */
+  subjectIdOrStakeholder?: string;
+  clientId?: string;
+  action?: string;
+  outcome?: 'success' | 'failure';
+  correlationId?: string;
+  /**
+   * Whether a PERSON drove the act or an application acted for them.
+   *
+   * `principalSubjectId` is written only when an application obtained a token on somebody's behalf,
+   * so its presence is the distinction. The console derived this in the browser from the same field,
+   * which meant the filter existed on a screen and not on the API.
+   */
+  actor?: 'person' | 'application';
+  /** Only the events the caller did NOT cause but is entitled to see. */
+  stakeholderOnly?: string;
+  offset?: number;
+  limit?: number;
 }
 
 export class SecurityEventService {
@@ -128,7 +187,7 @@ export class SecurityEventService {
       const stakeholders = [...new Set(input.stakeholderSubjectIds ?? [])]
         .filter((subject) => Boolean(subject) && subject !== input.subjectId);
 
-      const event: SecurityEventRecord = {
+      const event: AuditRecord = {
         ts: new Date(),
         realmId: input.realmId,
         tenantId: input.tenantId,
@@ -164,9 +223,31 @@ export class SecurityEventService {
           ...(input.ipHash ? { ipHash: input.ipHash } : {}),
         },
       };
-      await this.db.collection<SecurityEventRecord>(SECURITY_EVENT_COLLECTION).insertOne(event);
-    } catch {
-      // Deliberately swallowed. See above.
+      await this.db.collection<AuditRecord>(AUDIT_COLLECTION).insertOne(event);
+      trailWrites.written += 1;
+    } catch (err) {
+      /**
+       * Still not thrown, and now not silent either.
+       *
+       * The availability argument above is sound: a trail that can fail an authentication is a
+       * trail that gets removed from the authentication path the first time it does. But it was
+       * swallowed with no log line, no counter and no retry, so a failure was undetectable BY
+       * CONSTRUCTION. PCI DSS 10.7 requires detection of audit log failures, and on a full disk or
+       * a dropped connection the evidence disappeared and nobody learned.
+       *
+       * There is a second reason this matters more here than it would elsewhere: an audit write can
+       * never be atomic with the state change it records, because a time series collection cannot be
+       * written inside a transaction. The trail is structurally best-effort, so detecting a lost
+       * write is the only control there is.
+       */
+      trailWrites.failed += 1;
+      trailWrites.lastFailureAt = new Date().toISOString();
+      trailWrites.lastFailureCause = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+      // Through the log buffer, so it reaches the operations panel and not only stderr.
+      appendLog(
+        `[${trailWrites.lastFailureAt}] ERROR audit trail write failed (${trailWrites.failed} total): `
+        + `${input.action} ${input.outcome} — ${trailWrites.lastFailureCause}`,
+      );
     }
   }
 
@@ -177,24 +258,13 @@ export class SecurityEventService {
    * caller's authority is enforced by the controller: this service answers what it is asked, and a
    * filter applied by a client after the fact is not an access control.
    */
-  async query(filter: {
-    realmId: string;
-    from?: Date;
-    to?: Date;
-    subjectId?: string;
-    /**
-     * Narrows to what one person is entitled to: their own events, plus the ones recorded naming them
-     * as a stakeholder. Distinct from `subjectId`, which asks for one person's events and is what an
-     * oversight caller uses; this one is the self-scoped narrowing and it is never widened by a query
-     * parameter the caller controls.
-     */
-    subjectIdOrStakeholder?: string;
-    clientId?: string;
-    action?: string;
-    outcome?: 'success' | 'failure';
-    correlationId?: string;
-    limit?: number;
-  }): Promise<SecurityEventRecord[]> {
+  /**
+   * One filter, built once, so a count and a read can never disagree about what matches.
+   *
+   * Separated when paging arrived: a caller paging against a total computed from a different filter
+   * than the page is paging through a number that means nothing.
+   */
+  private toQuery(filter: AuditQuery): Record<string, unknown> {
     const query: Record<string, unknown> = { realmId: filter.realmId };
     if (filter.from || filter.to) {
       query.ts = {
@@ -213,11 +283,45 @@ export class SecurityEventService {
     if (filter.action) query.action = filter.action;
     if (filter.outcome) query.outcome = filter.outcome;
     if (filter.correlationId) query.correlationId = filter.correlationId;
+    if (filter.actor === 'application') query.principalSubjectId = { $exists: true };
+    if (filter.actor === 'person') query.principalSubjectId = { $exists: false };
+    if (filter.stakeholderOnly) {
+      // Entitled to see it without having caused it, which is a different question from "mine".
+      query.stakeholderSubjectIds = filter.stakeholderOnly;
+      query['meta.subjectId'] = { $ne: filter.stakeholderOnly };
+      delete query.$or;
+    }
+    return query;
+  }
 
+  /**
+   * How many events match, so a caller can page against something real.
+   *
+   * The console computed `totalPages` from the length of the batch it had fetched, which meant the
+   * last page was always the one in hand and there was no way to reach anything beyond the limit.
+   */
+  async count(filter: AuditQuery): Promise<number> {
+    return this.db.collection<AuditRecord>(AUDIT_COLLECTION).countDocuments(this.toQuery(filter));
+  }
+
+  async query(filter: AuditQuery): Promise<AuditRecord[]> {
     return this.db
-      .collection<SecurityEventRecord>(SECURITY_EVENT_COLLECTION)
-      .find(query, { projection: { _id: 0 } })
-      .sort({ ts: -1 })
+      .collection<AuditRecord>(AUDIT_COLLECTION)
+      .find(this.toQuery(filter), { projection: { _id: 0 } })
+      /**
+       * A TIEBREAK, and it is not cosmetic.
+       *
+       * Sorting by `ts` alone is not a total order: security events arrive in bursts around a
+       * sign-in and many share a millisecond, so the order among ties is whatever the engine
+       * returns. That is harmless when reading one page and wrong the moment paging exists, because
+       * two requests can order the ties differently and an event then appears on both pages or on
+       * neither. On an evidence trail, "or on neither" means an auditor paging through misses one.
+       *
+       * `_id` is unique per measurement, so `{ts, _id}` is total. It is still projected away: it is
+       * an ordering key here and not something a caller needs.
+       */
+      .sort({ ts: -1, _id: -1 })
+      .skip(filter.offset ?? 0)
       .limit(Math.min(filter.limit ?? 100, 500))
       .toArray();
   }

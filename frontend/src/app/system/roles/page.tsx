@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../../components/Result
 import { ActionButton, Fact, RecordCard } from '../../../components/RecordCard';
 import { callApi, can, currentClaims } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
+import { usePermissions } from '../../../lib/profile';
 import { BuiltinBadge, Field, INPUT, ScopeBadge } from './parts';
 import type { RoleDetail, RoleSummary } from './types';
 
@@ -36,6 +37,7 @@ export default function RolesPage() {
   );
 
   const roles = useConsoleResource(read, 'The roles could not be read.');
+  usePermissions();
   const mayManage = can(currentClaims(), 'roles', 'manage');
   const total = roles.data?.total ?? 0;
   const rows = roles.data?.roles ?? [];

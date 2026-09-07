@@ -29,22 +29,24 @@ export async function elevationController(fastify: FastifyInstance) {
   const elevationView = {
     type: 'object',
     additionalProperties: true,
-    required: ['assignmentId', 'subjectId', 'roleId'],
+    required: ['subjectId', 'roleId'],
     properties: {
-      assignmentId: { type: 'string' },
       subjectId: { type: 'string' },
+      /**
+       * The person behind the subject id. Declared, or `additionalProperties: false` strips it.
+       */
+      userName: { type: 'string' },
       roleId: { type: 'string' },
       scope: { type: 'object', additionalProperties: true },
       justification: { type: 'string' },
       grantedBy: { type: 'string' },
       approvalRef: { type: 'string' },
       grantedAt: { type: 'string' },
-      notBefore: { type: 'string', description: 'Present while awaiting approval, so the assignment grants nothing yet.' },
+      pendingApproval: { type: 'boolean', description: 'True while awaiting approval, so it grants nothing yet.' },
       expiresAt: { type: 'string' },
       ephemeral: { type: 'boolean' },
     },
     examples: [{
-      assignmentId: 'elev-4c1f',
       subjectId: 'sub-4821',
       roleId: 'role-investigator-sensitive',
       scope: { kind: 'case', ref: 'case-2291' },
@@ -127,7 +129,7 @@ export async function elevationController(fastify: FastifyInstance) {
     return reply.send(outcome);
   });
 
-  fastify.post(`${base}/:assignmentId/approve`, {
+  fastify.post(`${base}/:subjectId/:roleId/approve`, {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'approveElevation',
@@ -141,8 +143,8 @@ export async function elevationController(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
-        required: ['realm', 'assignmentId'],
-        properties: { realm: { type: 'string' }, assignmentId: { type: 'string' } },
+        required: ['realm', 'subjectId', 'roleId'],
+        properties: { realm: { type: 'string' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
       },
       response: {
         200: { ...elevationView, description: 'The elevation, now in force.' },
@@ -154,7 +156,8 @@ export async function elevationController(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const caller = request.principal!;
-    const { realm: realmName, assignmentId } = request.params as { realm: string; assignmentId: string };
+    const { realm: realmName, subjectId, roleId } = request.params as
+      { realm: string; subjectId: string; roleId: string };
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
@@ -162,7 +165,7 @@ export async function elevationController(fastify: FastifyInstance) {
       .checkIn(caller.homeRealmId, caller.subjectId, caller.clientId, 'elevations', 'approve', realm.realmId);
     if (decision.effect !== 'allow') return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
 
-    const outcome = await new ElevationService(fastify.db).approve(realm, assignmentId, caller.subjectId);
+    const outcome = await new ElevationService(fastify.db).approve(realm, subjectId, roleId, caller.subjectId);
     if (isElevationRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
     return reply.send(outcome);
   });
@@ -222,7 +225,7 @@ export async function elevationController(fastify: FastifyInstance) {
     });
   });
 
-  fastify.delete(`${base}/:assignmentId`, {
+  fastify.delete(`${base}/:subjectId/:roleId`, {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'revokeElevation',
@@ -235,8 +238,8 @@ export async function elevationController(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
-        required: ['realm', 'assignmentId'],
-        properties: { realm: { type: 'string' }, assignmentId: { type: 'string' } },
+        required: ['realm', 'subjectId', 'roleId'],
+        properties: { realm: { type: 'string' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
       },
       body: {
         type: 'object',
@@ -249,8 +252,8 @@ export async function elevationController(fastify: FastifyInstance) {
           type: 'object',
           additionalProperties: false,
           required: ['revoked'],
-          properties: { revoked: { type: 'boolean' }, assignmentId: { type: 'string' } },
-          examples: [{ revoked: true, assignmentId: 'elev-4c1f' }],
+          properties: { revoked: { type: 'boolean' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
+          examples: [{ revoked: true, subjectId: 'sub-4821', roleId: 'role-investigator-sensitive' }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held permits ending another principal\'s.' },
@@ -259,24 +262,23 @@ export async function elevationController(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const caller = request.principal!;
-    const { realm: realmName, assignmentId } = request.params as { realm: string; assignmentId: string };
+    const { realm: realmName, subjectId, roleId } = request.params as
+      { realm: string; subjectId: string; roleId: string };
     const { reason } = (request.body ?? {}) as { reason?: string };
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
     const service = new ElevationService(fastify.db);
-    const held = await service.listInForce(realm.realmId);
-    const target = held.find((elevation) => elevation.assignmentId === assignmentId);
 
     // Giving up your own authority never needs a permission. Taking away somebody else's does.
-    if (target && target.subjectId !== caller.subjectId) {
+    if (subjectId !== caller.subjectId) {
       const decision = await new DecisionService(fastify.db)
         .checkIn(caller.homeRealmId, caller.subjectId, caller.clientId, 'elevations', 'manage', realm.realmId);
       if (decision.effect !== 'allow') return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
     }
 
-    const revoked = await service.revoke(realm, assignmentId, caller.subjectId, reason ?? 'no reason given');
+    const revoked = await service.revoke(realm, subjectId, roleId, caller.subjectId, reason ?? 'no reason given');
     if (!revoked) return reply.status(404).send(problem(404, 'No such elevation'));
-    return reply.send({ revoked: true, assignmentId });
+    return reply.send({ revoked: true, subjectId, roleId });
   });
 }

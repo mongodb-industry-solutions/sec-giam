@@ -1,8 +1,8 @@
 import { Db } from 'mongodb';
 import { v5 as uuidv5 } from 'uuid';
 import { POLICY_COLLECTION, REALM_COLLECTION } from '../../shared/models/collections';
-import { PolicyRecord, PolicyStatement } from '../../modules/authorization/models/policy.model';
-import { validateStatements } from '../../modules/authorization/services/policyAdmin.service';
+import { PolicyRecord, PolicyCondition } from '../../modules/authorization/models/policy.model';
+import { validatePolicy } from '../../modules/authorization/services/policyAdmin.service';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
@@ -15,6 +15,10 @@ import { readSeedFile } from './readSeedFile';
  * nobody can see fire is a rule nobody has checked. One carries a condition, so the closed identity
  * vocabulary is visible as data instead of only as a form control.
  *
+ * Each is one policy stating one effect, per ADR section 7. The pair that disagree are two separate
+ * records rather than two statements in one, which is what makes deny-wins a rule ACROSS policies
+ * instead of an ordering question inside one.
+ *
  * A fresh database with none of these would ship a blank screen, and a blank screen is the state in
  * which a policy surface looks finished and proves nothing.
  */
@@ -24,9 +28,17 @@ const POLICY_NAMESPACE = 'c7d2f8a1-3e5b-4c9d-8a6f-1b4e2d7c9a30';
 interface PolicyFixture {
   realm: string;
   name: string;
-  version: string;
-  enabled: boolean;
-  statements: PolicyStatement[];
+  version: number;
+  status: PolicyRecord['status'];
+  effect: 'allow' | 'deny';
+  permissions: string[];
+  resource: { type: string; pattern: string };
+  principals?: string[];
+  conditions?: PolicyCondition[];
+  obligations?: PolicyRecord['obligations'];
+  approvedBy?: string;
+  effectiveFrom?: string;
+  reason?: string;
   attachedTo?: string[];
 }
 
@@ -50,9 +62,9 @@ export async function seedPolicies(db: Db, fixtureName = 'policies.json'): Promi
     if (!realmId) throw new Error(`${fixtureName} names realm "${fixture.realm}", which is not seeded`);
 
     // The same check the API applies, against the same function. A fixture is not exempt from the
-    // condition vocabulary: seeding a statement the evaluator cannot read would produce a policy that
-    // exists, appears to decide something, and silently never applies.
-    const invalid = validateStatements(fixture.statements);
+    // condition vocabulary: seeding a condition the evaluator cannot read would produce a policy
+    // that exists, appears to decide something, and silently never applies.
+    const invalid = validatePolicy(fixture);
     if (invalid) throw new Error(`${fixtureName} policy "${fixture.name}": ${invalid.title}. ${invalid.detail}`);
 
     const id = policyId(realmId, fixture.name);
@@ -62,8 +74,16 @@ export async function seedPolicies(db: Db, fixtureName = 'policies.json'): Promi
       {
         name: fixture.name,
         version: fixture.version,
-        statements: fixture.statements,
-        enabled: fixture.enabled,
+        status: fixture.status,
+        effect: fixture.effect,
+        permissions: fixture.permissions,
+        resource: fixture.resource,
+        conditions: fixture.conditions ?? [],
+        ...(fixture.principals?.length ? { principals: fixture.principals } : {}),
+        ...(fixture.obligations?.length ? { obligations: fixture.obligations } : {}),
+        ...(fixture.approvedBy ? { approvedBy: fixture.approvedBy } : {}),
+        ...(fixture.effectiveFrom ? { effectiveFrom: fixture.effectiveFrom } : {}),
+        ...(fixture.reason ? { reason: fixture.reason } : {}),
         ...(fixture.attachedTo?.length ? { attachedTo: fixture.attachedTo } : {}),
       },
       { policyId: id, realmId, tenantId: DEFAULT_TENANT_ID },

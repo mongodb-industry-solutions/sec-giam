@@ -126,7 +126,7 @@ export default function IdentityDetailPage() {
                   <Tooltip text="A suspended principal and a retired one are both inactive and are not the same thing to anyone reviewing them, which is why the lifecycle is carried separately from the usable flag." />
                 </span>
               </Fact>
-              <Fact label="Upstream provider" value={extension.providerId} mono />
+              <Fact label="Upstream provider" value={extension.domainId} mono />
               <Fact label="Business reference" value={extension.accountHolderRef} mono />
               <Fact label="Last changed" value={when(user.meta?.lastModified)} />
             </dl>

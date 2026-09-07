@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import {
   GIAM_COLLECTIONS, scopedCollections, encryptedCollections, collectionsWithRetiredFields,
-  REALM_COLLECTION, SIGNING_KEY_COLLECTION,
+  REALM_COLLECTION, KEY_COLLECTION,
 } from '../../shared/models/collections';
 import { plannedIndexes, classifyIndex, reconcilable, ExistingIndex } from './createIndexes';
 import { assertCryptSharedLib } from '../encryption/qeClient';
@@ -45,7 +45,6 @@ function declaredEncryptedPaths(): Record<string, string[]> {
     identityEmail: placeholder,
     identityPhone: placeholder,
     identityName: placeholder,
-    apiKeyHash: placeholder,
   });
   const paths: Record<string, string[]> = {};
   for (const [name, map] of Object.entries(maps)) {
@@ -224,7 +223,7 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
   add('at least one realm is seeded', realms.length > 0, `${realms.length} realm(s)`);
   for (const realm of realms) {
     add(`realm ${realm.name} declares an issuer`, Boolean(realm.issuer), realm.issuer ?? 'missing');
-    const keys = await db.collection(SIGNING_KEY_COLLECTION)
+    const keys = await db.collection(KEY_COLLECTION)
       .countDocuments({ realmId: realm.realmId, status: 'active' })
       .catch(() => 0);
     add(`realm ${realm.name} publishes an active signing key`, keys > 0, `${keys} key(s)`);

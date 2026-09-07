@@ -1,17 +1,21 @@
 import type { Binary } from 'mongodb';
-import { IDENTITY_COLLECTION, API_KEY_COLLECTION } from '../../shared/models/collections';
+import { PRINCIPAL_COLLECTION } from '../../shared/models/collections';
 import { config } from '../../config';
 
 // What GIAM encrypts at rest, under its OWN DEKs in its OWN vault.
 //
-// Deliberately narrow. A credential is already a one-way hash, so encrypting it buys nothing while
-// blocking the lookup that verifies it. What is encrypted is the personal data an identity record
-// holds and the API key hash, which is a bearer secret rather than a digest of a password.
+// Deliberately narrow: the personal data a principal record holds, and nothing else.
+//
+// v40 P3.3 DROPPED Queryable Encryption over the API key hash. Two reasons, and the second is the
+// one that decided it. It encrypted a one-way hash, which buys no confidentiality that the hash did
+// not already provide. And the API key merged into `credential`, so keeping the entry would have
+// made `credential` an encrypted collection: every client authentication would then carry
+// ESC/ECOC state on what is now one of the hottest lookups in the system, in exchange for
+// encrypting a digest. A credential is verified rather than looked up, so nothing is lost.
 export interface GiamDeks {
   identityEmail: Binary;
   identityPhone: Binary;
   identityName: Binary;
-  apiKeyHash: Binary;
 }
 
 // Deterministic alt-names, so a reseed finds the existing key instead of minting a second one.
@@ -19,7 +23,6 @@ export const DEK_ALT_NAMES = {
   identityEmail: 'DEK-giam-identity-email',
   identityPhone: 'DEK-giam-identity-phone',
   identityName: 'DEK-giam-identity-name',
-  apiKeyHash: 'DEK-giam-apikey-hash',
 } as const;
 
 /**
@@ -35,17 +38,27 @@ export const DEK_ALT_NAMES = {
  * SCIM `emails[]` and `phoneNumbers[]` representation is projected from these at read time, so the
  * wire contract still matches the standard while the stored value stays encrypted and searchable.
  *
- * substringPreview requires crypt_shared 8.2+ AND server 8.2+. On an older cluster it degrades to
- * equality rather than failing setup, which keeps the field encrypted and exactly searchable instead
- * of trading the whole deployment for one query shape.
+ * The substring query type requires server 9.0+, which GA'd it and rejects the earlier
+ * `substringPreview` name outright: a collection still carrying the old name fails EVERY encrypted
+ * query on it, including the plain equality lookups on the other two fields.
+ *
+ * On an older cluster the field degrades to equality rather than failing setup, which keeps it
+ * encrypted and exactly searchable instead of trading the whole deployment for one query shape.
+ * That degradation is `forceEquality`, and it is driven by what the DRIVER actually accepts:
+ * `createCollections` catches the refusal and rebuilds the map. It used to be driven by a static
+ * configuration flag, which meant the sentence above was false and a deployment on an older
+ * `crypt_shared` simply failed setup with `principal` left uncreated.
  */
-export function buildEncryptedFieldsMaps(deks: GiamDeks): Record<string, { fields: unknown[] }> {
-  const nameQueries = config.mongodb.textSearch
+export function buildEncryptedFieldsMaps(
+  deks: GiamDeks,
+  options: { forceEquality?: boolean } = {},
+): Record<string, { fields: unknown[] }> {
+  const nameQueries = config.mongodb.textSearch && !options.forceEquality
     ? {
-      queryType: 'substringPreview',
+      queryType: 'substring',
       contention: 8,
-      // Within the cluster's default substringPreview limits, so setup needs no
-      // fleDisableSubstringPreviewParameterLimits override. The server refuses strMaxLength above 60
+      // Within the cluster's default substring limits, so setup needs no parameter-limit override.
+      // The server refuses strMaxLength above 60
       // outright, and 30 is what the platform already uses for the equivalent field. A longer
       // formatted name is refused at write time rather than silently truncated.
       strMaxLength: 30,
@@ -57,17 +70,11 @@ export function buildEncryptedFieldsMaps(deks: GiamDeks): Record<string, { field
     : { queryType: 'equality', contention: 8 };
 
   return {
-    [IDENTITY_COLLECTION]: {
+    [PRINCIPAL_COLLECTION]: {
       fields: [
         { keyId: deks.identityEmail, path: 'primaryEmail', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },
         { keyId: deks.identityPhone, path: 'primaryPhone', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },
         { keyId: deks.identityName, path: 'name.formatted', bsonType: 'string', queries: nameQueries },
-      ],
-    },
-    [API_KEY_COLLECTION]: {
-      // Equality over ciphertext: a presented key is located by its hash without decrypting the set.
-      fields: [
-        { keyId: deks.apiKeyHash, path: 'keyHash', bsonType: 'string', queries: { queryType: 'equality', contention: 8 } },
       ],
     },
   };

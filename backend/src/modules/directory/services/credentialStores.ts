@@ -64,8 +64,8 @@ export const bcryptPasswordStore: CredentialStore = {
 
   async verify(credentialId, presented) {
     const credential = await load(credentialId);
-    if (!credential?.secretHash || !isUsable(credential)) return false;
-    const ok = await bcrypt.compare(presented, credential.secretHash);
+    if (!credential?.hash || !isUsable(credential)) return false;
+    const ok = await bcrypt.compare(presented, credential.hash);
     if (ok) markUsed(credentialId).catch(() => {});
     return ok;
   },
@@ -73,7 +73,7 @@ export const bcryptPasswordStore: CredentialStore = {
   async issue(subjectId, secret) {
     // Cost 12, matching what the platform already uses, so migrated hashes and new ones are
     // indistinguishable in verification time as well as in shape.
-    return { subjectId, secretHash: await bcrypt.hash(secret, 12) };
+    return { subjectId, hash: await bcrypt.hash(secret, 12) };
   },
 };
 

@@ -1,6 +1,6 @@
 {
   "_comment": "IST contact points for this demo, rendered by /about. Edit this file to update the roster. The page prefers GET /api/v1/system/team (collection demoTeamContact) and falls back to this list when the API is unavailable or the collection is empty. Avatar and QR images live in frontend/public.",
-  "intro": "MongoDB's Industry Solutions Team (IST) is a global group of industry experts, solution builders, and advisors that helps customers address their specific business and technology challenges. We create tailored solutions, demos, guidance, and enablement, and we bring customer feedback back to Product. Our mission is to position MongoDB as a trusted strategic partner that helps organizations modernize, innovate, and achieve better business outcomes.",
+  "intro": "MongoDB's Industry Solutions Team (IST) is a global-integrated team of industry experts who build tailored solutions, demos, and enablement so clients see MongoDB's value in their own industry language.",
   "contacts": [
     {
       "id": "IST-CONTACT-001",

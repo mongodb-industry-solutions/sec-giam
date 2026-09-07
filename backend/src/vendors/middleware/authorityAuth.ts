@@ -6,6 +6,7 @@ import { MongoSigningKeyStore } from '../../modules/keys/services/signingKeyStor
 import { RealmService } from '../../modules/realm/services/realm.service';
 import { DecisionService } from '../../modules/authorization/services/decision.service';
 import { SecurityEventService } from '../../modules/audit/services/securityEvent.service';
+import { permissionString } from '../../modules/authorization/models/resource.model';
 
 /**
  * Administering the authority, authorised by the caller's own ROLE.
@@ -32,7 +33,8 @@ export interface AuthorityCaller {
   /** The realm that signed the token. Differs from `realmId` only under a cross-realm grant. */
   homeRealmId?: string;
   roles: string[];
-  permissions: Array<{ resource: string; action: string }>;
+  /** Full permission strings, `resource:action`. */
+  permissions: string[];
   viaOperatorToken: boolean;
   /** The widest scope any role held grants: `self` sees only its own records, `all` sees the realm. */
   scopeKind: 'self' | 'all';
@@ -75,7 +77,7 @@ function principalCaller(
   realmId: string,
   homeRealmId: string,
   roles: string[],
-  permissions: Array<{ resource: string; action: string }>,
+  permissions: string[],
   scopeKind: 'self' | 'all',
 ): AuthorityCaller {
   return {
@@ -86,9 +88,7 @@ function principalCaller(
     permissions,
     viaOperatorToken: false,
     scopeKind,
-    can: (resource, action) => permissions.some(
-      (permission) => permission.resource === resource && permission.action === action,
-    ),
+    can: (resource, action) => permissions.includes(permissionString(resource, action)),
   };
 }
 
@@ -99,6 +99,8 @@ function principalCaller(
  * before the parameters are read.
  */
 export async function requireAuthorityCaller(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // A bearer token is expected here too, so a refusal carries the RFC 6750 challenge.
+  request.bearerProtected = true;
   const resolved = await resolveCaller(request);
   if (!resolved.caller) return refuse(reply, 401, resolved.detail);
   request.authorityCaller = resolved.caller;

@@ -19,7 +19,7 @@
     },
     "providers": [
       {
-        "providerId": "d1a2b3c4-0002-0002-0002-000000000002",
+        "domainId": "d1a2b3c4-0002-0002-0002-000000000002",
         "name": "msentra",
         "displayName": "Microsoft Entra ID",
         "protocol": "oidc",
@@ -38,7 +38,7 @@
         "claimMappings": []
       },
       {
-        "providerId": "d1a2b3c4-0003-0003-0003-000000000003",
+        "domainId": "d1a2b3c4-0003-0003-0003-000000000003",
         "name": "bigid",
         "displayName": "BigID",
         "protocol": "oidc",
@@ -52,7 +52,7 @@
         "claimMappings": []
       },
       {
-        "providerId": "d1a2b3c4-0004-0004-0004-000000000004",
+        "domainId": "d1a2b3c4-0004-0004-0004-000000000004",
         "name": "partnerbank",
         "displayName": "Partner Bank (staff SSO)",
         "protocol": "oidc",
@@ -87,23 +87,5 @@
         ]
       }
     ]
-  },
-  {
-    "realmId": "d1a2b3c4-0004-0004-0004-000000000004",
-    "name": "bankcore",
-    "displayName": "BankCore",
-    "aliases": [],
-    "enabled": true,
-    "demoMode": false,
-    "registration": {
-      "selfServiceEnabled": false,
-      "autoApprove": false
-    },
-    "branding": {
-      "displayName": "BankCore",
-      "primaryColor": "#001E2B",
-      "backgroundStyle": "plain"
-    },
-    "providers": []
   }
 ]

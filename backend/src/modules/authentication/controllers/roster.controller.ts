@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { toScimEmails } from '../../directory/models/identity.model';
+import { toScimEmails } from '../../directory/models/principal.model';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -43,6 +43,13 @@ export async function rosterController(fastify: FastifyInstance) {
               + 'declares, because the useful personas differ from one application to the next.',
             examples: ['acme-portal'],
           },
+          request_id: {
+            type: 'string',
+            description:
+              'The pending authorization the authority parked at the sign-in screen. Preferred over '
+              + 'client_id from a hosted screen, which is not told which application asked.',
+            examples: ['b3f1c2d4'],
+          },
         },
       },
       response: {
@@ -79,7 +86,8 @@ export async function rosterController(fastify: FastifyInstance) {
                 additionalProperties: false,
                 properties: {
                   subjectId: { type: 'string' },
-                  userName: { type: 'string' },
+                  userName: { type: 'string', description: 'The login identifier, per SCIM.' },
+                  displayName: { type: 'string', description: 'The name to show. SCIM `name.formatted`.' },
                   email: { type: 'string' },
                   role: { type: 'string' },
                   demoNote: { type: 'string' },
@@ -92,7 +100,7 @@ export async function rosterController(fastify: FastifyInstance) {
             displayName: 'Acme',
             branding: { displayName: 'Acme', primaryColor: '#00ED64' },
             providers: [{ name: 'entra', displayName: 'Microsoft Entra ID', protocol: 'oidc', enabled: false }],
-            roster: [{ subjectId: 'ada', userName: 'Ada Lovelace', role: 'analyst' }],
+            roster: [{ subjectId: 'ada', userName: 'ada.lovelace', displayName: 'Ada Lovelace', role: 'analyst' }],
           }],
         },
         404: { $ref: 'Problem#', description: 'No such realm.' },
@@ -109,10 +117,13 @@ export async function rosterController(fastify: FastifyInstance) {
 
     // The role a persona holds, resolved so the screen can offer one ready-made user per role. This
     // is the "one click per role" affordance the demonstration is built around.
-    const { ROLE_ASSIGNMENT_COLLECTION, ROLE_COLLECTION } = await import('../../../shared/models/collections');
-    const assignments = await fastify.db.collection(ROLE_ASSIGNMENT_COLLECTION)
-      .find({ realmId: realm.realmId }, { projection: { _id: 0, subjectId: 1, roleId: 1 } })
-      .toArray() as unknown as Array<{ subjectId: string; roleId: string }>;
+    const { PRINCIPAL_COLLECTION, ROLE_COLLECTION } = await import('../../../shared/models/collections');
+    const holders = await fastify.db.collection(PRINCIPAL_COLLECTION)
+      .find({ realmId: realm.realmId }, { projection: { _id: 0, subjectId: 1, roles: 1 } })
+      .toArray() as unknown as Array<{ subjectId: string; roles?: Array<{ roleId: string }> }>;
+    const assignments = holders.flatMap(
+      (holder) => (holder.roles ?? []).map((holding) => ({ subjectId: holder.subjectId, roleId: holding.roleId })),
+    );
     const roles = await fastify.db.collection(ROLE_COLLECTION)
       .find({ realmId: realm.realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
       .toArray() as unknown as Array<{ roleId: string; name: string }>;
@@ -134,14 +145,21 @@ export async function rosterController(fastify: FastifyInstance) {
 
     // The roles this client's screen offers. Read from the client record rather than passed in, so a
     // caller cannot widen its own roster by asking for more.
-    const { client_id: clientId } = request.query as { client_id?: string };
-    const { CLIENT_COLLECTION } = await import('../../../shared/models/collections');
-    const client = clientId
-      ? await fastify.db.collection(CLIENT_COLLECTION).findOne(
-        { realmId: realm.realmId, clientId, status: 'active' },
-        { projection: { _id: 0, demoRoster: 1 } },
-      ) as { demoRoster?: string[] } | null
+    // The hosted screen is given a request_id, not a client id, so the asking client is resolved from
+    // the parked request rather than from a parameter that screen would have to carry.
+    const { client_id: clientId, request_id: requestId } = request.query as {
+      client_id?: string; request_id?: string;
+    };
+    const { TICKET_COLLECTION } = await import('../../../shared/models/collections');
+    const parked = requestId
+      ? await fastify.db.collection(TICKET_COLLECTION).findOne(
+        { realmId: realm.realmId, requestId },
+        { projection: { _id: 0, clientId: 1 } },
+      ) as { clientId?: string } | null
       : null;
+    const askingClient = parked?.clientId ?? clientId;
+    const { findOAuthClient } = await import('../../oauth/services/clientAuth.service');
+    const client = askingClient ? await findOAuthClient(fastify.db, realm.realmId, askingClient) : null;
     const offered = client?.demoRoster;
 
     // The role this screen should show the persona under: the one it offers, when it offers any of them.
@@ -150,12 +168,17 @@ export async function rosterController(fastify: FastifyInstance) {
       return (offered && held.find((role) => offered.includes(role))) ?? held[0];
     };
 
+    // Which path accepts joiners, resolved once for the response.
+    const joining = await realmService.registration(realm.realmId);
+
     return reply.send({
       realm: realm.name,
       displayName: realm.displayName,
       issuer: realm.issuer,
       ...(realm.notice ? { notice: realm.notice } : {}),
-      registrationEnabled: realm.registration.selfServiceEnabled,
+      // Still one flag at the top level: a sign-in screen asks one question and should not have to
+      // reason about which path answers it. Resolved from the internal path (ADR-002).
+      registrationEnabled: joining.selfServiceEnabled,
       branding: realm.branding,
       providers: providers.map((provider) => ({
         name: provider.name,
@@ -174,7 +197,10 @@ export async function rosterController(fastify: FastifyInstance) {
         })
         .map((identity) => ({
           subjectId: identity.subjectId,
+          // The login and the name are different things, and both are useful here: somebody
+          // choosing a persona reads the name, and the field they then type is the login.
           userName: identity.userName,
+          ...(identity.name?.formatted ? { displayName: identity.name.formatted } : {}),
           ...(toScimEmails(identity)[0] ? { email: toScimEmails(identity)[0].value } : {}),
           ...(roleFor(identity.subjectId) ? { role: roleFor(identity.subjectId) as string } : {}),
           ...(identity.demoNote ? { demoNote: identity.demoNote } : {}),

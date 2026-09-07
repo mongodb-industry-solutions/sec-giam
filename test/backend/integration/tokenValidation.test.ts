@@ -73,7 +73,27 @@ describe('v39 P8.5: the centralised model answers what local verification cannot
     expect(response.json().sub).toBe(CLIENT_ID);
   });
 
-  it('reports a revoked token as inactive, which local verification would still accept', async () => {
+  it('cannot revoke a MACHINE token early, and says so honestly', async () => {
+    /**
+     * v40 changed what this endpoint can do for a `client_credentials` token, and the change is a
+     * consequence of the design rather than a defect in it.
+     *
+     * Revocation is now the deletion of the SESSION a token belongs to, because no token is stored:
+     * both kinds are JWTs, so a stored copy kept a redeemable artifact at rest for no information
+     * the token did not already carry. And `client_credentials` creates no session, which is what
+     * RFC 6749 section 4.4.3 requires.
+     *
+     * So a machine access token has nothing to revoke, and the bound on its exposure is its five
+     * minute lifetime. That is the stated revocation objective, and pretending otherwise here would
+     * make introspection lie about a token that still verifies.
+     *
+     * RFC 7009 still says respond 200: a revocation request for a token the server cannot act on is
+     * not an error, and reporting one would tell a caller whether a token exists.
+     *
+     * Session-backed revocation IS immediate and is covered where it belongs: `singleLogout`
+     * asserts the session document is gone, and the `sessionRevocation` unit suite asserts all four
+     * revocation shapes plus reuse detection.
+     */
     const token = await machineToken();
     expect((await introspect(token)).json().active).toBe(true);
 
@@ -85,9 +105,19 @@ describe('v39 P8.5: the centralised model answers what local verification cannot
     });
     expect(revoked.statusCode).toBe(200);
 
-    // The signature is still valid and the token has not expired, so local verification would accept
-    // it. This is exactly the difference the two models trade against each other.
-    expect((await introspect(token)).json().active).toBe(false);
+    // Still active, because there was no session to delete. The five minute lifetime is the bound.
+    expect(
+      (await introspect(token)).json().active,
+      'a machine token carries no session, so nothing revokes it before it expires',
+    ).toBe(true);
+  });
+
+  it('carries no session on a machine token, which is why the above holds', async () => {
+    // The reason, asserted rather than described: no `sid` claim means no session, and the session
+    // is what revocation acts on.
+    const token = await machineToken();
+    const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+    expect(claims.sid, 'client_credentials must not open a session').toBeUndefined();
   });
 
   it('answers 200 to a revocation whether or not anything was revoked', async () => {

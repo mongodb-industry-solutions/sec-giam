@@ -1,7 +1,8 @@
 import { Db } from 'mongodb';
+import { trailHealth } from '../../modules/audit/services/securityEvent.service';
 import { existsSync } from 'fs';
 import { config, keyVaultNamespace, realmIssuer } from '../../config';
-import { REALM_COLLECTION, IDENTITY_COLLECTION, SIGNING_KEY_COLLECTION } from '../models/collections';
+import { REALM_COLLECTION, PRINCIPAL_COLLECTION, KEY_COLLECTION } from '../models/collections';
 
 // What GIAM reports about itself at boot, so "is it working" is answerable from the log alone.
 // Every failure mode that costs time on this platform shows up here: a wrong crypt_shared path, a
@@ -88,6 +89,23 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
     return [{ label: 'directory', value: `ping failed: ${err instanceof Error ? err.message : String(err)}`, level: 'warn' }];
   }
 
+  /**
+   * The audit trail's own health. PCI DSS 10.7 requires that a failure to log be DETECTED.
+   *
+   * Reported before the record counts below, because a deployment whose trail is dropping writes has
+   * a problem that outranks how many realms it has. `warn` and not a hard failure: the trail is
+   * deliberately non-blocking, so a degraded trail is a serving deployment that an operator must
+   * know about rather than one that should stop.
+   */
+  const trail = trailHealth();
+  lines.push(trail.healthy
+    ? { label: 'audit trail', value: `${trail.written} event(s) written, no failures` }
+    : {
+      label: 'audit trail',
+      value: `DEGRADED: ${trail.failed} write(s) lost, last at ${trail.lastFailureAt}. Evidence is incomplete`,
+      level: 'warn',
+    });
+
   try {
     const realms = await db.collection(REALM_COLLECTION)
       .find({}, { projection: { _id: 0, realmId: 1, name: 1, enabled: 1 } })
@@ -97,7 +115,7 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
       // With no realm nothing can be issued, and the failure reads as a token bug rather than empty data.
       : { label: 'realms', value: 'none: nothing can authenticate. Run setup:seed', level: 'warn' });
 
-    const identities = await db.collection(IDENTITY_COLLECTION).estimatedDocumentCount();
+    const identities = await db.collection(PRINCIPAL_COLLECTION).estimatedDocumentCount();
     lines.push({
       label: 'identities',
       value: identities > 0 ? `${identities} principal(s)` : 'none: the database is not seeded',
@@ -110,12 +128,12 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
     // health check. Signing keys are what this replica can mint with; published keys include every
     // key still trusted for verification, which legitimately outnumbers them after a rotation or a
     // scale-down. A single count of everything `active` conflated the two and read as a leak.
-    const signingKeys = await db.collection(SIGNING_KEY_COLLECTION).countDocuments({
+    const signingKeys = await db.collection(KEY_COLLECTION).countDocuments({
       status: 'active',
       signingEligible: true,
       instanceId: config.keys.instanceId,
     });
-    const published = await db.collection(SIGNING_KEY_COLLECTION).countDocuments({ status: 'active' });
+    const published = await db.collection(KEY_COLLECTION).countDocuments({ status: 'active' });
     lines.push({
       label: 'published keys',
       value: published > 0

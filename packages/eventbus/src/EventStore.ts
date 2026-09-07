@@ -3,7 +3,7 @@
 // order (PCI DSS). The interface is injectable so the bus can be unit-tested with a fake.
 import { DomainEvent, BusinessProcess } from './types';
 
-export const DOMAIN_EVENT_COLLECTION = 'domainEvent';
+export const EVENTBUS_COLLECTION = 'eventbus';
 
 // Structural port over the driver, so the shared package pins no MongoDB version of its own and a
 // real Db satisfies it as is. Two services with their own driver copies would otherwise clash.
@@ -34,7 +34,7 @@ export class MongoEventStore implements EventStore {
 
   async append(event: DomainEvent): Promise<void> {
     try {
-      await this.db.collection(DOMAIN_EVENT_COLLECTION).insertOne(event as object);
+      await this.db.collection(EVENTBUS_COLLECTION).insertOne(event as object);
     } catch (err) {
       // Idempotency: a repeated eventId (at-least-once delivery / retries) is a no-op.
       if ((err as { code?: number }).code === 11000) return;
@@ -43,7 +43,7 @@ export class MongoEventStore implements EventStore {
   }
 
   async trail(correlationId: string): Promise<DomainEvent[]> {
-    const docs = await this.db.collection(DOMAIN_EVENT_COLLECTION)
+    const docs = await this.db.collection(EVENTBUS_COLLECTION)
       .find({ correlationId }, { projection: { _id: 0 } })
       .sort({ occurredAt: 1 })
       .toArray();
@@ -58,7 +58,7 @@ export class MongoEventStore implements EventStore {
         ...(opts.to ? { $lte: opts.to } : {}),
       };
     }
-    const docs = await this.db.collection(DOMAIN_EVENT_COLLECTION)
+    const docs = await this.db.collection(EVENTBUS_COLLECTION)
       .find(query, { projection: { _id: 0 } })
       .sort({ occurredAt: -1 })
       .limit(opts?.limit ?? 200)

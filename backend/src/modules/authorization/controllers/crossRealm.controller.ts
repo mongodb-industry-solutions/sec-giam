@@ -5,8 +5,9 @@ import { DecisionService } from '../services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
-import { ROLE_ASSIGNMENT_COLLECTION, IDENTITY_COLLECTION } from '../../../shared/models/collections';
-import { RoleRecord, RoleAssignmentRecord, REALM_SCOPE_KIND } from '../models/authorization.model';
+import { PRINCIPAL_COLLECTION } from '../../../shared/models/collections';
+import { RoleRecord, REALM_SCOPE_KIND } from '../models/authorization.model';
+import { PrincipalRecord, RoleHolding, MAX_ROLE_HOLDINGS } from '../../directory/models/principal.model';
 import { ROLE_COLLECTION } from '../../../shared/models/collections';
 import { newMeta } from '../../../shared/models/base.model';
 
@@ -92,7 +93,10 @@ export async function crossRealmController(fastify: FastifyInstance) {
   const decisions = () => new DecisionService(fastify.db);
   const events = () => new SecurityEventService(fastify.db);
   const realms = () => new RealmService(fastify.db);
-  const assignments = () => fastify.db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
+  const principals = () => fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
+
+  /** A realm grant is a role holding on the principal, scoped at the realm it administers. */
+  type RealmGrant = RoleHolding & { subjectId: string };
 
   /**
    * Everything a grant record needs spelled out for a reader.
@@ -100,12 +104,11 @@ export async function crossRealmController(fastify: FastifyInstance) {
    * The stored record holds ids because that is what a decision is made against; a person reading a
    * list needs the names, and resolving them here is cheaper than making every client do it.
    */
-  async function describe(record: RoleAssignmentRecord) {
+  async function describe(record: RealmGrant) {
     const role = await fastify.db.collection<RoleRecord>(ROLE_COLLECTION)
       .findOne({ roleId: record.roleId }, { projection: { _id: 0, name: 1 } });
     const target = record.scope?.ref ? await realms().byId(record.scope.ref) : null;
     return {
-      assignmentId: record.assignmentId,
       subjectId: record.subjectId,
       roleId: record.roleId,
       ...(role?.name ? { roleName: role.name } : {}),
@@ -199,9 +202,18 @@ export async function crossRealmController(fastify: FastifyInstance) {
     );
     if (decision.effect !== 'allow') return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
 
-    const held = await assignments()
-      .find({ realmId: caller.realmId, 'scope.kind': REALM_SCOPE_KIND }, { projection: { _id: 0 } })
+    const holders = await principals()
+      .find(
+        { realmId: caller.realmId, 'roles.scope.kind': REALM_SCOPE_KIND },
+        { projection: { _id: 0, subjectId: 1, roles: 1 } },
+      )
       .toArray();
+    const held: RealmGrant[] = [];
+    for (const holder of holders) {
+      for (const holding of holder.roles ?? []) {
+        if (holding.scope?.kind === REALM_SCOPE_KIND) held.push({ ...holding, subjectId: holder.subjectId });
+      }
+    }
     return reply.send({ grants: await Promise.all(held.map(describe)) });
   });
 
@@ -262,7 +274,7 @@ export async function crossRealmController(fastify: FastifyInstance) {
       return reply.status(400).send(problem(400, 'That is this realm', 'A principal already administers their own realm through an ordinary assignment.'));
     }
 
-    const subject = await fastify.db.collection<{ subjectId: string; realmId: string }>(IDENTITY_COLLECTION)
+    const subject = await fastify.db.collection<{ subjectId: string; realmId: string }>(PRINCIPAL_COLLECTION)
       .findOne({ realmId: holder.realmId, subjectId: body.subjectId }, { projection: { _id: 0, subjectId: 1 } });
     if (!subject) return reply.status(404).send(problem(404, 'Unknown principal', 'No principal of this realm has that subject.'));
 
@@ -270,29 +282,28 @@ export async function crossRealmController(fastify: FastifyInstance) {
       .findOne({ realmId: holder.realmId, name: body.roleName }, { projection: { _id: 0, roleId: 1, name: 1 } });
     if (!role) return reply.status(404).send(problem(404, 'Unknown role', 'This realm defines no role by that name.'));
 
-    const existing = await assignments().findOne({
-      realmId: holder.realmId,
-      subjectId: body.subjectId,
-      roleId: role.roleId,
-      'scope.kind': REALM_SCOPE_KIND,
-      'scope.ref': target.realmId,
-    });
-    if (existing) return reply.status(409).send(problem(409, 'Already granted'));
-
-    const record: RoleAssignmentRecord = {
-      realmId: holder.realmId,
-      tenantId: holder.tenantId,
-      assignmentId: `rgrant-${randomUUID()}`,
-      subjectId: body.subjectId,
+    const holding: RoleHolding = {
       roleId: role.roleId,
       scope: { kind: REALM_SCOPE_KIND, ref: target.realmId },
       grantedBy: caller.subjectId,
       grantedAt: new Date().toISOString(),
       ...(body.expiresAt ? { expiresAt: body.expiresAt } : {}),
       justification: body.justification.trim(),
-      meta: newMeta('RoleAssignment'),
     };
-    await assignments().insertOne(record);
+    const record: RealmGrant = { ...holding, subjectId: body.subjectId };
+
+    // Guarded on the exact pair being absent, so the same realm cannot be granted twice and two
+    // concurrent grants cannot both append.
+    const appended = await principals().updateOne(
+      {
+        realmId: holder.realmId,
+        subjectId: body.subjectId,
+        roles: { $not: { $elemMatch: { roleId: role.roleId, 'scope.ref': target.realmId } } },
+        $expr: { $lt: [{ $size: { $ifNull: ['$roles', []] } }, MAX_ROLE_HOLDINGS] },
+      },
+      { $push: { roles: holding } },
+    );
+    if (appended.matchedCount === 0) return reply.status(409).send(problem(409, 'Already granted'));
 
     // Recorded in BOTH realms. The realm that holds the grant needs it because its principal gained
     // authority; the realm that is now administrable needs it because somebody outside it did.
@@ -323,7 +334,7 @@ export async function crossRealmController(fastify: FastifyInstance) {
     return reply.status(201).send(await describe(record));
   });
 
-  fastify.delete('/realms/:realm/realm-grants/:assignmentId', {
+  fastify.delete('/realms/:realm/realm-grants/:subjectId/:targetRealmId', {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'revokeRealmGrant',
@@ -331,23 +342,29 @@ export async function crossRealmController(fastify: FastifyInstance) {
       summary: 'Take back administration of another realm',
       description:
         'No applicable standard; multi-realm administration. The grant is deleted rather than left to '
-        + 'expire, and takes effect at once: permissions are resolved from the stored assignment on '
-        + 'every request, so nothing survives in a token that was already issued beyond its own short '
-        + 'life. Recorded naming both realms, like the grant was.',
+        + 'expire, and takes effect at once: permissions are resolved from the holding on every '
+        + 'request, so nothing survives in a token that was already issued beyond its own short '
+        + 'life. Addressed by the principal and the realm it administers, because the holding lives '
+        + 'on the principal and has no identifier of its own. Recorded naming both realms, like the '
+        + 'grant was.',
       security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
-        required: ['realm', 'assignmentId'],
-        properties: { realm: { type: 'string' }, assignmentId: { type: 'string' } },
+        required: ['realm', 'subjectId', 'targetRealmId'],
+        properties: {
+          realm: { type: 'string' }, subjectId: { type: 'string' }, targetRealmId: { type: 'string' },
+        },
       },
       response: {
         200: {
           description: 'Revoked.',
           type: 'object',
           additionalProperties: false,
-          required: ['revoked', 'assignmentId'],
-          properties: { revoked: { type: 'boolean' }, assignmentId: { type: 'string' } },
-          examples: [{ revoked: true, assignmentId: 'rgrant-9f21' }],
+          required: ['revoked', 'subjectId', 'targetRealmId'],
+          properties: {
+            revoked: { type: 'boolean' }, subjectId: { type: 'string' }, targetRealmId: { type: 'string' },
+          },
+          examples: [{ revoked: true, subjectId: 'sub-4821', targetRealmId: 'realm-2' }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held permits managing assignments.' },
@@ -356,20 +373,27 @@ export async function crossRealmController(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const caller = request.principal!;
-    const { assignmentId } = request.params as { assignmentId: string };
+    const { subjectId, targetRealmId } = request.params as { subjectId: string; targetRealmId: string };
 
     const decision = await decisions().checkIn(
       caller.homeRealmId, caller.subjectId, AUTHORITY_RESOURCE_SERVER, 'assignments', 'manage', caller.realmId,
     );
     if (decision.effect !== 'allow') return reply.status(403).send(problem(403, 'Not permitted', decision.reason));
 
-    const held = await assignments().findOne(
-      { realmId: caller.realmId, assignmentId, 'scope.kind': REALM_SCOPE_KIND },
-      { projection: { _id: 0 } },
+    const principal = await principals().findOne(
+      { realmId: caller.realmId, subjectId },
+      { projection: { _id: 0, subjectId: 1, roles: 1 } },
     );
-    if (!held) return reply.status(404).send(problem(404, 'No such grant'));
+    const holding = (principal?.roles ?? []).find(
+      (entry) => entry.scope?.kind === REALM_SCOPE_KIND && entry.scope.ref === targetRealmId,
+    );
+    if (!holding) return reply.status(404).send(problem(404, 'No such grant'));
+    const held: RealmGrant = { ...holding, subjectId };
 
-    await assignments().deleteOne({ realmId: caller.realmId, assignmentId });
+    await principals().updateOne(
+      { realmId: caller.realmId, subjectId },
+      { $pull: { roles: { roleId: holding.roleId, 'scope.ref': targetRealmId } } },
+    );
 
     const holder = await realms().byId(caller.realmId);
     const target = held.scope?.ref ? await realms().byId(held.scope.ref) : null;
@@ -395,6 +419,6 @@ export async function crossRealmController(fastify: FastifyInstance) {
       });
     }
 
-    return reply.send({ revoked: true, assignmentId });
+    return reply.send({ revoked: true, subjectId, targetRealmId });
   });
 }

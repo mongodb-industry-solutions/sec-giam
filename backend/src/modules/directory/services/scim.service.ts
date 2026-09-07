@@ -1,4 +1,4 @@
-import { IdentityRecord, toScimEmails } from '../models/identity.model';
+import { PrincipalRecord, toScimEmails, isHoldingActive } from '../models/principal.model';
 
 /**
  * SCIM 2.0 projection, in and out.
@@ -28,6 +28,14 @@ export interface ScimUser {
   userName: string;
   name?: { formatted?: string; givenName?: string; familyName?: string };
   emails?: Array<{ value: string; primary?: boolean; type?: string }>;
+  /**
+   * RFC 7643 section 4.1.2. A CORE attribute, so it is emitted here and not in the extension.
+   *
+   * Only the holdings that are actually in force appear. A pending approval and a lapsed grant are
+   * both stored on the principal and neither is authority the person currently has, so publishing
+   * them would let a directory reader conclude somebody holds a role they cannot exercise.
+   */
+  roles?: Array<{ value: string; display?: string; primary?: boolean }>;
   active: boolean;
   meta: {
     resourceType: 'User';
@@ -46,8 +54,21 @@ export interface ScimUser {
  * usable, and where it stands in its lifecycle. SCIM only has the boolean, so the boolean is what is
  * projected, and the richer state travels in the extension rather than being flattened away.
  */
-export function toScimUser(identity: IdentityRecord, baseUrl: string): ScimUser {
+export function toScimUser(
+  identity: PrincipalRecord,
+  baseUrl: string,
+  /** roleId to role name. Absent means the ids are published as they are, never omitted silently. */
+  roleNames?: ReadonlyMap<string, string>,
+): ScimUser {
   const emails = toScimEmails(identity);
+  const held = (identity.roles ?? [])
+    .filter((holding) => isHoldingActive(holding))
+    .map((holding, index) => ({
+      value: roleNames?.get(holding.roleId) ?? holding.roleId,
+      ...(roleNames?.has(holding.roleId) ? { display: roleNames.get(holding.roleId) as string } : {}),
+      ...(index === 0 ? { primary: true } : {}),
+    }));
+
   return {
     schemas: [SCIM_USER_SCHEMA, SCIM_PRINCIPAL_EXTENSION],
     id: identity.subjectId,
@@ -55,13 +76,14 @@ export function toScimUser(identity: IdentityRecord, baseUrl: string): ScimUser 
     userName: identity.userName,
     ...(identity.name ? { name: identity.name } : {}),
     ...(emails.length > 0 ? { emails: emails.map((email, index) => ({ ...email, primary: index === 0 })) } : {}),
+    ...(held.length > 0 ? { roles: held } : {}),
     active: identity.active,
     [SCIM_PRINCIPAL_EXTENSION]: {
       // The distinction SCIM's single boolean cannot carry: a suspended principal and a retired one
       // are both inactive and are not the same thing to anyone reviewing them.
       kind: identity.kind,
       lifecycleState: identity.lifecycleState,
-      ...(identity.providerId ? { providerId: identity.providerId } : {}),
+      ...(identity.domainId ? { domainId: identity.domainId } : {}),
       // The opaque binding to a consuming application's own record. This authority never resolves it
       // and does not know what it names; publishing it lets an application find its own records for a
       // principal without either side learning the other's vocabulary.

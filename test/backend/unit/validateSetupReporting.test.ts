@@ -11,7 +11,7 @@ vi.mock('../../../backend/src/vendors/encryption/keyVault', () => ({
 
 import { validateSetup } from '../../../backend/src/vendors/setup/validateSetup';
 import {
-  CLIENT_COLLECTION, REALM_COLLECTION, IDENTITY_COLLECTION, API_KEY_COLLECTION,
+  CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION,
 } from '../../../backend/src/shared/models/collections';
 
 interface Fixture {
@@ -74,14 +74,14 @@ describe('validateSetup reports every condition', () => {
 
   it('names an index that is present and no longer declared', async () => {
     const { checks } = await run({
-      [CLIENT_COLLECTION]: {
+      [CREDENTIAL_COLLECTION]: {
         indexes: [
           { name: '_id_', key: { _id: 1 } },
           { name: 'realm_owner', key: { realmId: 1, 'owner.kind': 1 } },
         ],
       },
     });
-    const check = detailOf(checks, `${CLIENT_COLLECTION} carries no index the model dropped`);
+    const check = detailOf(checks, `${CREDENTIAL_COLLECTION} carries no index the model dropped`);
     expect(check?.ok).toBe(false);
     expect(check?.detail).toContain('realm_owner');
     expect(check?.severity).toBe('warning');
@@ -89,7 +89,7 @@ describe('validateSetup reports every condition', () => {
 
   it('leaves an index it cannot judge alone, and says so', async () => {
     const { checks } = await run({
-      [CLIENT_COLLECTION]: {
+      [CREDENTIAL_COLLECTION]: {
         indexes: [
           { name: '__safe_content__', key: { __safeContent__: 1 } },
           { name: 'hand_made', key: { $weird: 1 } },
@@ -106,7 +106,7 @@ describe('validateSetup reports every condition', () => {
 
   it('counts the documents that still hold a retired field', async () => {
     const { checks } = await run({
-      [CLIENT_COLLECTION]: { documents: [{ owner: {} }, { owners: [] }] },
+      [CREDENTIAL_COLLECTION]: { documents: [{ owner: {} }, { owners: [] }] },
     });
     const check = detailOf(checks, 'holds no field the model retired');
     expect(check?.ok).toBe(false);
@@ -115,15 +115,14 @@ describe('validateSetup reports every condition', () => {
 
   it('says plainly that encrypted-field drift needs a rebuild and cannot be set up away', async () => {
     const { checks, verdict, resetReasons } = await run({
-      [API_KEY_COLLECTION]: { options: { encryptedFields: { fields: [] } } },
-      [IDENTITY_COLLECTION]: { options: { encryptedFields: { fields: [] } } },
+      [PRINCIPAL_COLLECTION]: { options: { encryptedFields: { fields: [] } } },
     });
-    const check = detailOf(checks, `encrypted fields on ${API_KEY_COLLECTION}`);
+    const check = detailOf(checks, `encrypted fields on ${PRINCIPAL_COLLECTION}`);
     expect(check?.ok).toBe(false);
     expect(check?.severity).toBe('reset');
     expect(check?.detail).toContain('setup:db:reset');
     expect(check?.detail).toContain('never fix this');
     expect(verdict).toBe('requires-reset');
-    expect(resetReasons.join(' ')).toContain(API_KEY_COLLECTION);
+    expect(resetReasons.join(' ')).toContain(PRINCIPAL_COLLECTION);
   });
 });
