@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Plus, ShieldHalf, X } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Pagination } from '../../../components/Pagination';
+import { ListToolbar } from '../../../components/ListToolbar';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ResultState';
 import { ActionButton, Fact, RecordCard } from '../../../components/RecordCard';
 import { callApi, can, currentClaims } from '../../../lib/console';
@@ -22,18 +23,26 @@ import type { RoleDetail, RoleSummary } from './types';
  * the first is quietly wrong about every role that inherits.
  */
 
+type ScopeFilter = 'any' | 'self' | 'all';
+
 export default function RolesPage() {
   const [query, setQuery] = useState('');
+  const [scope, setScope] = useState<ScopeFilter>('any');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [creating, setCreating] = useState(false);
 
   const read = useCallback(
     () => callApi<{ roles: RoleSummary[]; total: number }>('/roles', {
-      query: { q: query || undefined, skip: (page - 1) * limit, limit },
+      query: {
+        q: query || undefined,
+        scopeKind: scope === 'any' ? undefined : scope,
+        skip: (page - 1) * limit,
+        limit,
+      },
       subject: 'the roles in this realm',
     }),
-    [query, page, limit],
+    [query, scope, page, limit],
   );
 
   const roles = useConsoleResource(read, 'The roles could not be read.');
@@ -73,16 +82,23 @@ export default function RolesPage() {
         <CreateRole onCancel={() => setCreating(false)} onSubmit={create} busy={roles.busy === 'new'} />
       )}
 
-      <label className="block">
-        <span className="sr-only">Search roles</span>
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-          placeholder="Search by name or description"
-          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-      </label>
+      <ListToolbar
+        search={{
+          value: query,
+          onChange: (next) => { setQuery(next); setPage(1); },
+          placeholder: 'Search by name or description',
+        }}
+        filter={{
+          label: 'Filter by scope',
+          value: scope,
+          onChange: (next) => { setScope(next); setPage(1); },
+          options: [
+            { key: 'any', label: 'All' },
+            { key: 'self', label: 'Own records' },
+            { key: 'all', label: 'Realm wide' },
+          ],
+        }}
+      />
 
       {roles.error && <ErrorState message={roles.error} onRetry={() => void roles.reload()} />}
 

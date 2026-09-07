@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, KeyRound, ShieldHalf, Trash2, UserCheck, UserMinus, UserRound } from 'lucide-react';
+import { ArrowLeft, KeyRound, Pencil, ShieldHalf, Trash2, UserCheck, UserMinus, UserRound } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { Fact } from '../../../../components/Fact';
@@ -335,14 +335,15 @@ export default function IdentityDetailPage() {
             )
             : (
               <div className="flex flex-wrap items-center gap-2">
-                <Tooltip text="A name, an email, an external id and a user name. Nothing here changes what this principal may do.">
+                <Tooltip text="Edit the name, email, external id and user name. Nothing here changes what this principal may do.">
                   <button
                     type="button"
                     onClick={() => setEditing(true)}
                     disabled={retired}
-                    className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50 disabled:border-gray-300 disabled:bg-gray-100 disabled:text-gray-400"
                   >
-                    Correct the record
+                    <Pencil size={12} aria-hidden />
+                    Edit principal
                   </button>
                 </Tooltip>
                 <Tooltip text={user.active

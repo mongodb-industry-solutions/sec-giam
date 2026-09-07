@@ -5,36 +5,39 @@ import Link from 'next/link';
 import { Plus, Scale, X } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Pagination } from '../../../components/Pagination';
+import { ListToolbar } from '../../../components/ListToolbar';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ResultState';
 import { ActionButton, Fact, RecordCard } from '../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
 import { usePermissions } from '../../../lib/profile';
 import { Field, INPUT } from '../roles/parts';
-import { DisabledBadge, EffectBadge } from './parts';
+import { EffectBadge, StatusBadge } from './parts';
 import type { PolicyDetail, PolicySummary } from './types';
 
 /**
- * The conditional statements this realm applies, evaluated after roles.
+ * The conditional rules this realm applies, evaluated after roles.
  *
- * The deny count is a column of its own rather than folded into the total, because the two answer
- * different questions. A policy that only permits can be removed and nothing is taken away; one that
- * denies is holding something back, and removing it widens access the moment it goes. A single count
- * makes those look like the same object.
+ * One policy is one rule since v40: one effect, over one resource pattern, under conditions. Two
+ * rules that used to live as two statements in one policy are two policies now, each separately
+ * versionable and separately approvable.
  */
+
+type StatusFilter = 'all' | 'active' | 'draft' | 'retired';
 
 export default function PoliciesPage() {
   const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [creating, setCreating] = useState(false);
 
   const read = useCallback(
     () => callApi<{ policies: PolicySummary[]; total: number }>('/policies', {
-      query: { q: query || undefined, skip: (page - 1) * limit, limit },
+      query: { q: query || undefined, status: status === 'all' ? undefined : status, skip: (page - 1) * limit, limit },
       subject: 'the policies in this realm',
     }),
-    [query, page, limit],
+    [query, status, page, limit],
   );
 
   const policies = useConsoleResource(read, 'The policies could not be read.');
@@ -43,20 +46,20 @@ export default function PoliciesPage() {
   const total = policies.data?.total ?? 0;
   const rows = policies.data?.policies ?? [];
 
-  async function create(input: { name: string; effect: 'allow' | 'deny'; resources: string; actions: string; reason: string }) {
+  async function create(input: {
+    name: string; effect: 'allow' | 'deny'; resourceType: string; resourcePattern: string;
+    permissions: string; reason: string;
+  }) {
     const done = await policies.run(
       'new',
       () => callApi<PolicyDetail>('/policies', {
         method: 'POST',
         body: {
           name: input.name,
-          version: '1',
-          statements: [{
-            effect: input.effect,
-            ...(input.resources ? { resources: input.resources.split(',').map((value) => value.trim()).filter(Boolean) } : {}),
-            ...(input.actions ? { actions: input.actions.split(',').map((value) => value.trim()).filter(Boolean) } : {}),
-            ...(input.reason ? { reason: input.reason } : {}),
-          }],
+          effect: input.effect,
+          resource: { type: input.resourceType, pattern: input.resourcePattern || '*' },
+          permissions: input.permissions.split(',').map((value) => value.trim()).filter(Boolean),
+          ...(input.reason ? { reason: input.reason } : {}),
         },
         subject: 'that policy',
       }),
@@ -70,13 +73,13 @@ export default function PoliciesPage() {
       <SectionHeader
         icon={Scale}
         title="Policies"
-        description="Conditional statements evaluated after roles, where deny always wins."
+        description="One rule each, evaluated after roles, where deny always wins."
         info={
           <>
             A policy can only ever narrow what a role granted, never widen it, and a deny anywhere in
             the realm beats every allow everywhere else. Conditions are identity context only:
             assurance, network, time of day, tenant and attestation. Open one and use the simulator to
-            see which statement decides a request before trusting that it does.
+            see whether it decides a request before trusting that it does.
           </>
         }
         actions={mayManage && !creating
@@ -88,16 +91,24 @@ export default function PoliciesPage() {
         <CreatePolicy onCancel={() => setCreating(false)} onSubmit={create} busy={policies.busy === 'new'} />
       )}
 
-      <label className="block">
-        <span className="sr-only">Search policies</span>
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-          placeholder="Search by name or version"
-          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-      </label>
+      <ListToolbar
+        search={{
+          value: query,
+          onChange: (next) => { setQuery(next); setPage(1); },
+          placeholder: 'Search by name',
+        }}
+        filter={{
+          label: 'Filter by status',
+          value: status,
+          onChange: (next) => { setStatus(next); setPage(1); },
+          options: [
+            { key: 'all', label: 'All' },
+            { key: 'active', label: 'Active' },
+            { key: 'draft', label: 'Draft' },
+            { key: 'retired', label: 'Retired' },
+          ],
+        }}
+      />
 
       {policies.error && <ErrorState message={policies.error} onRetry={() => void policies.reload()} />}
 
@@ -108,7 +119,7 @@ export default function PoliciesPage() {
               icon={Scale}
               title={query ? 'No policy matches that' : 'This realm states no policies'}
               description={query
-                ? 'Nothing in this realm matches that name or version.'
+                ? 'Nothing in this realm matches that name.'
                 : 'Without one, every decision rests on roles alone. A policy is how a realm withholds something a role would otherwise grant.'}
             />
           : (
@@ -125,25 +136,18 @@ export default function PoliciesPage() {
                     subtitle={`version ${policy.version}`}
                     badges={
                       <>
-                        {policy.denyCount > 0 && <EffectBadge effect="deny" />}
-                        {policy.denyCount < policy.statementCount && <EffectBadge effect="allow" />}
-                        {!policy.enabled && <DisabledBadge />}
+                        <EffectBadge effect={policy.effect} />
+                        <StatusBadge status={policy.status} />
                       </>
                     }
                     facts={
                       <>
-                        <Fact
-                          label="States"
-                          value={policy.denyCount === 0
-                            ? `${policy.statementCount} statement${policy.statementCount === 1 ? '' : 's'}`
-                            : `${policy.statementCount} statement${policy.statementCount === 1 ? '' : 's'}, ${policy.denyCount} prohibiting`}
-                        />
+                        <Fact label="Grants" value={`${policy.permissionCount} permission${policy.permissionCount === 1 ? '' : 's'}`} />
                         <Fact
                           label="Conditional"
-                          value={policy.conditionCount === 0
-                            ? 'always applies'
-                            : `${policy.conditionCount} of them`}
+                          value={policy.conditionCount === 0 ? 'always applies' : `${policy.conditionCount} of them`}
                         />
+                        <Fact label="In effect" value={policy.inEffect ? 'yes' : 'no'} />
                         <Fact label="Last changed" value={when(policy.lastModified)} />
                       </>
                     }
@@ -167,28 +171,31 @@ export default function PoliciesPage() {
 }
 
 /**
- * A new policy starts with one unconditional statement.
+ * A new policy is one rule from the start.
  *
- * Conditions are added on the policy itself, where the simulator sits beside them. Offering the
- * whole condition vocabulary before the policy exists would mean building that editor twice and
- * keeping two copies of a closed vocabulary in step, which is how one of them quietly widens.
+ * Conditions are added on the policy's own screen, where the simulator sits beside them. Offering
+ * the whole condition vocabulary before the policy exists would mean building that editor twice.
  */
 function CreatePolicy({ onCancel, onSubmit, busy }: {
   onCancel: () => void;
-  onSubmit: (input: { name: string; effect: 'allow' | 'deny'; resources: string; actions: string; reason: string }) => void;
+  onSubmit: (input: {
+    name: string; effect: 'allow' | 'deny'; resourceType: string; resourcePattern: string;
+    permissions: string; reason: string;
+  }) => void;
   busy: boolean;
 }) {
   const [name, setName] = useState('');
   const [effect, setEffect] = useState<'allow' | 'deny'>('allow');
-  const [resources, setResources] = useState('');
-  const [actions, setActions] = useState('');
+  const [resourceType, setResourceType] = useState('');
+  const [resourcePattern, setResourcePattern] = useState('*');
+  const [permissions, setPermissions] = useState('');
   const [reason, setReason] = useState('');
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit({ name, effect, resources, actions, reason });
+        onSubmit({ name, effect, resourceType, resourcePattern, permissions, reason });
       }}
       className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
     >
@@ -212,21 +219,25 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Resources" hint="Comma separated. Leave empty for anything. A trailing * matches a prefix.">
-          <input value={resources} onChange={(e) => setResources(e.target.value)} className={INPUT} placeholder="roles, sessions" />
+        <Field label="Resource type" hint="What object kind this policy governs, e.g. roles, sessions.">
+          <input required value={resourceType} onChange={(e) => setResourceType(e.target.value)} className={INPUT} placeholder="roles" />
         </Field>
-        <Field label="Actions" hint="Comma separated. Leave empty for anything.">
-          <input value={actions} onChange={(e) => setActions(e.target.value)} className={INPUT} placeholder="view, manage" />
+        <Field label="Resource pattern" hint="`*` alone, or a trailing `*` for a prefix. Never a regular expression.">
+          <input value={resourcePattern} onChange={(e) => setResourcePattern(e.target.value)} className={INPUT} />
         </Field>
       </div>
 
-      <Field label="Reason" hint="Carried into every decision this statement makes. A decision a log cannot explain is not auditable.">
+      <Field label="Permissions" hint="Comma separated, full resource:action strings. The same spelling a role and a token use.">
+        <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} placeholder="roles:manage, sessions:view" />
+      </Field>
+
+      <Field label="Reason" hint="Carried into every decision this policy makes. A decision a log cannot explain is not auditable.">
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={INPUT} />
       </Field>
 
       <button
         type="submit"
-        disabled={busy || !name}
+        disabled={busy || !name || !permissions.trim() || !resourceType.trim()}
         className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
       >
         <Plus size={12} aria-hidden />

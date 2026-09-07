@@ -72,8 +72,8 @@ export default function DomainsPage() {
     <main className="space-y-5">
       <SectionHeader
         icon={Globe}
-        title="Authentication paths"
-        description="Every way a person can prove who they are in this realm."
+        title="Domains"
+        description="Every authentication path a person can prove who they are through in this realm."
         info="A path is created disabled, so nobody signs in through it before its settings have been checked. The last enabled path in a realm cannot be disabled or deleted: that would lock out everybody, including whoever would undo it."
         actions={mayManage && !creating
           ? <ActionButton icon={Plus} label="Add an authentication path" tone="primary" onClick={() => setCreating(true)} />

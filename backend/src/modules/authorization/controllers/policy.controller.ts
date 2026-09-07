@@ -200,6 +200,7 @@ export async function policyController(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           q: { type: 'string', description: 'Case-insensitive match on name or version.' },
+          status: { type: 'string', enum: ['draft', 'active', 'retired'] },
           skip: { type: 'integer', default: 0 },
           limit: { type: 'integer', default: 20, maximum: 200 },
         },
@@ -225,8 +226,10 @@ export async function policyController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, request.principal!.subjectId, 'policies', 'view');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    const { q, skip, limit } = request.query as { q?: string; skip?: number; limit?: number };
-    return reply.send(await new PolicyAdminService(fastify.db).list(realm.realmId, { q, skip, limit }));
+    const { q, status, skip, limit } = request.query as {
+      q?: string; status?: 'draft' | 'active' | 'retired'; skip?: number; limit?: number;
+    };
+    return reply.send(await new PolicyAdminService(fastify.db).list(realm.realmId, { q, status, skip, limit }));
   });
 
   fastify.get(`${base}/:policyId`, {

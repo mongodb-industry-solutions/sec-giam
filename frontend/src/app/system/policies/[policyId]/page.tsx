@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Minus, Play, Plus, Power, Save, Scale, Trash2 } from 'lucide-react';
+import { ArrowLeft, Play, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { ErrorState, LoadingState } from '../../../../components/ResultState';
@@ -11,19 +11,19 @@ import { ActionButton, Fact } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { Field, INPUT } from '../../roles/parts';
-import { DisabledBadge, EffectBadge, PatternList, describeCondition } from '../parts';
+import { EffectBadge, PatternList, StatusBadge, describeCondition } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
-  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail, type PolicyStatement,
+  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail,
 } from '../types';
 
 /**
  * One policy: what it states, and what it actually decides.
  *
  * The simulator is why this screen is worth having. A policy editor with no way to test a rule is
- * exactly how a deny gets written wrong and stays wrong: the statement looks right, nothing appears
- * to break, and the first time anybody finds out is when somebody is refused something they needed
- * or granted something they should not have had. Writing and testing belong on one screen.
+ * exactly how a deny gets written wrong and stays wrong: the rule looks right, nothing appears to
+ * break, and the first time anybody finds out is when somebody is refused something they needed or
+ * granted something they should not have had. Writing and testing belong on one screen.
  */
 
 export default function PolicyDetailPage() {
@@ -51,7 +51,7 @@ export default function PolicyDetailPage() {
   }
 
   async function remove() {
-    if (!window.confirm('Remove this policy? Removing one that denies widens access immediately, and this cannot be undone. Disabling it is reversible.')) return;
+    if (!window.confirm('Remove this policy? Removing one that denies widens access immediately, and this cannot be undone. Retiring it is reversible.')) return;
     const done = await policy.run(
       'delete',
       () => callApi(`/policies/${encodeURIComponent(policyId)}`, { method: 'DELETE', subject: 'that policy' }),
@@ -77,18 +77,23 @@ export default function PolicyDetailPage() {
           ? (
             <div className="flex gap-2">
               <ActionButton icon={Save} label={editing ? 'Stop editing' : 'Edit'} onClick={() => setEditing((was) => !was)} />
-              <ActionButton
-                icon={Power}
-                label={detail.enabled ? 'Disable' : 'Enable'}
-                busy={policy.busy === 'toggle'}
-                onClick={() => void policy.run(
-                  'toggle',
-                  () => callApi(`/policies/${encodeURIComponent(policyId)}`, {
-                    method: 'PATCH', body: { enabled: !detail.enabled }, subject: 'that policy',
-                  }),
-                  'That policy could not be switched.',
-                )}
-              />
+              <Tooltip text={detail.status === 'active'
+                ? 'Retires it. Kept for the record rather than deleted, and it decides nothing while retired.'
+                : 'Switches it on. It decides from its next evaluation onward.'}
+              >
+                <ActionButton
+                  icon={Power}
+                  label={detail.status === 'active' ? 'Retire' : 'Activate'}
+                  busy={policy.busy === 'toggle'}
+                  onClick={() => void policy.run(
+                    'toggle',
+                    () => callApi(`/policies/${encodeURIComponent(policyId)}`, {
+                      method: 'PATCH', body: { status: detail.status === 'active' ? 'retired' : 'active' }, subject: 'that policy',
+                    }),
+                    'That policy could not be switched.',
+                  )}
+                />
+              </Tooltip>
               <ActionButton icon={Trash2} label="Remove" tone="danger" busy={policy.busy === 'delete'} onClick={() => void remove()} />
             </div>
           )
@@ -106,26 +111,26 @@ export default function PolicyDetailPage() {
               <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs text-gray-400">version {detail.version}</span>
-                  {detail.denyCount > 0 && <EffectBadge effect="deny" />}
-                  {!detail.enabled && <DisabledBadge />}
+                  <EffectBadge effect={detail.effect} />
+                  <StatusBadge status={detail.status} />
                 </div>
                 <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
-                  <Fact label="Statements" value={`${detail.statementCount}`} />
-                  <Fact label="Prohibiting" value={`${detail.denyCount}`} />
+                  <Fact label="Permissions" value={`${detail.permissionCount}`} />
                   <Fact label="Conditional" value={`${detail.conditionCount}`} />
+                  <Fact label="In effect" value={detail.inEffect ? 'yes' : 'no'} />
                   <Fact label="Last changed" value={when(detail.lastModified)} />
                 </dl>
-                {!detail.enabled && (
+                {!detail.inEffect && (
                   <p className="mt-3 border-l-2 border-amber-200 pl-2.5 text-sm text-gray-600">
-                    Switched off, so none of these statements decides anything. The simulator below
-                    reflects that: it asks the authority rather than reading this document.
+                    Not in effect right now, so this rule decides nothing. The simulator below reflects
+                    that: it asks the authority rather than reading this document.
                   </p>
                 )}
               </section>
 
               {editing && mayManage
-                ? <StatementsEditor detail={detail} busy={policy.busy === 'save'} onSave={save} onCancel={() => setEditing(false)} />
-                : <StatementList statements={detail.statements} />}
+                ? <PolicyEditor detail={detail} busy={policy.busy === 'save'} onSave={save} onCancel={() => setEditing(false)} />
+                : <PolicyStatement detail={detail} />}
 
               <Simulator policyId={detail.policyId} subjectId={claims?.sub ?? ''} />
             </>
@@ -134,50 +139,50 @@ export default function PolicyDetailPage() {
   );
 }
 
-/** The statements as they will be read: effect first, then what they match, then why. */
-function StatementList({ statements }: { statements: PolicyStatement[] }) {
+/** The rule as it will be read: effect first, then what it matches, then why. */
+function PolicyStatement({ detail }: { detail: PolicyDetail }) {
   return (
     <section className="space-y-3">
       <div>
         <h2 className="font-semibold text-[#001E2B]">What it states</h2>
         <p className="mt-0.5 text-sm text-gray-500">
-          A statement applies when every pattern it names matches and its condition holds. Order does
-          not change the outcome, because a deny wins wherever it sits.
+          Applies when every condition holds. A deny wins wherever else in the realm it sits.
         </p>
       </div>
 
-      <ul className="space-y-3">
-        {statements.map((statement, index) => (
-          <li key={index} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <EffectBadge effect={statement.effect} />
-              <span className="font-mono text-xs text-gray-400">statement {index + 1}</span>
-            </div>
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <EffectBadge effect={detail.effect} />
+          <span className="font-mono text-xs text-gray-500">{detail.resource.type}:{detail.resource.pattern}</span>
+        </div>
 
-            <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-              <PatternList label="Principals" values={statement.principals} />
-              <PatternList label="Resources" values={statement.resources} />
-              <PatternList label="Actions" values={statement.actions} />
-            </dl>
+        <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+          <PatternList label="Permissions" values={detail.permissions} />
+          <PatternList label="Principals" values={detail.principals} />
+        </dl>
 
-            {statement.condition && describeCondition(statement.condition).length > 0 && (
-              <p className="mt-3 text-sm text-gray-600">
-                Only when {describeCondition(statement.condition).join(', and ')}.
-              </p>
-            )}
-
-            {statement.reason && (
-              <p className="mt-3 border-l-2 border-gray-200 pl-2.5 text-sm italic text-gray-600">{statement.reason}</p>
-            )}
-          </li>
+        {detail.conditions.length > 0 && detail.conditions.map((condition, index) => (
+          describeCondition(condition).length > 0 && (
+            <p key={index} className="mt-3 text-sm text-gray-600">
+              Only when {describeCondition(condition).join(', and ')}.
+            </p>
+          )
         ))}
-      </ul>
+
+        {detail.obligations?.length ? (
+          <PatternList label="Obligations" values={detail.obligations.map((o) => o.type)} />
+        ) : null}
+
+        {detail.reason && (
+          <p className="mt-3 border-l-2 border-gray-200 pl-2.5 text-sm italic text-gray-600">{detail.reason}</p>
+        )}
+      </div>
     </section>
   );
 }
 
 /**
- * Editing the statements, with a condition editor that cannot express anything else.
+ * Editing the one rule, with a condition editor that cannot express anything else.
  *
  * The five conditions are the whole vocabulary and there is no free-text alternative anywhere on the
  * form. That is not a convenience: it is the boundary that keeps this an identity authority. A
@@ -185,126 +190,78 @@ function StatementList({ statements }: { statements: PolicyStatement[] }) {
  * about inputs this service cannot see. The API refuses one too, so the constraint holds even for a
  * caller that never opens this page.
  */
-function StatementsEditor({ detail, busy, onSave, onCancel }: {
+function PolicyEditor({ detail, busy, onSave, onCancel }: {
   detail: PolicyDetail;
   busy: boolean;
   onSave: (patch: Record<string, unknown>) => void;
   onCancel: () => void;
 }) {
-  const [version, setVersion] = useState(detail.version);
-  const [statements, setStatements] = useState<PolicyStatement[]>(() => structuredClone(detail.statements));
+  const [effect, setEffect] = useState(detail.effect);
+  const [resourceType, setResourceType] = useState(detail.resource.type);
+  const [resourcePattern, setResourcePattern] = useState(detail.resource.pattern);
+  const [permissions, setPermissions] = useState((detail.permissions ?? []).join(', '));
+  const [principals, setPrincipals] = useState((detail.principals ?? []).join(', '));
+  const [reason, setReason] = useState(detail.reason ?? '');
+  const [condition, setCondition] = useState<PolicyCondition | undefined>(detail.conditions[0]);
 
-  function change(index: number, patch: Partial<PolicyStatement>) {
-    setStatements((was) => was.map((statement, position) => (position === index ? { ...statement, ...patch } : statement)));
-  }
-
-  function changeCondition(index: number, patch: PolicyCondition | undefined) {
-    setStatements((was) => was.map((statement, position) => {
-      if (position !== index) return statement;
-      const next = { ...statement };
-      if (patch === undefined || Object.keys(patch).length === 0) delete next.condition;
-      else next.condition = patch;
-      return next;
-    }));
+  function changeCondition(patch: PolicyCondition | undefined) {
+    setCondition(patch === undefined || Object.keys(patch).length === 0 ? undefined : patch);
   }
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSave({ version, statements });
+        onSave({
+          effect,
+          resource: { type: resourceType, pattern: resourcePattern || '*' },
+          permissions: splitPatterns(permissions),
+          ...(principals.trim() ? { principals: splitPatterns(principals) } : { principals: [] }),
+          conditions: condition ? [condition] : [],
+          ...(reason.trim() ? { reason: reason.trim() } : {}),
+        });
       }}
       className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
     >
       <h2 className="font-semibold text-[#001E2B]">Edit what it states</h2>
 
-      <Field label="Version" hint="Named in every decision this policy makes. Move it when the meaning changes.">
-        <input value={version} onChange={(e) => setVersion(e.target.value)} className={INPUT} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Effect" hint="Deny wins over every allow in the realm.">
+          <select value={effect} onChange={(e) => setEffect(e.target.value as 'allow' | 'deny')} className={INPUT}>
+            <option value="allow">Allow</option>
+            <option value="deny">Deny</option>
+          </select>
+        </Field>
+        <Field label="Resource type">
+          <input required value={resourceType} onChange={(e) => setResourceType(e.target.value)} className={INPUT} />
+        </Field>
+        <Field label="Resource pattern" hint="`*` alone, or a trailing * for a prefix.">
+          <input value={resourcePattern} onChange={(e) => setResourcePattern(e.target.value)} className={INPUT} />
+        </Field>
+        <Field label="Permissions" hint="Comma separated, full resource:action strings.">
+          <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} />
+        </Field>
+        <Field label="Principals" hint="Comma separated. Empty matches anyone. A trailing * matches a prefix.">
+          <input value={principals} onChange={(e) => setPrincipals(e.target.value)} className={INPUT} />
+        </Field>
+      </div>
+
+      <ConditionEditor condition={condition} onChange={changeCondition} />
+
+      <Field label="Reason" hint="Carried into the decision. Write what a reader should understand months from now.">
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={INPUT} />
       </Field>
-
-      <ul className="space-y-4">
-        {statements.map((statement, index) => (
-          <li key={index} className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-xs text-gray-400">statement {index + 1}</span>
-              {statements.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setStatements((was) => was.filter((_, position) => position !== index))}
-                  className="text-xs font-medium text-red-600 hover:underline"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <Field label="Effect" hint="Deny wins over every allow in the realm.">
-                <select
-                  value={statement.effect}
-                  onChange={(e) => change(index, { effect: e.target.value as 'allow' | 'deny' })}
-                  className={INPUT}
-                >
-                  <option value="allow">Allow</option>
-                  <option value="deny">Deny</option>
-                </select>
-              </Field>
-              <Field label="Principals" hint="Comma separated. Empty matches anyone. A trailing * matches a prefix.">
-                <input
-                  value={(statement.principals ?? []).join(', ')}
-                  onChange={(e) => change(index, { principals: splitPatterns(e.target.value) })}
-                  className={INPUT}
-                />
-              </Field>
-              <Field label="Resources" hint="Comma separated. Empty matches anything.">
-                <input
-                  value={(statement.resources ?? []).join(', ')}
-                  onChange={(e) => change(index, { resources: splitPatterns(e.target.value) })}
-                  className={INPUT}
-                />
-              </Field>
-              <Field label="Actions" hint="Comma separated. Empty matches anything.">
-                <input
-                  value={(statement.actions ?? []).join(', ')}
-                  onChange={(e) => change(index, { actions: splitPatterns(e.target.value) })}
-                  className={INPUT}
-                />
-              </Field>
-            </div>
-
-            <ConditionEditor
-              condition={statement.condition}
-              onChange={(next) => changeCondition(index, next)}
-            />
-
-            <Field label="Reason" hint="Carried into the decision. Write what a reader should understand months from now.">
-              <textarea
-                value={statement.reason ?? ''}
-                onChange={(e) => change(index, { reason: e.target.value })}
-                rows={2}
-                className={INPUT}
-              />
-            </Field>
-          </li>
-        ))}
-      </ul>
-
-      <ActionButton
-        icon={Plus}
-        label="Add a statement"
-        onClick={() => setStatements((was) => [...was, { effect: 'allow' }])}
-      />
 
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || !permissions.trim() || !resourceType.trim()}
           className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
         >
           <Save size={12} aria-hidden />
-          {busy ? 'Saving…' : 'Save statements'}
+          {busy ? 'Saving…' : 'Save'}
         </button>
-        <ActionButton icon={Minus} label="Cancel" onClick={onCancel} />
+        <ActionButton icon={X} label="Cancel" onClick={onCancel} />
       </div>
     </form>
   );
@@ -485,7 +442,7 @@ function Simulator({ policyId, subjectId }: { policyId: string; subjectId: strin
       <h2 className="font-semibold text-[#001E2B]">Try a request</h2>
       <p className="mt-0.5 text-sm text-gray-500">
         Answered by the authority itself, not by reading this page. It says what would be decided now:
-        every evaluator, combined so that deny wins, and the statement that settled it.
+        every evaluator, combined so that deny wins, and the rule that settled it.
       </p>
 
       <form
@@ -545,7 +502,7 @@ function Simulator({ policyId, subjectId }: { policyId: string; subjectId: strin
             {decided
               ? (
                 <>
-                  Decided by statement {decided.statementIndex + 1} of{' '}
+                  Decided by{' '}
                   <Link href={`/system/policies/${encodeURIComponent(decided.policyId)}`} className="font-medium text-[#001E2B] hover:underline">
                     {decided.name}
                   </Link>{' '}

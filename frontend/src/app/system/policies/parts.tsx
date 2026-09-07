@@ -26,11 +26,15 @@ export function EffectBadge({ effect }: { effect: 'allow' | 'deny' }) {
   );
 }
 
-export function DisabledBadge() {
+/** The three states a policy's own record can be in, distinct from whether it decides anything today. */
+export function StatusBadge({ status }: { status: 'draft' | 'active' | 'retired' }) {
+  if (status === 'active') return null;
   return (
-    <Tooltip text="Switched off. It is still stored and still editable, and it decides nothing while it stays this way.">
+    <Tooltip text={status === 'draft'
+      ? 'Written down but never switched on. It decides nothing until its status changes to active.'
+      : 'Withdrawn. Kept for the record rather than deleted, and it decides nothing while retired.'}>
       <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-        disabled
+        {status}
       </span>
     </Tooltip>
   );

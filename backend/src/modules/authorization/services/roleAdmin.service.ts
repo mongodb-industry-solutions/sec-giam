@@ -182,9 +182,11 @@ export class RoleAdminService {
 
   async list(
     realmId: string,
-    options: { q?: string; skip?: number; limit?: number } = {},
+    options: { q?: string; scopeKind?: 'self' | 'all'; builtin?: boolean; skip?: number; limit?: number } = {},
   ): Promise<{ roles: RoleSummary[]; total: number }> {
     const filter: Record<string, unknown> = { realmId };
+    if (options.scopeKind) filter.scopeKind = options.scopeKind;
+    if (options.builtin !== undefined) filter.builtin = options.builtin;
     if (options.q) {
       const escaped = options.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = ['name', 'displayName', 'description']

@@ -171,11 +171,12 @@ export class PolicyAdminService {
 
   async list(
     realmId: string,
-    options: { q?: string; skip?: number; limit?: number } = {},
+    options: { q?: string; status?: PolicyRecord['status']; skip?: number; limit?: number } = {},
   ): Promise<{ policies: PolicySummary[]; total: number }> {
     const skip = Math.max(0, options.skip ?? 0);
     const limit = Math.min(200, Math.max(1, options.limit ?? 20));
     const filter: Record<string, unknown> = { realmId };
+    if (options.status) filter.status = options.status;
     if (options.q) {
       // Anchored on the two fields a person would search by. Escaped, because a search box is not a
       // place to accept an expression the database will then run.

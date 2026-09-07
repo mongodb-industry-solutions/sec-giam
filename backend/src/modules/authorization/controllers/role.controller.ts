@@ -280,6 +280,8 @@ export async function roleController(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           q: { type: 'string', description: 'Case-insensitive match on name, display name or description.' },
+          scopeKind: { type: 'string', enum: ['self', 'all'], description: 'Own-records roles versus realm-wide ones.' },
+          builtin: { type: 'boolean', description: 'Ships with the deployment versus defined by this realm.' },
           skip: { type: 'integer', default: 0 },
           limit: { type: 'integer', default: 20, maximum: 200 },
         },
@@ -305,8 +307,10 @@ export async function roleController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, request.principal!.subjectId, 'roles', 'view');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    const { q, skip, limit } = request.query as { q?: string; skip?: number; limit?: number };
-    return reply.send(await new RoleAdminService(fastify.db).list(realm.realmId, { q, skip, limit }));
+    const { q, scopeKind, builtin, skip, limit } = request.query as {
+      q?: string; scopeKind?: 'self' | 'all'; builtin?: boolean; skip?: number; limit?: number;
+    };
+    return reply.send(await new RoleAdminService(fastify.db).list(realm.realmId, { q, scopeKind, builtin, skip, limit }));
   });
 
   // Its own path rather than a child of /roles: it is the resource servers' catalog, not a role's,

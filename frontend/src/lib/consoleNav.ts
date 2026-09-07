@@ -74,7 +74,7 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
   },
   {
     key: 'domains',
-    label: 'Authentication paths',
+    label: 'Domains',
     path: '/system/domains',
     icon: Globe,
     description: 'Every way a person can prove who they are in this realm, and who may sign in through it.',
