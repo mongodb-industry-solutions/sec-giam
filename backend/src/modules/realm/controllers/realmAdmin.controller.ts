@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { RealmService, isRealmRefusal } from '../services/realm.service';
 import { RealmRecord } from '../models/realm.model';
 import { authorityAccess, refusal } from '../../authorization/services/authorityAccess';
-import { SecurityEventService } from '../../audit/services/securityEvent.service';
+import { recordConfigurationChange } from '../../audit/services/configurationChange';
 import { resolvePrincipal, type CallingPrincipal } from '../../../vendors/middleware/principalAuth';
 import { JwtTokenFormat } from '../../oauth/services/jwtTokenFormat';
 import { KeyRing } from '../../keys/services/keyRing.service';
@@ -175,14 +175,17 @@ export async function realmAdminController(fastify: FastifyInstance) {
       return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
     }
 
-    void new SecurityEventService(fastify.db).record({
+    // `before: null` names what created means: there was nothing here, and now there is exactly
+    // this record, which is what makes standing the realm back up from the trail alone possible.
+    await recordConfigurationChange(fastify.db, {
       realmId: outcome.realmId,
       tenantId: outcome.tenantId,
-      category: 'lifecycle',
-      action: 'realm.created',
-      outcome: 'success',
-      subjectId: caller.subjectId,
-      detail: { name: outcome.name },
+      what: 'realm',
+      ref: outcome.realmId,
+      operation: 'created',
+      actorSubjectId: caller.subjectId,
+      before: null,
+      after: outcome as unknown as Record<string, unknown>,
     });
     return reply.status(201).send(outcome);
   });
@@ -254,14 +257,15 @@ export async function realmAdminController(fastify: FastifyInstance) {
     const updated = await new RealmService(fastify.db).update(target.realmId, request.body as object);
     if (!updated) return reply.status(404).send(problem(404, 'No such realm'));
 
-    void new SecurityEventService(fastify.db).record({
+    await recordConfigurationChange(fastify.db, {
       realmId: target.realmId,
       tenantId: target.tenantId,
-      category: 'lifecycle',
-      action: 'realm.updated',
-      outcome: 'success',
-      subjectId: caller.subjectId,
-      detail: { fields: Object.keys(request.body ?? {}) },
+      what: 'realm',
+      ref: target.realmId,
+      operation: 'updated',
+      actorSubjectId: caller.subjectId,
+      before: target as unknown as Record<string, unknown>,
+      after: updated as unknown as Record<string, unknown>,
     });
     return reply.send(updated);
   });

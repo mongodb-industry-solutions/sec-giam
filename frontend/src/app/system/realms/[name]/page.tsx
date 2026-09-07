@@ -57,7 +57,7 @@ export default function RealmDetailPage() {
     if (!name) return;
     setLoading(true);
     try {
-      const record = await callApi<Realm>(`/realms/${encodeURIComponent(name)}`, { subject: 'that realm' });
+      const record = await callApi<Realm>(`/realms/${encodeURIComponent(name)}`, { topLevel: true, subject: 'that realm' });
       setRealm(record);
       setDisplayName(record.displayName);
       setEnabled(record.enabled);
@@ -78,6 +78,7 @@ export default function RealmDetailPage() {
     setBusy(true);
     try {
       const updated = await callApi<Realm>(`/realms/${encodeURIComponent(name)}`, {
+        topLevel: true,
         method: 'PATCH',
         subject: 'that realm',
         body: {

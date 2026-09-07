@@ -62,6 +62,17 @@ export interface RoleRecord extends Scoped {
    */
   scopeKind: 'self' | 'all';
   builtin: boolean;
+  /**
+   * Whether this role currently grants anything. Absent means enabled, so an existing role needs no
+   * `--reset` to keep working: this narrows a capability that was implicitly open, the same
+   * contract `domain.authentication.cibaEnabled` already established.
+   *
+   * Switched off rather than deleted, for the one thing deletion cannot do: neutralise a role across
+   * every principal that holds it, in one act, with a way back. `DELETE` remains for a role nobody
+   * should ever hold again; this is for one that must stop granting anything right now while every
+   * assignment survives to be restored.
+   */
+  enabled?: boolean;
   /** Role composition, resolved transitively. A document store does this without a recursive join. */
   parentRoleIds?: string[];
   /** The separation-of-duties reasoning, carried with the role it constrains. */

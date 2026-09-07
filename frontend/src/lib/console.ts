@@ -284,13 +284,24 @@ interface CallOptions {
    * unanswerable exactly when it needs answering.
    */
   realm?: string;
+  /**
+   * Skips the `/realms/{realm}` prefix entirely.
+   *
+   * For the handful of routes that act ON a realm rather than inside one (`/realms`,
+   * `/realms/:realm` themselves): those are never reached "as the realm currently selected", they
+   * are the thing being administered, so nesting them under the switcher's realm would ask for a
+   * path that does not exist. `path` must then start with `/realms` itself when that is what is
+   * meant, since nothing prepends it here.
+   */
+  topLevel?: boolean;
 }
 
 /**
  * One call to the authority, addressed to the realm the person signed into.
  *
  * Path is written without the realm prefix so no caller has to remember to add it, and so a page
- * cannot accidentally read a realm the person is not in.
+ * cannot accidentally read a realm the person is not in. `topLevel` is the one deliberate escape
+ * from that rule, for the routes that administer a realm itself rather than something inside one.
  */
 export async function callApi<T>(path: string, options: CallOptions = {}): Promise<T> {
   const token = storedToken();
@@ -303,9 +314,13 @@ export async function callApi<T>(path: string, options: CallOptions = {}): Promi
   }
   const suffix = search.toString() ? `?${search}` : '';
 
+  const address = options.topLevel
+    ? path
+    : `/realms/${encodeURIComponent(options.realm ?? storedRealm())}${path}`;
+
   let response: Response;
   try {
-    response = await fetch(apiUrl(`/realms/${encodeURIComponent(options.realm ?? storedRealm())}${path}${suffix}`), {
+    response = await fetch(apiUrl(`${address}${suffix}`), {
       method: options.method ?? 'GET',
       headers: {
         authorization: `Bearer ${token}`,

@@ -4,6 +4,7 @@ import { RoleAdminService, isRoleRefusal } from '../services/roleAdmin.service';
 import { authorityAccess, refusal, AUTHORITY_RESOURCE_SERVER } from '../services/authorityAccess';
 import { DecisionService } from '../services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
+import { recordConfigurationChange } from '../../audit/services/configurationChange';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
 
@@ -58,6 +59,7 @@ export async function roleController(fastify: FastifyInstance) {
       description: { type: 'string' },
       scopeKind: { type: 'string', enum: ['self', 'all'], description: '`self` reaches only the holder\'s own records; `all` is realm wide.' },
       builtin: { type: 'boolean' },
+      enabled: { type: 'boolean', description: 'Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment.' },
       parentRoleIds: { type: 'array', items: { type: 'string' } },
       ownPermissionCount: { type: 'integer' },
       effectivePermissionCount: { type: 'integer' },
@@ -70,6 +72,7 @@ export async function roleController(fastify: FastifyInstance) {
       description: 'Administers the identities, roles, keys and sessions of one realm.',
       scopeKind: 'all',
       builtin: true,
+      enabled: true,
       parentRoleIds: [],
       ownPermissionCount: 14,
       effectivePermissionCount: 14,
@@ -282,6 +285,7 @@ export async function roleController(fastify: FastifyInstance) {
           q: { type: 'string', description: 'Case-insensitive match on name, display name or description.' },
           scopeKind: { type: 'string', enum: ['self', 'all'], description: 'Own-records roles versus realm-wide ones.' },
           builtin: { type: 'boolean', description: 'Ships with the deployment versus defined by this realm.' },
+          enabled: { type: 'boolean', description: 'Whether the role currently grants anything.' },
           skip: { type: 'integer', default: 0 },
           limit: { type: 'integer', default: 20, maximum: 200 },
         },
@@ -307,10 +311,10 @@ export async function roleController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, request.principal!.subjectId, 'roles', 'view');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    const { q, scopeKind, builtin, skip, limit } = request.query as {
-      q?: string; scopeKind?: 'self' | 'all'; builtin?: boolean; skip?: number; limit?: number;
+    const { q, scopeKind, builtin, enabled, skip, limit } = request.query as {
+      q?: string; scopeKind?: 'self' | 'all'; builtin?: boolean; enabled?: boolean; skip?: number; limit?: number;
     };
-    return reply.send(await new RoleAdminService(fastify.db).list(realm.realmId, { q, scopeKind, builtin, skip, limit }));
+    return reply.send(await new RoleAdminService(fastify.db).list(realm.realmId, { q, scopeKind, builtin, enabled, skip, limit }));
   });
 
   // Its own path rather than a child of /roles: it is the resource servers' catalog, not a role's,
@@ -495,7 +499,16 @@ export async function roleController(fastify: FastifyInstance) {
       .create(realm.realmId, realm.tenantId, request.body as { name: string });
     if (isRoleRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
 
-    audit(realm, 'authorization.role.created', caller.subjectId, { roleId: outcome.roleId, name: outcome.name });
+    await recordConfigurationChange(fastify.db, {
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      what: 'role',
+      ref: outcome.roleId,
+      operation: 'created',
+      actorSubjectId: caller.subjectId,
+      before: null,
+      after: outcome as unknown as Record<string, unknown>,
+    });
     return reply.status(201).send(outcome);
   });
 
@@ -520,6 +533,7 @@ export async function roleController(fastify: FastifyInstance) {
           displayName: { type: 'string' },
           description: { type: 'string' },
           scopeKind: { type: 'string', enum: ['self', 'all'] },
+          enabled: { type: 'boolean', description: 'Switched off, this role grants nothing anywhere it is held or inherited from. Assignments are untouched and restored the moment it is switched back on.' },
           permissions: permissionPairs,
           parentRoleIds: { type: 'array', items: { type: 'string' } },
           sodRationale: { type: 'string' },
@@ -543,11 +557,22 @@ export async function roleController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, caller.subjectId, 'roles', 'manage');
     if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.role.updated', caller.subjectId, gate.refused, { roleId }));
 
-    const outcome = await new RoleAdminService(fastify.db).update(realm.realmId, roleId, request.body as object);
+    const service = new RoleAdminService(fastify.db);
+    const before = await service.detail(realm.realmId, roleId);
+    const outcome = await service.update(realm.realmId, roleId, request.body as object);
     if (outcome === null) return reply.status(404).send(problem(404, 'No such role'));
     if (isRoleRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
 
-    audit(realm, 'authorization.role.updated', caller.subjectId, { roleId, fields: Object.keys(request.body ?? {}) });
+    await recordConfigurationChange(fastify.db, {
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      what: 'role',
+      ref: roleId,
+      operation: 'updated',
+      actorSubjectId: caller.subjectId,
+      before: before as unknown as Record<string, unknown>,
+      after: outcome as unknown as Record<string, unknown>,
+    });
     return reply.send(outcome);
   });
 

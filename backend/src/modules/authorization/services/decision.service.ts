@@ -79,7 +79,8 @@ export class DecisionService {
   private async resolveRoles(realmId: string, roleIds: string[]): Promise<RoleRecord[]> {
     if (roleIds.length === 0) return [];
     return this.db.collection<RoleRecord>(ROLE_COLLECTION).aggregate<RoleRecord>([
-      { $match: { realmId, roleId: { $in: roleIds } } },
+      // A disabled role held directly grants nothing, exactly as if it were not held at all.
+      { $match: { realmId, roleId: { $in: roleIds }, enabled: { $ne: false } } },
       {
         $graphLookup: {
           from: ROLE_COLLECTION,
@@ -90,6 +91,9 @@ export class DecisionService {
           // Bounded, because an accidental cycle in role composition would otherwise be an
           // unbounded traversal on the token path.
           maxDepth: 8,
+          // A disabled PARENT contributes nothing either, and nothing IT inherits from does: the
+          // traversal simply does not cross a role that is switched off.
+          restrictSearchWithMatch: { enabled: { $ne: false } },
         },
       },
       { $project: { _id: 0 } },

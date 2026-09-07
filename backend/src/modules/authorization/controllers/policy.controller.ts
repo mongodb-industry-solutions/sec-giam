@@ -111,7 +111,9 @@ export async function policyController(fastify: FastifyInstance) {
     properties: {
       policyId: { type: 'string' },
       name: { type: 'string' },
-      version: { type: 'string' },
+      // `PolicyRecord.version` is a number, incremented per revision. Declared `string` here would
+      // silently mis-type every list and detail response against its own published contract.
+      version: { type: 'integer' },
       status: { type: 'string', enum: ['draft', 'active', 'retired'] },
       effect: { type: 'string', enum: ['allow', 'deny'], description: 'Whether this policy prohibits. The first thing a reviewer wants to know.' },
       permissionCount: { type: 'integer' },
@@ -124,7 +126,7 @@ export async function policyController(fastify: FastifyInstance) {
     examples: [{
       policyId: '2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2',
       name: 'administration-requires-strong-authentication',
-      version: '1',
+      version: 1,
       status: 'active',
       effect: 'deny',
       permissionCount: 1,
@@ -529,7 +531,10 @@ export async function policyController(fastify: FastifyInstance) {
                   properties: {
                     policyId: { type: 'string' },
                     name: { type: 'string' },
-                    version: { type: 'string', description: 'Which revision of the policy decided.' },
+                    // `PolicyRecord.version` is a number (v40 flattened a policy to one rule with
+                    // one version counter); declaring it `string` here silently mis-typed every
+                    // real response against its own published contract.
+                    version: { type: 'integer', description: 'Which revision of the policy decided.' },
                     effect: { type: 'string', enum: ['allow', 'deny'] },
                   },
                 },
@@ -564,7 +569,7 @@ export async function policyController(fastify: FastifyInstance) {
               policy: {
                 policyId: '2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2',
                 name: 'administration-requires-strong-authentication',
-                version: '1',
+                version: 1,
                 effect: 'deny',
               },
               evaluators: [

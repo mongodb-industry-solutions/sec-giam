@@ -34,7 +34,7 @@ export default function RealmsPage() {
   const [creating, setCreating] = useState(false);
 
   const read = useCallback(
-    () => callApi<{ realms: Realm[] }>('/realms', { subject: 'the realms this deployment hosts' }),
+    () => callApi<{ realms: Realm[] }>('/realms', { topLevel: true, subject: 'the realms this deployment hosts' }),
     [],
   );
   const realms = useConsoleResource(read, 'The realms could not be read.');
@@ -45,7 +45,7 @@ export default function RealmsPage() {
   async function create(input: { name: string; displayName: string }) {
     const done = await realms.run(
       'new',
-      () => callApi<Realm>('/realms', { method: 'POST', body: input, subject: 'that realm' }),
+      () => callApi<Realm>('/realms', { topLevel: true, method: 'POST', body: input, subject: 'that realm' }),
       'That realm could not be created.',
     );
     if (done) setCreating(false);

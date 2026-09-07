@@ -3,14 +3,14 @@
 import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Check, Minus, Plus, Save, ShieldHalf, Trash2, UserMinus, UserPlus } from 'lucide-react';
+import { ArrowLeft, Check, Minus, Plus, Power, Save, ShieldHalf, Trash2, UserMinus, UserPlus } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { EmptyState, ErrorState, LoadingState } from '../../../../components/ResultState';
 import { ActionButton, Fact, RecordCard } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
-import { BuiltinBadge, Field, INPUT, ScopeBadge } from '../parts';
+import { BuiltinBadge, DisabledBadge, Field, INPUT, ScopeBadge } from '../parts';
 import type { Assignment, CatalogPermission, ResolvedPermission, RoleDetail, RoleSummary } from '../types';
 
 /**
@@ -81,6 +81,24 @@ export default function RoleDetailPage() {
                 label={editing ? 'Stop editing' : 'Edit'}
                 onClick={() => setEditing((was) => !was)}
               />
+              <Tooltip text={(detail.enabled ?? true)
+                ? 'Switches it off. Every assignment survives; it grants nothing, anywhere it is held or inherited from, while it stays this way.'
+                : 'Switches it back on. Every assignment already held resumes granting immediately.'}
+              >
+                <ActionButton
+                  icon={Power}
+                  label={(detail.enabled ?? true) ? 'Disable' : 'Enable'}
+                  tone={(detail.enabled ?? true) ? 'danger' : 'neutral'}
+                  busy={role.busy === 'toggle'}
+                  onClick={() => void role.run(
+                    'toggle',
+                    () => callApi(`/roles/${encodeURIComponent(roleId)}`, {
+                      method: 'PATCH', body: { enabled: !(detail.enabled ?? true) }, subject: 'that role',
+                    }),
+                    'That role could not be switched.',
+                  )}
+                />
+              </Tooltip>
               <ActionButton
                 icon={Trash2}
                 label="Remove"
@@ -107,6 +125,7 @@ export default function RoleDetailPage() {
                   <span className="font-mono text-xs text-gray-400">{detail.name}</span>
                   <ScopeBadge scopeKind={detail.scopeKind} />
                   {detail.builtin && <BuiltinBadge />}
+                  {!(detail.enabled ?? true) && <DisabledBadge />}
                 </div>
                 <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
                   <Fact label="States" value={`${detail.ownPermissionCount} permissions`} />

@@ -2,16 +2,18 @@
 
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { Plus, ShieldHalf, X } from 'lucide-react';
+import { Plus, Power, ShieldHalf, X } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
+import { Tooltip } from '../../../components/Tooltip';
 import { Pagination } from '../../../components/Pagination';
 import { ListToolbar } from '../../../components/ListToolbar';
+import { FilterChips } from '../../../components/FilterChips';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ResultState';
 import { ActionButton, Fact, RecordCard } from '../../../components/RecordCard';
 import { callApi, can, currentClaims } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
 import { usePermissions } from '../../../lib/profile';
-import { BuiltinBadge, Field, INPUT, ScopeBadge } from './parts';
+import { BuiltinBadge, DisabledBadge, Field, INPUT, ScopeBadge } from './parts';
 import type { RoleDetail, RoleSummary } from './types';
 
 /**
@@ -24,10 +26,12 @@ import type { RoleDetail, RoleSummary } from './types';
  */
 
 type ScopeFilter = 'any' | 'self' | 'all';
+type StatusFilter = 'any' | 'enabled' | 'disabled';
 
 export default function RolesPage() {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<ScopeFilter>('any');
+  const [status, setStatus] = useState<StatusFilter>('any');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [creating, setCreating] = useState(false);
@@ -37,12 +41,13 @@ export default function RolesPage() {
       query: {
         q: query || undefined,
         scopeKind: scope === 'any' ? undefined : scope,
+        enabled: status === 'any' ? undefined : String(status === 'enabled'),
         skip: (page - 1) * limit,
         limit,
       },
       subject: 'the roles in this realm',
     }),
-    [query, scope, page, limit],
+    [query, scope, status, page, limit],
   );
 
   const roles = useConsoleResource(read, 'The roles could not be read.');
@@ -50,6 +55,16 @@ export default function RolesPage() {
   const mayManage = can(currentClaims(), 'roles', 'manage');
   const total = roles.data?.total ?? 0;
   const rows = roles.data?.roles ?? [];
+
+  async function toggle(role: RoleSummary) {
+    await roles.run(
+      role.roleId,
+      () => callApi(`/roles/${encodeURIComponent(role.roleId)}`, {
+        method: 'PATCH', body: { enabled: !(role.enabled ?? true) }, subject: 'that role',
+      }),
+      'That role could not be switched.',
+    );
+  }
 
   async function create(input: { name: string; displayName: string; description: string; scopeKind: 'self' | 'all' }) {
     const done = await roles.run(
@@ -98,6 +113,18 @@ export default function RolesPage() {
             { key: 'all', label: 'Realm wide' },
           ],
         }}
+        extra={(
+          <FilterChips
+            label="Filter by status"
+            value={status}
+            onChange={(next) => { setStatus(next); setPage(1); }}
+            options={[
+              { key: 'any', label: 'Any status' },
+              { key: 'enabled', label: 'Enabled' },
+              { key: 'disabled', label: 'Disabled' },
+            ]}
+          />
+        )}
       />
 
       {roles.error && <ErrorState message={roles.error} onRetry={() => void roles.reload()} />}
@@ -124,7 +151,25 @@ export default function RolesPage() {
                       </Link>
                     )}
                     subtitle={role.name}
-                    badges={<><ScopeBadge scopeKind={role.scopeKind} />{role.builtin && <BuiltinBadge />}</>}
+                    badges={<>
+                      <ScopeBadge scopeKind={role.scopeKind} />
+                      {role.builtin && <BuiltinBadge />}
+                      {!(role.enabled ?? true) && <DisabledBadge />}
+                    </>}
+                    actions={mayManage && (
+                      <Tooltip text={(role.enabled ?? true)
+                        ? 'Switches it off. Every assignment survives; it grants nothing, anywhere it is held or inherited from, while it stays this way.'
+                        : 'Switches it back on. Every assignment already held resumes granting immediately.'}
+                      >
+                        <ActionButton
+                          icon={Power}
+                          label={(role.enabled ?? true) ? 'Disable' : 'Enable'}
+                          tone={(role.enabled ?? true) ? 'danger' : 'neutral'}
+                          busy={roles.busy === role.roleId}
+                          onClick={() => void toggle(role)}
+                        />
+                      </Tooltip>
+                    )}
                     facts={
                       <>
                         <Fact

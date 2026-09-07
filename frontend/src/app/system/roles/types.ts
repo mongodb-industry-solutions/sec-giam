@@ -7,6 +7,8 @@ export interface RoleSummary {
   description: string;
   scopeKind: 'self' | 'all';
   builtin: boolean;
+  /** Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment. */
+  enabled: boolean;
   parentRoleIds: string[];
   /** Permissions written on the role itself, before composition. */
   ownPermissionCount: number;

@@ -32,6 +32,8 @@ export interface RoleSummary {
   description: string;
   scopeKind: RoleRecord['scopeKind'];
   builtin: boolean;
+  /** Absent means enabled. Switched off grants nothing, everywhere it is held or inherited from. */
+  enabled: boolean;
   parentRoleIds: string[];
   /** Permissions written on the role itself, before composition. */
   ownPermissionCount: number;
@@ -160,6 +162,8 @@ export class RoleAdminService {
    */
   private async composed(realmId: string, roleId: string): Promise<{ role: RoleRecord; inherited: RoleRecord[] } | null> {
     const [found] = await this.roles.aggregate<RoleRecord & { inherited?: RoleRecord[] }>([
+      // The role itself is found regardless of `enabled`: a disabled role's OWN statement must
+      // still be reviewable, only what it composes into stops counting.
       { $match: { realmId, roleId } },
       {
         $graphLookup: {
@@ -169,6 +173,10 @@ export class RoleAdminService {
           connectToField: 'roleId',
           as: 'inherited',
           maxDepth: MAX_COMPOSITION_DEPTH,
+          // A disabled parent contributes nothing to what this role effectively grants, matching
+          // `DecisionService.resolveRoles`: the two must agree, since one answers what a token
+          // carries and the other displays what a reader should expect that token to carry.
+          restrictSearchWithMatch: { enabled: { $ne: false } },
         },
       },
       { $project: { _id: 0 } },
@@ -182,11 +190,19 @@ export class RoleAdminService {
 
   async list(
     realmId: string,
-    options: { q?: string; scopeKind?: 'self' | 'all'; builtin?: boolean; skip?: number; limit?: number } = {},
+    options: {
+      q?: string; scopeKind?: 'self' | 'all'; builtin?: boolean; enabled?: boolean; skip?: number; limit?: number;
+    } = {},
   ): Promise<{ roles: RoleSummary[]; total: number }> {
     const filter: Record<string, unknown> = { realmId };
     if (options.scopeKind) filter.scopeKind = options.scopeKind;
     if (options.builtin !== undefined) filter.builtin = options.builtin;
+    // Absent means enabled, so "enabled" itself has to match either an explicit `true` or the field
+    // missing entirely, never just `{ enabled: true }`, which would silently exclude every role a
+    // `--reset` has not touched since this field was added.
+    if (options.enabled !== undefined) {
+      filter.enabled = options.enabled ? { $ne: false } : false;
+    }
     if (options.q) {
       const escaped = options.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = ['name', 'displayName', 'description']
@@ -235,6 +251,7 @@ export class RoleAdminService {
         description: role.description,
         scopeKind: role.scopeKind,
         builtin: role.builtin,
+        enabled: role.enabled ?? true,
         parentRoleIds: role.parentRoleIds ?? [],
         ownPermissionCount: (role.permissions ?? []).length,
         effectivePermissionCount: effectiveCount(role.roleId),
@@ -294,6 +311,7 @@ export class RoleAdminService {
       description: role.description,
       scopeKind: role.scopeKind,
       builtin: role.builtin,
+      enabled: role.enabled ?? true,
       parentRoleIds: role.parentRoleIds ?? [],
       parents: inherited
         .filter((parent) => (role.parentRoleIds ?? []).includes(parent.roleId))
@@ -436,6 +454,7 @@ export class RoleAdminService {
       description: input.description ?? '',
       permissions: bound,
       scopeKind: input.scopeKind ?? 'self',
+      enabled: true,
       // Never true from here. Builtin means "shipped with the deployment", and a role somebody
       // created through the console is by definition not that.
       builtin: false,
@@ -453,6 +472,7 @@ export class RoleAdminService {
     patch: {
       displayName?: string; description?: string;
       scopeKind?: RoleRecord['scopeKind'];
+      enabled?: boolean;
       permissions?: Array<{ resource: string; action: string }>;
       parentRoleIds?: string[];
       sodRationale?: string;
@@ -465,6 +485,7 @@ export class RoleAdminService {
     if (patch.displayName !== undefined) changes.displayName = patch.displayName;
     if (patch.description !== undefined) changes.description = patch.description;
     if (patch.scopeKind !== undefined) changes.scopeKind = patch.scopeKind;
+    if (patch.enabled !== undefined) changes.enabled = patch.enabled;
     if (patch.sodRationale !== undefined) changes.sodRationale = patch.sodRationale;
 
     if (patch.parentRoleIds) {
