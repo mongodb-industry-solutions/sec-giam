@@ -104,7 +104,15 @@ export default function ConsoleOverviewPage() {
   if (!claims) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#001E2B] p-4 sm:p-8">
-        <SignInPanel heading={`${BRAND.full} console`} clientId={CONSOLE_CLIENT_ID} onSignedIn={afterSignIn} />
+        {/*
+          No `onSignedIn`: the console is a registered client of this authority like any other, and
+          runs its OWN authorization code flow after a credential is collected here (`session.ts`'s
+          `startConsoleAuthorization`), which is what leaves with a token rather than a session cookie.
+          Passing one here takes the panel's OTHER branch, meant for a relying party finishing somebody
+          else's request: the credential would be collected and nothing would ever be exchanged for a
+          token, so this screen would show itself again looking exactly like it had done nothing.
+        */}
+        <SignInPanel heading={`${BRAND.full} console`} clientId={CONSOLE_CLIENT_ID} />
         <Link href="/" className="text-xs text-gray-400 transition-colors hover:text-[#00ED64]">
           Back to Mode Selection
         </Link>

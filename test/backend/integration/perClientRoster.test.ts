@@ -96,6 +96,38 @@ describe('v39: the sign-in roster is scoped per application', () => {
     expect(everything.length, 'the unscoped roster is the wider one').toBeGreaterThan(scoped.length);
   });
 
+  it('the hosted screen gets the same scoping, driven from a real authorization request', async () => {
+    if (!live) return;
+    // The parked screen is given a request_id, not a client id: scoping has to follow from that.
+    const authorize = new URL(`${GIAM}/realms/leafypay/protocol/openid-connect/auth`);
+    for (const [key, value] of Object.entries({
+      response_type: 'code',
+      client_id: 'oauth001-0000-4000-8000-000000000001',
+      redirect_uri: 'http://localhost:8082/api/auth/callback',
+      scope: 'openid profile',
+      state: 'roster-scoping-check',
+      code_challenge: 'nZGR31QP-oKgYy9Hi9mo9GkZIUuwb8GRRkWTAQQu0Fo',
+      code_challenge_method: 'S256',
+    })) authorize.searchParams.set(key, value);
+
+    const parked = await fetch(authorize, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
+    const location = parked.headers.get('location');
+    expect(location, 'the authority should park an anonymous request at a sign-in screen').toBeTruthy();
+    const requestId = new URL(location as string, GIAM).searchParams.get('request_id');
+    expect(requestId, 'the sign-in screen is named a pending request').toBeTruthy();
+
+    const response = await fetch(
+      `${GIAM}/realms/leafypay/login-context?request_id=${encodeURIComponent(requestId as string)}`,
+      { signal: AbortSignal.timeout(20000) },
+    );
+    expect(response.ok).toBe(true);
+    const offered = roles((await response.json() as { roster: Entry[] }).roster);
+    expect(offered).toContain('customer');
+    for (const staff of [...PSP_STAFF, 'manager', 'security_auditor']) {
+      expect(offered, `${staff} has no place on a merchant application's sign-in screen`).not.toContain(staff);
+    }
+  });
+
   it('an unknown client is not a way to widen the roster', async () => {
     if (!live) return;
     // Falls back to the realm's featured personas rather than erroring: the screen still works, and

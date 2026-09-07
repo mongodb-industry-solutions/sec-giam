@@ -42,8 +42,10 @@ export default function LoginPage() {
      * previous version did, and it is why consent could be asserted by whoever built the request.
      */
     if (pending) {
-      setReturning(true);
+      // The navigation is started FIRST: if it cannot be, the throw reaches the panel, which reports
+      // it, rather than this screen having already replaced the panel with a message that never ends.
       continueAuthorization(pending);
+      setReturning(true);
       return;
     }
     setSignedIn(result);
@@ -83,6 +85,7 @@ export default function LoginPage() {
     <AuthBackdrop>
       <SignInPanel
         defaultRealm={realm}
+        requestId={pending?.requestId}
         onSignedIn={handleSignedIn}
       />
     </AuthBackdrop>

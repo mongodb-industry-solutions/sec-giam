@@ -1,6 +1,6 @@
 'use client';
 
-import { apiUrl } from './env';
+import { apiUrlObject } from './env';
 
 /**
  * Continuing an authorization request the authority sent this page.
@@ -64,7 +64,7 @@ export function readPendingAuthorization(search: string): PendingAuthorization |
  * for the application is the authority's to decide, and this page finds out by being replaced.
  */
 export function continueAuthorization(pending: PendingAuthorization): void {
-  const url = new URL(apiUrl(`/realms/${pending.realm}/protocol/openid-connect/auth`));
+  const url = apiUrlObject(`/realms/${pending.realm}/protocol/openid-connect/auth`);
   url.searchParams.set('request_id', pending.requestId);
   window.location.assign(url.toString());
 }

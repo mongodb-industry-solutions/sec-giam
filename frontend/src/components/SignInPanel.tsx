@@ -74,12 +74,15 @@ export function SignInPanel({
   defaultRealm = 'leafypay',
   heading,
   clientId,
+  requestId,
   onSignedIn,
 }: {
   defaultRealm?: string;
   heading?: string;
   /** Narrows the demo roster to the personas this application should offer. */
   clientId?: string;
+  /** The pending authorization, which names the asking application on a hosted sign-in. */
+  requestId?: string;
   onSignedIn?: (signedIn: SignedIn) => void;
 }) {
   const [context, setContext] = useState<LoginContext | null>(null);
@@ -98,7 +101,11 @@ export function SignInPanel({
     let cancelled = false;
     setContextState('loading');
     setContext(null);
-    fetch(apiUrl(`/realms/${realm}/login-context${clientId ? `?client_id=${encodeURIComponent(clientId)}` : ''}`))
+    const asking = new URLSearchParams();
+    if (requestId) asking.set('request_id', requestId);
+    else if (clientId) asking.set('client_id', clientId);
+    const query = asking.toString();
+    fetch(apiUrl(`/realms/${realm}/login-context${query ? `?${query}` : ''}`))
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return;
@@ -111,11 +118,12 @@ export function SignInPanel({
         setContextState('unavailable');
       });
     return () => { cancelled = true; };
-  }, [realm, clientId]);
+  }, [realm, clientId, requestId]);
 
   async function submit(credentials: { login: string; password: string }) {
     setBusy(true);
     setError(null);
+    let authenticated: SignedIn | null = null;
     try {
       const response = await fetch(apiUrl(`/realms/${realm}/login`), {
         method: 'POST',
@@ -141,16 +149,27 @@ export function SignInPanel({
        * not wanted yet. Only when nobody else is waiting does the console start its own flow, which
        * also navigates, to `/auth/callback`.
        */
-      const result = { userName: body.userName, displayName: body.displayName, sessionId: body.sessionId, realm };
-      if (onSignedIn) {
-        onSignedIn(result);
-        return;
-      }
-      await startConsoleAuthorization(realm, body.sessionId);
+      authenticated = { userName: body.userName, displayName: body.displayName, sessionId: body.sessionId, realm };
     } catch {
       setError('The identity service could not be reached.');
+      return;
     } finally {
       setBusy(false);
+    }
+
+    /**
+     * The handoff, OUTSIDE the catch above.
+     *
+     * Both branches navigate, and a throw on the way to a navigation used to be caught as if the
+     * credential had failed: the screen was already showing "returning you to the application" and
+     * stayed on it, with the real cause reported nowhere.
+     */
+    try {
+      if (onSignedIn) onSignedIn(authenticated);
+      else await startConsoleAuthorization(realm, authenticated.sessionId);
+    } catch (cause) {
+      console.error('sign-in could not be continued', cause);
+      setError('You are signed in, but the application could not be returned to. Start again from it.');
     }
   }
 
