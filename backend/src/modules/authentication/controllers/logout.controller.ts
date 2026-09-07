@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { clearSessionCookie } from '../services/sessionCookie';
+import { clearSessionCookie, readSessionCookie } from '../services/sessionCookie';
 import { RealmService } from '../../realm/services/realm.service';
 import { SessionService } from '../services/session.service';
 import { LogoutNotifier } from '../services/logoutNotifier.service';
@@ -8,6 +8,7 @@ import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { OAuthClient } from '../../oauth/models/client.model';
+import { listOAuthClients } from '../../oauth/services/clientAuth.service';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -25,6 +26,29 @@ export async function logoutController(fastify: FastifyInstance) {
   // one service that the administrative session routes use too.
   const notify = (clients: OAuthClient[], realmIssuer: string, realmId: string, subjectId: string, sessionId: string) =>
     new LogoutNotifier(fastify.db).notify(clients, { issuer: realmIssuer, realmId }, subjectId, sessionId);
+
+  // Only a URI a REGISTERED client declared; echoing back whatever a caller sent would make this an
+  // open redirect built into the sign-out flow.
+  async function registeredLogoutRedirect(realmId: string, uri: string | undefined): Promise<string | undefined> {
+    if (!uri) return undefined;
+    let canonical: string;
+    try {
+      canonical = new URL(uri).toString();
+    } catch {
+      return undefined;
+    }
+    const clients = await listOAuthClients(fastify.db, realmId);
+    const registered = clients.some(
+      (client) => client.postLogoutRedirectUris?.some((registered) => {
+        try {
+          return new URL(registered).toString() === canonical;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    return registered ? uri : undefined;
+  }
 
   fastify.post('/realms/:realm/protocol/openid-connect/logout', {
     schema: {
@@ -48,7 +72,10 @@ export async function logoutController(fastify: FastifyInstance) {
         properties: {
           session_id: { type: 'string', description: 'The session to end.' },
           subject_id: { type: 'string', description: 'Ends EVERY session this principal holds.' },
-          post_logout_redirect_uri: { type: 'string' },
+          post_logout_redirect_uri: {
+            type: 'string',
+            description: 'Honoured only when a registered client declares it in postLogoutRedirectUris.',
+          },
         },
       },
       response: {
@@ -66,7 +93,7 @@ export async function logoutController(fastify: FastifyInstance) {
           },
           examples: [{ sessions: 1, revokedTokens: 3, notified: ['orders-web'], notificationFailures: [] }],
         },
-        400: { $ref: 'Problem#', description: 'Neither a session nor a subject was named.' },
+        400: { $ref: 'Problem#', description: 'No session was named, and the browser holds no session cookie either.' },
         404: { $ref: 'Problem#', description: 'No such realm.' },
       },
     },
@@ -84,6 +111,7 @@ export async function logoutController(fastify: FastifyInstance) {
     if (body.subject_id) {
       const outcome = await sessions.terminateAllFor(realm.realmId, body.subject_id, 'logout', issuer);
       const notified = await notify(outcome.notify, realm.issuer, realm.realmId, body.subject_id, 'all');
+      const redirect = await registeredLogoutRedirect(realm.realmId, body.post_logout_redirect_uri);
 
       await audit.record({
         realmId: realm.realmId,
@@ -100,16 +128,19 @@ export async function logoutController(fastify: FastifyInstance) {
         revokedTokens: outcome.revokedTokens,
         notified: notified.delivered,
         notificationFailures: notified.failed,
-        ...(body.post_logout_redirect_uri ? { post_logout_redirect_uri: body.post_logout_redirect_uri } : {}),
+        ...(redirect ? { post_logout_redirect_uri: redirect } : {}),
       });
     }
 
-    if (!body.session_id) {
-      return reply.status(400).send(problem(400, 'Either session_id or subject_id is required'));
+    // The CURRENT session, from the cookie, when nothing else was named: a relying party's sign-in
+    // gives the browser no session id to remember, only the cookie.
+    const sessionId = body.session_id ?? readSessionCookie(request);
+    if (!sessionId) {
+      return reply.status(400).send(problem(400, 'No session was named, and the browser holds no session cookie either'));
     }
 
-    const session = await sessions.find(realm.realmId, body.session_id);
-    const outcome = await sessions.terminate(realm.realmId, body.session_id, 'logout', issuer);
+    const session = await sessions.find(realm.realmId, sessionId);
+    const outcome = await sessions.terminate(realm.realmId, sessionId, 'logout', issuer);
     const notified = session
       ? await notify(outcome.notify, realm.issuer, realm.realmId, session.subjectId, session.sessionId)
       : { delivered: [], failed: [] };
@@ -133,6 +164,7 @@ export async function logoutController(fastify: FastifyInstance) {
      * nothing, which reads as an expiry rather than as a sign-out.
      */
     clearSessionCookie(request, reply);
+    const redirect = await registeredLogoutRedirect(realm.realmId, body.post_logout_redirect_uri);
 
     // 200 whether or not a session was found, for the same reason revocation does: reporting "no
     // such session" would confirm which session identifiers are real.
@@ -141,7 +173,7 @@ export async function logoutController(fastify: FastifyInstance) {
       revokedTokens: outcome.revokedTokens,
       notified: notified.delivered,
       notificationFailures: notified.failed,
-      ...(body.post_logout_redirect_uri ? { post_logout_redirect_uri: body.post_logout_redirect_uri } : {}),
+      ...(redirect ? { post_logout_redirect_uri: redirect } : {}),
     });
   });
 }

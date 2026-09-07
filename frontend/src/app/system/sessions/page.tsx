@@ -5,11 +5,13 @@ import { LogOut, MonitorSmartphone } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Tooltip } from '../../../components/Tooltip';
 import { Pagination } from '../../../components/Pagination';
+import { ListToolbar } from '../../../components/ListToolbar';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ResultState';
-import { ActionButton, Fact, FilterGroup, RecordCard } from '../../../components/RecordCard';
+import { ActionButton, Fact, RecordCard } from '../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { clearSession } from '../../../lib/session';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
+import { usePermissions } from '../../../lib/profile';
 
 /**
  * Where an account is signed in, and ending it.
@@ -40,17 +42,26 @@ interface Session {
 type Scope = 'mine' | 'realm';
 
 export default function SessionsPage() {
+  // Read fresh, not from the token: the token carries roles by default, not entitlements, so
+  // `can()` needs the effective-permissions read this hook keeps warm to answer correctly.
+  usePermissions();
   const mayViewRealm = can(currentClaims(), 'sessions', 'view');
   const [scope, setScope] = useState<Scope>('mine');
+  const [subjectQuery, setSubjectQuery] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
 
   const read = useCallback(
     () => callApi<{ sessions: Session[]; total: number; scope: Scope }>('/sessions', {
-      query: { scope, skip: (page - 1) * limit, limit },
+      query: {
+        scope,
+        subjectId: scope === 'realm' && subjectQuery.trim() ? subjectQuery.trim() : undefined,
+        skip: (page - 1) * limit,
+        limit,
+      },
       subject: 'the active sessions',
     }),
-    [scope, page, limit],
+    [scope, subjectQuery, page, limit],
   );
   const sessions = useConsoleResource(read, 'The sessions could not be read.');
 
@@ -97,11 +108,21 @@ export default function SessionsPage() {
       />
 
       {mayViewRealm && (
-        <FilterGroup
-          label="Whose sessions"
-          value={scope}
-          onChange={(next) => { setScope(next); setPage(1); }}
-          options={[{ key: 'mine', label: 'Mine' }, { key: 'realm', label: 'Everyone in this realm' }]}
+        <ListToolbar
+          search={scope === 'realm'
+            ? {
+                value: subjectQuery,
+                onChange: (next) => { setSubjectQuery(next); setPage(1); },
+                placeholder: 'Subject id',
+                label: 'Search sessions by subject id',
+              }
+            : undefined}
+          filter={{
+            label: 'Whose sessions',
+            value: scope,
+            onChange: (next) => { setScope(next); setSubjectQuery(''); setPage(1); },
+            options: [{ key: 'mine', label: 'Mine' }, { key: 'realm', label: 'Everyone in this realm' }],
+          }}
         />
       )}
 
@@ -168,17 +189,15 @@ export default function SessionsPage() {
                 ))}
               </ul>
 
-              {scope === 'realm' && (
-                <Pagination
-                  page={page}
-                  totalPages={Math.max(1, Math.ceil(total / limit))}
-                  total={total}
-                  limit={limit}
-                  noun="sessions"
-                  onPageChange={setPage}
-                  onLimitChange={(next) => { setLimit(next); setPage(1); }}
-                />
-              )}
+              <Pagination
+                page={page}
+                totalPages={Math.max(1, Math.ceil(total / limit))}
+                total={total}
+                limit={limit}
+                noun="sessions"
+                onPageChange={setPage}
+                onLimitChange={(next) => { setLimit(next); setPage(1); }}
+              />
             </>
           )}
     </main>

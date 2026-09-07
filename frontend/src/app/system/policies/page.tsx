@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../../components/Result
 import { ActionButton, Fact, RecordCard } from '../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
+import { usePermissions } from '../../../lib/profile';
 import { Field, INPUT } from '../roles/parts';
 import { DisabledBadge, EffectBadge } from './parts';
 import type { PolicyDetail, PolicySummary } from './types';
@@ -37,6 +38,7 @@ export default function PoliciesPage() {
   );
 
   const policies = useConsoleResource(read, 'The policies could not be read.');
+  usePermissions();
   const mayManage = can(currentClaims(), 'policies', 'manage');
   const total = policies.data?.total ?? 0;
   const rows = policies.data?.policies ?? [];

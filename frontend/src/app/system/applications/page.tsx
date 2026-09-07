@@ -6,8 +6,10 @@ import { Layers, RotateCcw, ShieldOff } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Tooltip } from '../../../components/Tooltip';
 import { Pagination } from '../../../components/Pagination';
+import { ListToolbar } from '../../../components/ListToolbar';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
 import { ApiError, callApi, when } from '../../../lib/console';
+import { paginate } from '../../../lib/useConsoleResource';
 
 /**
  * What this principal has authorized, and taking it back.
@@ -38,6 +40,7 @@ const FILTERS: Array<{ key: Filter; label: string }> = [
 export default function ApplicationsPage() {
   const [grants, setGrants] = useState<Grant[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -79,8 +82,12 @@ export default function ApplicationsPage() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(grants.length / limit));
-  const visible = grants.slice((page - 1) * limit, page * limit);
+  const needle = query.trim().toLowerCase();
+  const filtered = needle
+    ? grants.filter((grant) => `${grant.clientName} ${grant.clientId}`.toLowerCase().includes(needle))
+    : grants;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / limit));
+  const visible = paginate(filtered, page, limit);
 
   return (
     <main className="space-y-5">
@@ -91,35 +98,34 @@ export default function ApplicationsPage() {
         info="Withdrawing an authorization stops the application immediately. It stays on this list, marked withdrawn, so the record of what was once allowed survives the withdrawal."
       />
 
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by state">
-        {FILTERS.map((option) => (
-          <button
-            key={option.key}
-            type="button"
-            onClick={() => setFilter(option.key)}
-            aria-pressed={filter === option.key}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] ${
-              filter === option.key
-                ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]'
-                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-400'
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <ListToolbar
+        search={{
+          value: query,
+          onChange: (next) => { setQuery(next); setPage(1); },
+          placeholder: 'Application name or client id',
+          label: 'Search authorized applications',
+        }}
+        filter={{
+          label: 'Filter by state',
+          value: filter,
+          onChange: (next) => { setFilter(next); setPage(1); },
+          options: FILTERS,
+        }}
+      />
 
       {error && <ErrorState message={error} onRetry={() => void load()} />}
 
       {loading
         ? <LoadingState label="Reading your authorizations…" />
-        : grants.length === 0
+        : filtered.length === 0
           ? <EmptyState
               icon={Layers}
-              title="No authorizations to show"
-              description={filter === 'all'
-                ? 'You have not allowed any application to act for you yet. One appears here the first time you approve a sign-in request.'
-                : 'Nothing in this state. Try another filter.'}
+              title={query ? 'No application matches that' : 'No authorizations to show'}
+              description={query
+                ? 'Nothing matches that name or client id.'
+                : (filter === 'all'
+                  ? 'You have not allowed any application to act for you yet. One appears here the first time you approve a sign-in request.'
+                  : 'Nothing in this state. Try another filter.')}
             />
           : (
             <>
@@ -179,7 +185,7 @@ export default function ApplicationsPage() {
               <Pagination
                 page={page}
                 totalPages={totalPages}
-                total={grants.length}
+                total={filtered.length}
                 limit={limit}
                 noun="applications"
                 onPageChange={setPage}

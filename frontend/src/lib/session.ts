@@ -36,6 +36,9 @@ export const REALM_CHANGED_EVENT = 'giam:realm-changed';
 export const SESSION_CHANGED_EVENT = 'giam:session-changed';
 // Profile claims read from the UserInfo endpoint, kept beside the token they were read with.
 export const PROFILE_KEY = 'giam.userinfo';
+// The caller's own effective permissions, read fresh from the authority because the token itself
+// carries roles rather than entitlements by default (P9) and is therefore not enough to gate the UI.
+export const PERMISSIONS_KEY = 'giam.permissions';
 /**
  * The name the sign-in itself returned.
  *
@@ -112,6 +115,9 @@ export function isCrossRealm(): boolean {
 export function setActiveRealm(name: string): void {
   if (typeof window === 'undefined') return;
   window.sessionStorage.setItem(ACTIVE_REALM_KEY, name);
+  // What the caller may do is a property of the realm being acted on, not just of the token, so a
+  // cached answer from the realm just left would be wrong here rather than merely stale.
+  window.sessionStorage.removeItem(PERMISSIONS_KEY);
   window.dispatchEvent(new CustomEvent(REALM_CHANGED_EVENT, { detail: name }));
 }
 
@@ -121,6 +127,7 @@ export function clearSession(): void {
   window.sessionStorage.removeItem(REALM_KEY);
   window.sessionStorage.removeItem(ACTIVE_REALM_KEY);
   window.sessionStorage.removeItem(PROFILE_KEY);
+  window.sessionStorage.removeItem(PERMISSIONS_KEY);
   window.sessionStorage.removeItem(NAME_KEY);
   announceSessionChange();
 }

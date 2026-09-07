@@ -1,7 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { RoleAdminService, isRoleRefusal } from '../services/roleAdmin.service';
-import { authorityAccess, refusal } from '../services/authorityAccess';
+import { authorityAccess, refusal, AUTHORITY_RESOURCE_SERVER } from '../services/authorityAccess';
+import { DecisionService } from '../services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
@@ -219,6 +220,48 @@ export async function roleController(fastify: FastifyInstance) {
     audit(realm, action, subjectId, detail, 'failure', 'not_permitted');
     return problem(403, 'Not permitted', reason);
   }
+
+  fastify.get('/realms/:realm/me/permissions', {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'myPermissions',
+      tags: ['authorization'],
+      summary: 'What this principal may do to the authority\'s own objects, resolved fresh',
+      description:
+        'No applicable standard; console UI gating. The access token carries roles rather than '
+        + 'entitlements by default (P9), so a screen deciding what to show cannot read the token '
+        + 'alone without the answer being wrong for every default login. This is the same read the '
+        + 'authority does to decide, not a claim the caller could be stale about: a role withdrawn a '
+        + 'moment ago is withdrawn here too. It answers only for the CALLER, so no permission beyond '
+        + '"read your own" gates it.',
+      security: [{ bearerAuth: [] }],
+      params: realmParam,
+      response: {
+        200: {
+          description: 'The caller\'s own effective permissions on the authority.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['permissions', 'roles', 'scopeKind'],
+          properties: {
+            permissions: { type: 'array', items: { type: 'string' }, description: '`resource:action` strings.' },
+            roles: { type: 'array', items: { type: 'string' } },
+            scopeKind: { type: 'string', enum: ['self', 'all'] },
+          },
+          examples: [{ permissions: ['sessions:view', 'sessions:manage'], roles: ['realm_administrator'], scopeKind: 'all' }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const realm = await realmOf((request.params as { realm: string }).realm);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const decision = await new DecisionService(fastify.db)
+      .effectivePermissions(realm.realmId, caller.subjectId, AUTHORITY_RESOURCE_SERVER);
+    return reply.send({ permissions: decision.permissions, roles: decision.roles, scopeKind: decision.scopeKind });
+  });
 
   fastify.get(base, {
     preHandler: requirePrincipal,
