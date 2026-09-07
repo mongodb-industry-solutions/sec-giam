@@ -1,7 +1,9 @@
 'use client';
 
 import { apiUrl } from './env';
-import { PROFILE_KEY, storedHomeRealm, storedRealm, storedToken, storedUserName } from './session';
+import {
+  PERMISSIONS_KEY, PROFILE_KEY, REALM_CHANGED_EVENT, storedHomeRealm, storedRealm, storedToken, storedUserName,
+} from './session';
 
 /**
  * What the console knows about the signed-in principal, and how it talks to the authority.
@@ -130,6 +132,67 @@ export async function loadUserInfo(): Promise<UserInfo | null> {
   return profileInFlight;
 }
 
+export interface MyPermissions {
+  permissions: string[];
+  roles: string[];
+  scopeKind: 'self' | 'all';
+}
+
+// Kept beside the profile cache, and invalidated the same two ways: signing out, and switching the
+// realm being acted on, because the answer is a property of that realm, not just of the token.
+let permissionsCache: MyPermissions | null = null;
+let permissionsInFlight: Promise<MyPermissions | null> | null = null;
+
+// `setActiveRealm` clears the storage half; this clears the in-memory half, so a switch cannot leave
+// the module holding the previous realm's answer after the storage key it was read from is gone.
+if (typeof window !== 'undefined') {
+  window.addEventListener(REALM_CHANGED_EVENT, () => { permissionsCache = null; });
+}
+
+export function cachedPermissions(): MyPermissions | null {
+  if (permissionsCache) return permissionsCache;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(PERMISSIONS_KEY);
+    permissionsCache = raw ? JSON.parse(raw) as MyPermissions : null;
+  } catch {
+    permissionsCache = null;
+  }
+  return permissionsCache;
+}
+
+/**
+ * Reads the caller's own effective permissions once per realm.
+ *
+ * The access token carries roles rather than entitlements by default (P9), so `can()` cannot decide
+ * what to render from the token alone without being wrong on every ordinary login: the entitlements
+ * claim is populated only when a client deliberately narrows, which the console itself never does.
+ * This asks the authority the same question it asks itself when it decides, so the answer is never
+ * stale about a role withdrawn a moment ago the way a claim baked into a token would be.
+ */
+export async function loadPermissions(): Promise<MyPermissions | null> {
+  if (!currentClaims()) return null;
+
+  const cached = cachedPermissions();
+  if (cached) return cached;
+
+  permissionsInFlight ??= callApi<MyPermissions>('/me/permissions', { subject: 'your permissions' })
+    .then((info) => {
+      permissionsCache = info;
+      try { window.sessionStorage.setItem(PERMISSIONS_KEY, JSON.stringify(info)); } catch {}
+      return info;
+    })
+    .catch((err) => {
+      // Degrading to "nothing granted" is deliberate: a console that cannot ask still works, it just
+      // shows less rather than guessing.
+      console.warn('[console] effective permissions unavailable, gated screens stay hidden:', err);
+      return null;
+    })
+    .finally(() => { permissionsInFlight = null; });
+
+  return permissionsInFlight;
+}
+
 /**
  * The friendliest name the console can put on screen for this principal.
  *
@@ -167,10 +230,19 @@ export function initials(claims: Claims): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** Whether the claims carry a named entitlement. Absent claims mean no, never "probably". */
+/**
+ * Whether this principal holds a permission, for deciding what to render.
+ *
+ * The token's `entitlements` claim is checked first, for a client that deliberately narrowed. The
+ * console never does, so this falls back to the effective permissions read fresh from the authority
+ * (`loadPermissions`): without the fallback, every default login carries roles only and this would
+ * answer "no" for everybody, hiding controls the API would in fact allow.
+ */
 export function can(claims: Claims | null, resource: string, action: string): boolean {
   if (!claims) return false;
-  return (claims.entitlements ?? []).includes(`${resource}:${action}`);
+  const wanted = `${resource}:${action}`;
+  if ((claims.entitlements ?? []).includes(wanted)) return true;
+  return (cachedPermissions()?.permissions ?? []).includes(wanted);
 }
 
 // Offered only when the claims say the person administers identity, so the console never advertises
@@ -178,7 +250,8 @@ export function can(claims: Claims | null, resource: string, action: string): bo
 export function administersIdentity(claims: Claims | null): boolean {
   if (!claims) return false;
   if ((claims.roles ?? []).some((role) => /admin|auditor|security/i.test(role))) return true;
-  return (claims.entitlements ?? []).some((entitlement) => /realm|client|identit|role|polic|key|session|audit/i.test(entitlement));
+  const granted = [...(claims.entitlements ?? []), ...(cachedPermissions()?.permissions ?? [])];
+  return granted.some((entitlement) => /realm|client|identit|role|polic|key|session|audit/i.test(entitlement));
 }
 
 /** A failure a screen can print as it is, rather than a stack trace or a bare status code. */

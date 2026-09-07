@@ -4,9 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Plus, ShieldCheck, ShieldOff } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Tooltip } from '../../../components/Tooltip';
+import { ListToolbar } from '../../../components/ListToolbar';
+import { Pagination } from '../../../components/Pagination';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
+import { paginate } from '../../../lib/useConsoleResource';
 import { useRealmChange } from '../../../lib/realms';
+import { usePermissions } from '../../../lib/profile';
 
 /**
  * Who holds temporary authority right now, and which requests are waiting.
@@ -36,13 +40,17 @@ type State = 'in-force' | 'pending';
 
 export default function ElevationsPage() {
   const [state, setState] = useState<State>('in-force');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [elevations, setElevations] = useState<Elevation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [mayApprove, setMayApprove] = useState(false);
+  const { permissions } = usePermissions();
 
-  useEffect(() => { setMayApprove(can(currentClaims(), 'elevations', 'approve')); }, []);
+  useEffect(() => { setMayApprove(can(currentClaims(), 'elevations', 'approve')); }, [permissions]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +70,14 @@ export default function ElevationsPage() {
 
   useEffect(() => { void load(); }, [load]);
   useRealmChange(() => { void load(); });
+
+  const needle = query.trim().toLowerCase();
+  const filtered = needle
+    ? elevations.filter((elevation) => [elevation.roleId, elevation.userName, elevation.subjectId, elevation.justification]
+        .some((field) => field?.toLowerCase().includes(needle)))
+    : elevations;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / limit));
+  const visible = paginate(filtered, page, limit);
 
   async function approve(elevation: Elevation) {
     setBusy(elevation.assignmentId);
@@ -104,23 +120,20 @@ export default function ElevationsPage() {
         info="Every elevation carries a stated reason and an expiry, and an approver can never be the requester. Ending one takes effect immediately rather than waiting for its expiry."
       />
 
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by state">
-        {(['in-force', 'pending'] as State[]).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setState(option)}
-            aria-pressed={state === option}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] ${
-              state === option
-                ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]'
-                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-400'
-            }`}
-          >
-            {option === 'in-force' ? 'In force' : 'Awaiting approval'}
-          </button>
-        ))}
-      </div>
+      <ListToolbar
+        search={{
+          value: query,
+          onChange: (next) => { setQuery(next); setPage(1); },
+          placeholder: 'Role, subject or justification',
+          label: 'Search privileged access',
+        }}
+        filter={{
+          label: 'Filter by state',
+          value: state,
+          onChange: (next) => { setState(next); setPage(1); },
+          options: [{ key: 'in-force', label: 'In force' }, { key: 'pending', label: 'Awaiting approval' }],
+        }}
+      />
 
       <RequestForm onRequested={() => void load()} onFailure={setError} />
 
@@ -128,17 +141,20 @@ export default function ElevationsPage() {
 
       {loading
         ? <LoadingState label="Reading privileged access…" />
-        : elevations.length === 0
+        : filtered.length === 0
           ? <EmptyState
               icon={ShieldCheck}
-              title={state === 'in-force' ? 'Nobody holds elevated access' : 'Nothing is waiting for approval'}
-              description={state === 'in-force'
-                ? 'No temporary authority is in force in this realm right now.'
-                : 'Every request has been decided. A new one appears here as soon as it is raised.'}
+              title={query ? 'No elevation matches that' : (state === 'in-force' ? 'Nobody holds elevated access' : 'Nothing is waiting for approval')}
+              description={query
+                ? 'Nothing in this view matches that role, subject or justification.'
+                : (state === 'in-force'
+                  ? 'No temporary authority is in force in this realm right now.'
+                  : 'Every request has been decided. A new one appears here as soon as it is raised.')}
             />
           : (
+            <>
             <ul className="space-y-3">
-              {elevations.map((elevation) => (
+              {visible.map((elevation) => (
                 <li key={elevation.assignmentId} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -196,6 +212,17 @@ export default function ElevationsPage() {
                 </li>
               ))}
             </ul>
+
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={filtered.length}
+              limit={limit}
+              noun="elevations"
+              onPageChange={setPage}
+              onLimitChange={(next) => { setLimit(next); setPage(1); }}
+            />
+            </>
           )}
     </main>
   );

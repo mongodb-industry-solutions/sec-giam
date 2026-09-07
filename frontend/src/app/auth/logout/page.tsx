@@ -34,24 +34,29 @@ function LogoutInner() {
   useEffect(() => {
     const sessionId = storedSessionId();
     const token = storedToken();
+    // A relying party's return address, validated server-side against its own registration.
+    const postLogoutRedirectUri = params.get('post_logout_redirect_uri') ?? undefined;
     clearSession();
 
-    const done = () => window.location.replace(safeReturn(params.get('redirect')));
-
-    if (!sessionId) {
-      done();
-      return;
-    }
-
+    // Called regardless of whether this tab remembers a session id: a relying party's sign-in never
+    // gives it one, the session lives only in the cookie this fetch carries.
     fetch(apiUrl(`/realms/${DEFAULT_REALM}/protocol/openid-connect/logout`), {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({
+        ...(sessionId ? { session_id: sessionId } : {}),
+        ...(postLogoutRedirectUri ? { post_logout_redirect_uri: postLogoutRedirectUri } : {}),
+      }),
     })
-      .then(done)
+      .then(async (response) => {
+        // The validated response, not the raw query string, is what this page trusts.
+        const body = await response.json().catch(() => ({})) as { post_logout_redirect_uri?: string };
+        window.location.replace(body.post_logout_redirect_uri ?? safeReturn(params.get('redirect')));
+      })
       .catch(() => setFailed(true));
   }, [params]);
 

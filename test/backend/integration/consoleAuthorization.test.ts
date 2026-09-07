@@ -109,3 +109,52 @@ describe('v39: administering the authority is authorised by role', () => {
     });
   }
 });
+
+/**
+ * v42: what `GET /me/permissions` answers, which is what the console's own `can()` falls back to.
+ *
+ * The access token carries roles rather than entitlements by default, so a screen deciding what to
+ * show cannot read the token alone: this endpoint is the console's only reliable source for that
+ * decision, and a manager who cannot see `sessions:view` here is a manager whose realm-wide session
+ * list silently stays hidden in the UI even though the API would have honoured the request.
+ */
+describe('v42: a principal reads their own effective permissions, fresh', () => {
+  let live = false;
+
+  beforeAll(async () => { live = await reachable(); });
+
+  it('refuses with no credential at all', async () => {
+    if (!live) return;
+    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, { signal: AbortSignal.timeout(20000) });
+    expect(response.status).toBe(401);
+  });
+
+  it('a manager holds sessions:view and sessions:manage, realm wide', async () => {
+    if (!live) return;
+    const token = await tokenFor(MATRIX[0]);
+    expect(token).toBeTruthy();
+    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { permissions: string[]; roles: string[]; scopeKind: string };
+    expect(body.scopeKind).toBe('all');
+    expect(body.permissions).toContain('sessions:view');
+    expect(body.permissions).toContain('sessions:manage');
+  });
+
+  it('an ordinary customer holds no authority permission at all', async () => {
+    if (!live) return;
+    const token = await tokenFor(MATRIX[2]);
+    expect(token).toBeTruthy();
+    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { permissions: string[]; scopeKind: string };
+    expect(body.scopeKind).toBe('self');
+    expect(body.permissions).not.toContain('sessions:view');
+  });
+});
