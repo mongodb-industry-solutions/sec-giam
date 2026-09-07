@@ -686,6 +686,47 @@ export async function roleController(fastify: FastifyInstance) {
     return reply.status(201).send(outcome);
   });
 
+  fastify.get('/realms/:realm/principals/:subjectId/roles', {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'listPrincipalRoles',
+      tags: ['authorization'],
+      summary: 'The roles one principal holds',
+      description:
+        'No applicable standard. The reverse of "who holds this role": one principal\'s own '
+        + 'assignments, lapsed ones included, read from that principal\'s own record rather than by '
+        + 'scanning every role in the catalog for a match.',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['realm', 'subjectId'],
+        properties: { realm: { type: 'string' }, subjectId: { type: 'string' } },
+      },
+      response: {
+        200: {
+          description: 'Every role this principal holds or held.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['assignments'],
+          properties: { assignments: { type: 'array', items: assignmentView } },
+          examples: [{ assignments: [assignmentView.examples[0]] }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const { realm: realmName, subjectId } = request.params as { realm: string; subjectId: string };
+    const realm = await realmOf(realmName);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const gate = await administers(realm.realmId, request.principal!.subjectId, 'assignments', 'view');
+    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+
+    return reply.send({ assignments: await new RoleAdminService(fastify.db).rolesHeldBy(realm.realmId, subjectId) });
+  });
+
   fastify.delete('/realms/:realm/principals/:subjectId/roles/:roleId', {
     preHandler: requirePrincipal,
     schema: {

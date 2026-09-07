@@ -113,13 +113,17 @@ export async function scimController(fastify: FastifyInstance) {
         'Standard-defined: SCIM 2.0, RFC 7644 section 3.4.2. Only `eq` filters on userName, '
         + 'externalId and active are supported, and anything else is REFUSED rather than partially '
         + 'interpreted: a mistranslated filter returns the wrong principals instead of an error, '
-        + 'which is far worse than an honest refusal.',
+        + 'which is far worse than an honest refusal. `domainId` and `pending` are separate, '
+        + 'platform-specific parameters rather than folded into `filter`, so the standard grammar '
+        + 'stays exactly the standard grammar and neither narrowing is ever mistaken for part of it.',
       security: [{ bearerAuth: [] }],
       params: realmParam,
       querystring: {
         type: 'object',
         properties: {
           filter: { type: 'string', examples: ['userName eq "ada"'] },
+          domainId: { type: 'string', description: 'Principals provisioned through this authentication path.' },
+          pending: { type: 'boolean', description: 'Self-registered principals awaiting approval.' },
           startIndex: { type: 'integer', default: 1, description: 'One-based, per the specification.' },
           count: { type: 'integer', default: 100 },
         },
@@ -153,7 +157,9 @@ export async function scimController(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const { realm: realmName } = request.params as { realm: string };
-    const { filter, startIndex, count } = request.query as { filter?: string; startIndex?: number; count?: number };
+    const { filter, domainId, pending, startIndex, count } = request.query as {
+      filter?: string; domainId?: string; pending?: boolean; startIndex?: number; count?: number;
+    };
 
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(scimError(404, 'No such realm'));
@@ -165,7 +171,12 @@ export async function scimController(fastify: FastifyInstance) {
 
     const from = Math.max(1, startIndex ?? 1);
     const limit = Math.min(count ?? 100, 200);
-    const query = { realmId: realm.realmId, ...parsed };
+    const query = {
+      realmId: realm.realmId,
+      ...parsed,
+      ...(domainId ? { domainId } : {}),
+      ...(pending ? { lifecycleState: 'pending' as const } : {}),
+    };
 
     const [records, total] = await Promise.all([
       identities().find(query, { projection: { _id: 0 } }).sort({ userName: 1 }).skip(from - 1).limit(limit).toArray(),
@@ -368,12 +379,23 @@ export async function scimController(fastify: FastifyInstance) {
     // Deactivating through provisioning must actually END access, not merely mark a flag. Raising the
     // epoch retires every token already issued, including any this authority never recorded.
     const deactivating = update.active === false;
+    /**
+     * The other half of that same symmetry, added in v43.
+     *
+     * Self-registration without auto-approve lands a principal in `pending` with `active: false`
+     * (`registration.controller.ts`). Before this, setting `active: true` on one left
+     * `lifecycleState: 'pending'` untouched: the record ended up `active: true` and
+     * `lifecycleState: 'pending'` AT ONCE, a state nothing else checked for, and there was no way
+     * to correctly approve a pending account through provisioning at all.
+     */
+    const approving = update.active === true && existing.lifecycleState === 'pending';
     await identities().updateOne(
       { subjectId: id },
       {
         $set: {
           ...update,
           ...(deactivating ? { lifecycleState: 'suspended' } : {}),
+          ...(approving ? { lifecycleState: 'active' } : {}),
           'meta.lastModified': new Date().toISOString(),
         },
         ...(deactivating ? { $inc: { sessionEpoch: 1 } } : {}),
@@ -384,7 +406,7 @@ export async function scimController(fastify: FastifyInstance) {
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       category: 'lifecycle',
-      action: deactivating ? 'identity.deactivated' : 'identity.updated',
+      action: deactivating ? 'identity.deactivated' : approving ? 'identity.approved' : 'identity.updated',
       outcome: 'success',
       subjectId: id,
       detail: { via: 'scim', changed: Object.keys(update) },
@@ -393,7 +415,7 @@ export async function scimController(fastify: FastifyInstance) {
     void notifyConsumers(deactivating ? 'deactivate' : 'update', id, {
       realmId: realm.realmId,
       active: update.active ?? existing.active,
-      lifecycleState: deactivating ? 'suspended' : existing.lifecycleState,
+      lifecycleState: deactivating ? 'suspended' : approving ? 'active' : existing.lifecycleState,
       version: (existing.meta?.version ?? 0) + 1,
     });
 

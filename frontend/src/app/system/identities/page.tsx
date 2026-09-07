@@ -1,15 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, UsersRound } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { Check, Plus, UserX, UsersRound, X } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Pagination } from '../../../components/Pagination';
+import { FilterChips } from '../../../components/FilterChips';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
-import { ApiError, callApi, when } from '../../../lib/console';
+import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
+import { usePermissions } from '../../../lib/profile';
 import {
   FilterAttribute, ScimList, ScimUser, extensionOf, primaryEmail, scimFilter,
 } from '../../../lib/identities';
+
+const PATCH_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
+
+type Scope = 'all' | 'pending';
 
 /**
  * The principal directory, over SCIM.
@@ -19,7 +26,21 @@ import {
  * as pending rather than active, and why no role can be granted from this screen.
  */
 export default function IdentitiesPage() {
+  return (
+    <Suspense fallback={<main className="space-y-5"><p className="text-sm text-gray-400">Reading the principal directory…</p></main>}>
+      <IdentitiesInner />
+    </Suspense>
+  );
+}
+
+function IdentitiesInner() {
+  // `domainId` arrives only as a link from a domain's own screen, never typed by hand, so it is read
+  // once from the address rather than added to the attribute picker's vocabulary.
+  const searchParams = useSearchParams();
+  const [domainId, setDomainId] = useState<string | null>(() => searchParams.get('domainId'));
+
   const [list, setList] = useState<ScimList | null>(null);
+  const [scope, setScope] = useState<Scope>('all');
   const [attribute, setAttribute] = useState<FilterAttribute>('none');
   const [value, setValue] = useState('');
   const [applied, setApplied] = useState<string | undefined>(undefined);
@@ -28,6 +49,10 @@ export default function IdentitiesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [decisionBusy, setDecisionBusy] = useState<string | null>(null);
+
+  usePermissions();
+  const mayManage = can(currentClaims(), 'identities', 'manage');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,6 +61,8 @@ export default function IdentitiesPage() {
         subject: 'the principal directory',
         query: {
           filter: applied,
+          domainId: domainId ?? undefined,
+          pending: scope === 'pending' ? 'true' : undefined,
           // One-based, per the specification. An off-by-one here silently skips a record per page.
           startIndex: (pageNumber - 1) * limit + 1,
           count: limit,
@@ -47,9 +74,37 @@ export default function IdentitiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [applied, pageNumber, limit]);
+  }, [applied, domainId, scope, pageNumber, limit]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /**
+   * Approving activates a pending signup; rejecting deprovisions it, the same fate as a suspension
+   * that was never approved rather than a fourth lifecycle state invented to say the same thing.
+   */
+  async function decide(user: ScimUser, decision: 'approve' | 'reject') {
+    setDecisionBusy(user.id);
+    try {
+      if (decision === 'approve') {
+        await callApi(`/scim/v2/Users/${encodeURIComponent(user.id)}`, {
+          method: 'PATCH',
+          subject: 'that principal',
+          body: { schemas: [PATCH_SCHEMA], Operations: [{ op: 'replace', value: { active: true } }] },
+        });
+      } else {
+        if (!window.confirm(`Reject ${user.userName}? The account is retired rather than deleted, so the record it left survives.`)) {
+          setDecisionBusy(null);
+          return;
+        }
+        await callApi(`/scim/v2/Users/${encodeURIComponent(user.id)}`, { method: 'DELETE', subject: 'that principal' });
+      }
+      await load();
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'That decision could not be recorded.');
+    } finally {
+      setDecisionBusy(null);
+    }
+  }
 
   const total = list?.totalResults ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -79,6 +134,27 @@ export default function IdentitiesPage() {
           onCreated={() => { setCreating(false); setPageNumber(1); void load(); }}
         />
       )}
+
+      {domainId && (
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          <span>Showing principals provisioned through one authentication path.</span>
+          <button
+            type="button"
+            onClick={() => { setDomainId(null); setPageNumber(1); }}
+            className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-0.5 font-medium text-gray-700 hover:bg-gray-100"
+          >
+            <X size={11} aria-hidden />
+            Clear
+          </button>
+        </div>
+      )}
+
+      <FilterChips
+        label="Filter by lifecycle"
+        value={scope}
+        onChange={(next) => { setScope(next); setPageNumber(1); }}
+        options={[{ key: 'all', label: 'All' }, { key: 'pending', label: 'Awaiting approval' }]}
+      />
 
       <form
         className="flex flex-wrap items-end gap-2"
@@ -187,6 +263,28 @@ export default function IdentitiesPage() {
                       </div>
                       <span className="w-56 shrink-0 truncate text-xs text-gray-500">{primaryEmail(user) || 'no email'}</span>
                       <span className="w-40 shrink-0 text-xs text-gray-400">{when(user.meta?.created)}</span>
+                      {mayManage && extension.lifecycleState === 'pending' && (
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={decisionBusy === user.id}
+                            onClick={() => void decide(user, 'approve')}
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                          >
+                            <Check size={11} aria-hidden />
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={decisionBusy === user.id}
+                            onClick={() => void decide(user, 'reject')}
+                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <UserX size={11} aria-hidden />
+                            Reject
+                          </button>
+                        </div>
+                      )}
                     </li>
                   );
                 })}

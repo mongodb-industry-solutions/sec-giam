@@ -547,6 +547,25 @@ export class RoleAdminService {
     };
   }
 
+  /**
+   * The roles ONE principal holds, lapsed ones included.
+   *
+   * The reverse of `assignmentsFor`. Reading the principal's own `roles` array is one document read,
+   * not one query per role in the catalog, which is the shape a per-role lookup would otherwise force
+   * on a screen that shows a principal's own assignments.
+   */
+  async rolesHeldBy(realmId: string, subjectId: string): Promise<AssignmentView[]> {
+    const holder = await this.principals.findOne(
+      { realmId, subjectId },
+      { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } },
+    );
+    if (!holder) return [];
+    const now = new Date();
+    return (holder.roles ?? [])
+      .map((holding) => RoleAdminService.view(holder.subjectId, holding, now, holder.userName))
+      .sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
+  }
+
   /** Who holds a role, lapsed ones included: "who used to have this" is the question after an incident. */
   async assignmentsFor(realmId: string, roleId: string): Promise<AssignmentView[]> {
     const holders = await this.principals

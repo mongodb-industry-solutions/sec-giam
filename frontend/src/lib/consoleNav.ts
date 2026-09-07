@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, AppWindow, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, AppWindow, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
 import { can, type Claims } from './console';
 
 /**
@@ -71,6 +71,15 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     // Registering an application is self-service, so this is never hidden. What the permission changes
     // is how much of the realm it lists, and the authority narrows the query either way.
     visible: () => true,
+  },
+  {
+    key: 'domains',
+    label: 'Authentication paths',
+    path: '/system/domains',
+    icon: Globe,
+    description: 'Every way a person can prove who they are in this realm, and who may sign in through it.',
+    // Named `providers` in the permission model: a domain IS an authentication provider here.
+    visible: (claims) => can(claims, 'providers', 'view'),
   },
   {
     key: 'identities',
