@@ -89,7 +89,13 @@ export async function registrationController(fastify: FastifyInstance) {
      * which names are taken.
      */
     const localDomain = await new RealmService(fastify.db).localDomain(realm.realmId);
-    const broken = checkPassword(passwordPolicyOf(localDomain ?? { protocol: 'internal' }), body.password);
+    // Self-service is only ever open on the internal path (`registration()` reads it off that same
+    // domain), so reaching here without one is a deployment defect: fail loudly rather than provision
+    // a principal that belongs to no domain, which the model does not admit.
+    if (!localDomain) {
+      throw new Error(`realm "${realmName}" has no internal domain; every principal must belong to one`);
+    }
+    const broken = checkPassword(passwordPolicyOf(localDomain), body.password);
     if (broken.length > 0) {
       return reply.status(400).send(problem(
         400,
@@ -124,7 +130,7 @@ export async function registrationController(fastify: FastifyInstance) {
       // Which directory this principal joined through, so a screen reading the record can say so
       // rather than leaving it unattributed. This IS the internal path: it is the only one anybody
       // can self-register through (ADR-002).
-      ...(localDomain ? { domainId: localDomain.domainId } : {}),
+      domainId: localDomain.domainId,
       // Two fields rather than one because they answer different questions: whether this principal is
       // usable at all, and where it stands in its lifecycle. A realm that reviews sign-ups produces a
       // principal that EXISTS and cannot authenticate, so the person can be told where they stand.

@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, AppWindow, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, AppWindow, Building2, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
 import { can, type Claims } from './console';
 
 /**
@@ -71,6 +71,14 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     // Registering an application is self-service, so this is never hidden. What the permission changes
     // is how much of the realm it lists, and the authority narrows the query either way.
     visible: () => true,
+  },
+  {
+    key: 'realms',
+    label: 'Realms',
+    path: '/system/realms',
+    icon: Building2,
+    description: 'Every trust and key boundary this deployment hosts.',
+    visible: (claims) => can(claims, 'realms', 'view'),
   },
   {
     key: 'domains',

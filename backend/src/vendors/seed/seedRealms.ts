@@ -2,6 +2,7 @@ import { Db } from 'mongodb';
 import { REALM_COLLECTION, DOMAIN_COLLECTION } from '../../shared/models/collections';
 import { RealmRecord } from '../../modules/realm/models/realm.model';
 import { DomainRecord } from '../../modules/realm/models/domain.model';
+import { DEFAULT_TOKEN_POLICY, LOCAL_DOMAIN_NAME, localDomainRecord } from '../../modules/realm/models/realmDefaults';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
@@ -47,53 +48,6 @@ interface RealmFixture {
   }>;
 }
 
-/**
- * Defaults an operator rarely changes, in one place so a fixture states only what is specific to it.
- */
-const DEFAULT_TOKEN_POLICY: RealmRecord['tokenPolicy'] = {
-  /**
-   * Five minutes, and this number IS the revocation objective.
-   *
-   * An access token is verified against the published key set without touching the database, which
-   * is what keeps this authority off the hot path. The cost is that revoking a session cannot reach
-   * a token already issued, so the worst case propagation is exactly this lifetime. Fifteen minutes
-   * made that window three times longer for no benefit that was ever written down.
-   */
-  accessTokenTtlSeconds: 300,
-  refreshTokenTtlSeconds: 2_592_000,
-  codeTtlSeconds: 120,
-  sessionIdleTtlSeconds: 3_600,
-  sessionMaxTtlSeconds: 43_200,
-};
-
-/**
- * The rules for proving identity against a realm's OWN directory.
- *
- * On the local domain rather than on the realm, because that is the path they describe. A realm that
- * also federates has an upstream setting its own, and the two no longer have to pretend to be one.
- */
-const DEFAULT_LOCAL_AUTHENTICATION: NonNullable<DomainRecord['authentication']> = {
-  passwordPolicy: {
-    minLength: 8,
-    requireUppercase: false,
-    requireNumber: false,
-    requireSymbol: false,
-    historyDepth: 0,
-  },
-};
-
-/**
- * The slug every realm's own directory is registered under.
- *
- * `local` said where the directory was rather than what it is, and it read as a developer's word
- * for "not the real one" on a screen a customer sees. This is the realm's OWN directory: the
- * credentials it holds, the policy it enforces and the only path anybody can self-register into.
- *
- * Realm neutral on purpose. Every realm registers one of these, so a slug naming one product would
- * be wrong in the other realm the moment there are two.
- */
-const LOCAL_DOMAIN_NAME = 'atlas-id';
-
 export async function seedRealms(db: Db): Promise<void> {
   const fixtures = readSeedFile<RealmFixture[]>('realms.json');
   const realms = db.collection<RealmRecord>(REALM_COLLECTION);
@@ -138,29 +92,14 @@ export async function seedRealms(db: Db): Promise<void> {
     const local = await upsertSeed<DomainRecord>(
       providers,
       { domainId: localId },
-      {
-        name: LOCAL_DOMAIN_NAME,
-        displayName: `${fixture.displayName} directory`,
-        protocol: 'internal',
-        adapter: 'internal',
-        enabled: true,
-        config: {},
-        claimMappings: [],
-        authentication: {
-          ...DEFAULT_LOCAL_AUTHENTICATION,
-          ...fixture.localAuthentication,
-        },
-        // Unlimited by default: one session per subject produces constant eviction for a person
-        // using a laptop, a phone and a tablet.
-        session: { maxConcurrent: null, onExceed: 'evict-oldest' },
-        /**
-         * Self-registration lives HERE and not on the realm (ADR-002).
-         *
-         * Closed unless a fixture opens it. The internal directory is the only path anybody can
-         * join through, so it is the only one this can describe.
-         */
-        registration: { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
-      },
+      localDomainRecord({
+        domainId: localId,
+        realmId: fixture.realmId,
+        tenantId: DEFAULT_TENANT_ID,
+        realmDisplayName: fixture.displayName,
+        authentication: fixture.localAuthentication,
+        registration: fixture.registration && { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
+      }),
       { domainId: localId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
       'Domain',
     );

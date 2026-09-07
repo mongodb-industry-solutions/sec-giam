@@ -278,6 +278,13 @@ export async function scimController(fastify: FastifyInstance) {
     const { autoApprove } = await realmService.registration(realm.realmId);
     const lifecycleState = provisionedLifecycleState(autoApprove);
     const localDomain = await realmService.localDomain(realm.realmId);
+    // A principal that authenticates through no domain at all is not a lesser case: it is a state
+    // the model does not admit. `seedRealms` guarantees one internal domain per realm, so reaching
+    // this without one is a deployment defect, not a client error, and it must fail loudly rather
+    // than silently provision a principal nothing can attribute.
+    if (!localDomain) {
+      throw new Error(`realm "${realmName}" has no internal domain; every principal must belong to one`);
+    }
 
     const record = {
       realmId: realm.realmId,
@@ -285,7 +292,7 @@ export async function scimController(fastify: FastifyInstance) {
       subjectId: `sub-${randomUUID()}`,
       userName: body.userName,
       kind: 'human',
-      ...(localDomain ? { domainId: localDomain.domainId } : {}),
+      domainId: localDomain.domainId,
       ...(body.externalId ? { externalId: body.externalId } : {}),
       ...(body.name ? { name: body.name } : {}),
       ...(primary?.value ? { primaryEmail: String(primary.value).toLowerCase() } : {}),

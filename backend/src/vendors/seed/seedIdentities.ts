@@ -92,6 +92,11 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
   for (const fixture of fixtures) {
     const realmId = realmIdByName.get(fixture.realm);
     if (!realmId) throw new Error(`identities.json names realm "${fixture.realm}", which is not seeded`);
+    const domainId = localDomainByRealm.get(realmId);
+    // Every principal belongs to a domain; there is no admitted case of one that does not. Failing
+    // the seed run here is the same rigor P43's runtime paths apply: `seedRealms` runs first and
+    // guarantees one internal domain per realm, so reaching this without one is a seed order bug.
+    if (!domainId) throw new Error(`realm "${fixture.realm}" has no internal domain seeded yet`);
     realmIdBySubject.set(fixture.subjectId, realmId);
     byKind[fixture.kind] = (byKind[fixture.kind] ?? 0) + 1;
     await upsertSeed<PrincipalRecord>(
@@ -113,7 +118,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
         demoFeatured: Boolean(fixture.demoFeatured),
         ...(fixture.demoNote ? { demoNote: fixture.demoNote } : {}),
         ...(fixture.accountHolderRef ? { accountHolderRef: fixture.accountHolderRef } : {}),
-        ...(localDomainByRealm.has(realmId) ? { domainId: localDomainByRealm.get(realmId) } : {}),
+        domainId,
       },
       { subjectId: fixture.subjectId, realmId, tenantId: DEFAULT_TENANT_ID },
       'Identity',
