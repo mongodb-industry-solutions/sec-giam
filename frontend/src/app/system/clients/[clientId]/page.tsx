@@ -359,7 +359,16 @@ function OwnersPanel({ owners, busy, onAdd, onRemove }: {
           <li key={`${owner.kind}:${owner.ref}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-[#001E2B]">{owner.display_name || owner.ref}</span>
+                {owner.kind === 'principal'
+                  ? (
+                    <Link
+                      href={`/system/identities/${encodeURIComponent(owner.ref)}`}
+                      className="font-medium text-[#001E2B] hover:underline"
+                    >
+                      {owner.display_name || owner.ref}
+                    </Link>
+                  )
+                  : <span className="font-medium text-[#001E2B]">{owner.display_name || owner.ref}</span>}
                 {owner.is_caller && (
                   <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                     you

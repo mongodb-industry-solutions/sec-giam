@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Globe, Plus, Trash2, UsersRound } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
+import { Tooltip } from '../../../../components/Tooltip';
 import { Fact } from '../../../../components/RecordCard';
 import { ErrorState, LoadingState } from '../../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/console';
@@ -30,6 +31,7 @@ interface Domain {
   hasClientSecret: boolean;
   claimMappings: Array<{ claim: string; value: string; roleName: string }>;
   registration?: { selfServiceEnabled: boolean; autoApprove: boolean };
+  authentication?: { cibaEnabled?: boolean };
   createdAt?: string;
   lastModifiedAt?: string;
 }
@@ -50,6 +52,7 @@ export default function DomainDetailPage() {
   const [notice, setNotice] = useState('');
   const [selfService, setSelfService] = useState(false);
   const [autoApprove, setAutoApprove] = useState(false);
+  const [cibaEnabled, setCibaEnabled] = useState(true);
   const [mappings, setMappings] = useState<Array<{ claim: string; value: string; roleName: string }>>([]);
 
   usePermissions();
@@ -66,6 +69,7 @@ export default function DomainDetailPage() {
       setNotice(record.notice ?? '');
       setSelfService(record.registration?.selfServiceEnabled ?? false);
       setAutoApprove(record.registration?.autoApprove ?? false);
+      setCibaEnabled(record.authentication?.cibaEnabled ?? true);
       setMappings(record.claimMappings ?? []);
       setError(null);
     } catch (failure) {
@@ -88,6 +92,7 @@ export default function DomainDetailPage() {
           enabled,
           ...(notice ? { notice } : {}),
           registration: { selfServiceEnabled: selfService, autoApprove: selfService && autoApprove },
+          authentication: { cibaEnabled },
           claimMappings: mappings.filter((m) => m.claim && m.value && m.roleName),
         },
       });
@@ -218,6 +223,21 @@ export default function DomainDetailPage() {
                   Auto-approve: activate immediately, skip manager review
                 </label>
               )}
+            </div>
+
+            <div className="space-y-2 border-t border-gray-100 pt-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Backchannel authentication</h3>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={cibaEnabled}
+                  disabled={!mayManage}
+                  onChange={(e) => setCibaEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                Allow CIBA sign-in for a principal identified through this path
+                <Tooltip text="A principal already registered a device key elsewhere may still be reached by CIBA unless this is off. It does not affect client_credentials: that authenticates a workload, not a person, and has no domain to check." />
+              </label>
             </div>
 
             {isFederated && (

@@ -281,6 +281,13 @@ export async function domainController(fastify: FastifyInstance) {
           onExceed: { type: 'string', enum: ['evict-oldest', 'refuse-new'] },
         },
       },
+      authentication: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          cibaEnabled: { type: 'boolean', description: 'Whether a principal identified through this path may be reached by CIBA.' },
+        },
+      },
     },
   } as const;
 
@@ -406,6 +413,12 @@ export async function domainController(fastify: FastifyInstance) {
      */
     for (const [key, value] of Object.entries(body.config ?? {})) {
       changes[`config.${key}`] = value;
+    }
+    // Same reason as `config`: the read publishes `authentication` whole, but only `cibaEnabled` is
+    // writable through this narrow schema, so a wholesale assignment would erase `passwordPolicy`,
+    // `lockout` and every other sub-field this endpoint was never asked to change.
+    for (const [key, value] of Object.entries((body as { authentication?: Record<string, unknown> }).authentication ?? {})) {
+      changes[`authentication.${key}`] = value;
     }
 
     await domains().updateOne({ realmId: reached.realm.realmId, domainId }, { $set: changes });

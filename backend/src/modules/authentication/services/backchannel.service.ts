@@ -2,11 +2,12 @@ import { Db } from 'mongodb';
 import type { OAuthErrorCode } from '../../../shared/models/problem';
 import { randomBytes, createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { TICKET_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { TICKET_COLLECTION, CREDENTIAL_COLLECTION, DOMAIN_COLLECTION } from '../../../shared/models/collections';
 import { TicketRecord } from '../../oauth/models/ticket.model';
 import { CredentialRecord, isUsable } from '../../directory/models/credential.model';
 import { OAuthClient, scopesOf } from '../../oauth/models/client.model';
 import { RealmRecord } from '../../realm/models/realm.model';
+import { DomainRecord } from '../../realm/models/domain.model';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { credentialStores } from '../../../shared/ports';
@@ -160,6 +161,23 @@ export class BackchannelService {
 
     const subjectId = await this.resolveHint(realm.realmId, input);
     if (isFailure(subjectId)) return subjectId;
+
+    /**
+     * Whether the path THIS PRINCIPAL authenticates through allows CIBA at all.
+     *
+     * Read from the principal's own `domainId`, not from the client: this refuses an identified
+     * person whose path has switched it off, exactly as a disabled path already refuses password
+     * sign-in on it. Absent `domainId` (never populated, or a domain that has since been removed)
+     * defaults to allowed, matching the field's own "narrows what was implicitly open" contract.
+     */
+    const identity = await new DirectoryService(this.db).findBySubjectId(subjectId);
+    if (identity?.domainId) {
+      const domain = await this.db.collection<DomainRecord>(DOMAIN_COLLECTION)
+        .findOne({ realmId: realm.realmId, domainId: identity.domainId }, { projection: { _id: 0, authentication: 1 } });
+      if (domain?.authentication?.cibaEnabled === false) {
+        return refuse(400, 'unauthorized_client', 'the identified principal\'s authentication path does not allow CIBA');
+      }
+    }
 
     // Without a registered key there is nothing that can approve, so the flow is refused now rather
     // than left pending until it expires with no explanation.

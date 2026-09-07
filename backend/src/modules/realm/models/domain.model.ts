@@ -74,6 +74,21 @@ export interface DomainRecord extends Scoped {
     /** The floor this path must reach. A path that cannot reach it should not be offered. */
     requiredAssurance?: 'aal1' | 'aal2' | 'aal3';
     mfaRequired?: boolean;
+    /**
+     * Whether a principal identified through THIS path may be reached by CIBA (RFC-adjacent OpenID
+     * Connect CIBA Core 1.0). Absent means yes, so an existing domain needs no `--reset` to keep
+     * working: this narrows a capability that was implicitly open, it does not widen one.
+     *
+     * Scoped to the domain of the IDENTIFIED PRINCIPAL, resolved from the login hint, never to the
+     * calling client: CIBA authenticates a person, and which paths may authenticate that person is
+     * exactly what a domain already governs for every other authentication method.
+     *
+     * `client_credentials` deliberately has no equivalent here. It authenticates a WORKLOAD, with no
+     * person and therefore no domain in the request at all; restricting it per domain would be
+     * restricting something that was never there. That authority belongs to the client's own
+     * registration (`grant_types`), which is where it already lives.
+     */
+    cibaEnabled?: boolean;
     lockout?: {
       /** Consecutive failures before the account is locked on this path. */
       maxAttempts: number;
