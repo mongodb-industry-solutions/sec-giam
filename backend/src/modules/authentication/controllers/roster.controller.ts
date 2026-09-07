@@ -43,6 +43,13 @@ export async function rosterController(fastify: FastifyInstance) {
               + 'declares, because the useful personas differ from one application to the next.',
             examples: ['acme-portal'],
           },
+          request_id: {
+            type: 'string',
+            description:
+              'The pending authorization the authority parked at the sign-in screen. Preferred over '
+              + 'client_id from a hosted screen, which is not told which application asked.',
+            examples: ['b3f1c2d4'],
+          },
         },
       },
       response: {
@@ -138,9 +145,21 @@ export async function rosterController(fastify: FastifyInstance) {
 
     // The roles this client's screen offers. Read from the client record rather than passed in, so a
     // caller cannot widen its own roster by asking for more.
-    const { client_id: clientId } = request.query as { client_id?: string };
+    // The hosted screen is given a request_id, not a client id, so the asking client is resolved from
+    // the parked request rather than from a parameter that screen would have to carry.
+    const { client_id: clientId, request_id: requestId } = request.query as {
+      client_id?: string; request_id?: string;
+    };
+    const { TICKET_COLLECTION } = await import('../../../shared/models/collections');
+    const parked = requestId
+      ? await fastify.db.collection(TICKET_COLLECTION).findOne(
+        { realmId: realm.realmId, requestId },
+        { projection: { _id: 0, clientId: 1 } },
+      ) as { clientId?: string } | null
+      : null;
+    const askingClient = parked?.clientId ?? clientId;
     const { findOAuthClient } = await import('../../oauth/services/clientAuth.service');
-    const client = clientId ? await findOAuthClient(fastify.db, realm.realmId, clientId) : null;
+    const client = askingClient ? await findOAuthClient(fastify.db, realm.realmId, askingClient) : null;
     const offered = client?.demoRoster;
 
     // The role this screen should show the persona under: the one it offers, when it offers any of them.

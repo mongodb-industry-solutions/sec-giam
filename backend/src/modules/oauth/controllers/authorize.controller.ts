@@ -9,7 +9,7 @@ import { TicketRecord } from '../models/ticket.model';
 import { SessionRecord, isLive } from '../../authentication/models/session.model';
 import { readSessionCookie } from '../../authentication/services/sessionCookie';
 import { scopesOf, OAuthClient } from '../models/client.model';
-import { enforcementFor, RealmRecord } from '../../realm/models/realm.model';
+import { enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { oauthError } from '../../../shared/models/problem';
 import type { OAuthErrorCode } from '../../../shared/models/problem';
@@ -733,9 +733,12 @@ export async function authorizeController(fastify: FastifyInstance) {
         },
       );
 
-      const base = (realm as RealmRecord).issuer.replace(/\/$/, '');
+      // The BROWSER-facing origin, not the issuer: the issuer is this authority's discovery identity,
+      // which a deployment may keep in-network, and a browser sent there would carry no cookie a
+      // same-origin sign-in put on the public host, landing back on sign-in with a live session.
+      const base = config.server.frontendUrl.replace(/\/$/, '');
       return reply.send({
-        continue: `${base}/protocol/openid-connect/auth?request_id=${encodeURIComponent(pending.requestId)}`,
+        continue: `${base}/realms/${realm.name}/protocol/openid-connect/auth?request_id=${encodeURIComponent(pending.requestId)}`,
       });
     });
   });

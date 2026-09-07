@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { completeConsoleAuthorization } from '../../../lib/session';
 import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
@@ -18,8 +18,15 @@ import { AuthBackdrop } from '../../../components/AuthBackdrop';
  */
 export default function CallbackPage() {
   const [failure, setFailure] = useState<string | null>(null);
+  // Guards against Strict Mode's double effect invocation in development. The exchange consumes the
+  // PKCE verifier as its first act, so a second call does not repeat it: it finds none, resolves
+  // before the real one can, and its navigation wins the race, aborting the exchange in flight.
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+
     const params = new URLSearchParams(window.location.search);
     const error = params.get('error');
     const code = params.get('code');

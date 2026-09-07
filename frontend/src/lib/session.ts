@@ -1,6 +1,6 @@
 'use client';
 
-import { apiUrl } from './env';
+import { apiUrl, apiUrlObject } from './env';
 
 /**
  * Turning a sign-in into a token, the same way any other client would.
@@ -159,7 +159,7 @@ export async function startConsoleAuthorization(realm: string, sessionId: string
   window.sessionStorage.setItem(VERIFIER_KEY, verifier);
   window.sessionStorage.setItem(REDIRECT_KEY, redirectUri);
 
-  const url = new URL(apiUrl(`/realms/${realm}/protocol/openid-connect/auth`));
+  const url = apiUrlObject(`/realms/${realm}/protocol/openid-connect/auth`);
   url.searchParams.set('client_id', CONSOLE_CLIENT_ID);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
