@@ -8,6 +8,7 @@ import { UserMenu } from '../../components/UserMenu';
 import { RealmSwitcher } from '../../components/RealmSwitcher';
 import { CrossRealmBanner } from '../../components/CrossRealmBanner';
 import { currentClaims, isExpired, type Claims } from '../../lib/console';
+import { usePermissions } from '../../lib/profile';
 import { SESSION_CHANGED_EVENT } from '../../lib/session';
 import { BRAND } from '../../config/brand';
 
@@ -24,6 +25,17 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const [claims, setClaims] = useState<Claims | null>(null);
   const [checked, setChecked] = useState(false);
+
+  /**
+   * Read once here, at the shell, not per page.
+   *
+   * The sidebar and the mobile nav decide what to show with `can()`, which falls back to this same
+   * read (the token carries roles, not entitlements, by default). Without this call somewhere above
+   * every page, the nav renders once before anything has ever populated the cache and never learns
+   * better: a page that itself calls the hook re-renders ITS OWN gated buttons, but nothing tells the
+   * sidebar to look again. This is what does, and it re-renders the whole shell when the read lands.
+   */
+  usePermissions();
 
   const refresh = useCallback(() => {
     const found = currentClaims();

@@ -1,5 +1,5 @@
 import { Db } from 'mongodb';
-import { PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, REALM_COLLECTION } from '../../shared/models/collections';
+import { PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, REALM_COLLECTION, DOMAIN_COLLECTION } from '../../shared/models/collections';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import { CredentialRecord } from '../../modules/directory/models/credential.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
@@ -77,6 +77,17 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
   const realmIdBySubject = new Map<string, string>();
 
+  /**
+   * Every fixture here joins through the realm's own internal directory, never a federated one, so
+   * its `domainId` is that realm's local domain. `seedRealms` runs first and guarantees one exists
+   * per realm; a fixture is otherwise "provisioned" but belongs nowhere, which is the state that
+   * left the console unable to say whose directory a principal came from.
+   */
+  const localDomains = await db.collection(DOMAIN_COLLECTION)
+    .find({ protocol: 'internal' }, { projection: { _id: 0, realmId: 1, domainId: 1 } })
+    .toArray() as unknown as Array<{ realmId: string; domainId: string }>;
+  const localDomainByRealm = new Map(localDomains.map((domain) => [domain.realmId, domain.domainId]));
+
   const byKind: Record<string, number> = {};
   for (const fixture of fixtures) {
     const realmId = realmIdByName.get(fixture.realm);
@@ -102,6 +113,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
         demoFeatured: Boolean(fixture.demoFeatured),
         ...(fixture.demoNote ? { demoNote: fixture.demoNote } : {}),
         ...(fixture.accountHolderRef ? { accountHolderRef: fixture.accountHolderRef } : {}),
+        ...(localDomainByRealm.has(realmId) ? { domainId: localDomainByRealm.get(realmId) } : {}),
       },
       { subjectId: fixture.subjectId, realmId, tenantId: DEFAULT_TENANT_ID },
       'Identity',

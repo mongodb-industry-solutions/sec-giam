@@ -10,7 +10,7 @@ import { Fact } from '../../../../components/Fact';
 import { ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/console';
 import { usePermissions } from '../../../../lib/profile';
-import { ScimUser, extensionOf, primaryEmail } from '../../../../lib/identities';
+import { ScimUser, extensionOf, primaryEmail, useDomainNames } from '../../../../lib/identities';
 import type { RoleSummary } from '../../roles/types';
 
 interface Assignment {
@@ -51,6 +51,7 @@ export default function IdentityDetailPage() {
 
   usePermissions();
   const mayManageAssignments = can(currentClaims(), 'assignments', 'manage');
+  const domainName = useDomainNames();
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -185,7 +186,9 @@ export default function IdentityDetailPage() {
       <SectionHeader
         icon={UserRound}
         title={user?.name?.formatted || user?.userName || id || 'Principal'}
-        description={user ? `Recorded ${when(user.meta?.created)}` : 'One principal in the directory.'}
+        description={user
+          ? `Recorded ${when(user.meta?.created)}${extension.domainId ? ` · ${domainName.name(extension.domainId) ?? 'an authentication path'}` : ''}`
+          : 'One principal in the directory.'}
         actions={user ? <StatusBadge status={extension.lifecycleState || (user.active ? 'active' : 'inactive')} /> : undefined}
       />
 
@@ -198,19 +201,53 @@ export default function IdentityDetailPage() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">The principal</h2>
             <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
               <Fact label="Subject" value={user.id} mono />
-              <Fact label="User name" value={user.userName} />
+              <Fact label="User name">
+                <span className="flex items-center gap-1.5">
+                  {user.userName}
+                  <Tooltip text="What this principal signs in as. Changed here, it changes for every credential this principal holds." />
+                </span>
+              </Fact>
               <Fact label="External id" value={user.externalId} mono />
               <Fact label="Primary email" value={primaryEmail(user) || 'not set'} />
-              <Fact label="Kind" value={extension.kind} />
-              <Fact label="Usable" value={user.active ? 'yes' : 'no'} />
+              <Fact label="Kind">
+                <span className="flex items-center gap-1.5">
+                  {extension.kind ?? 'unknown'}
+                  <Tooltip text="A human, a workload or a service account: what this authority checks are different rules for, carried once rather than guessed from which fields happen to be filled in." />
+                </span>
+              </Fact>
+              <Fact label="Usable">
+                <span className="flex items-center gap-1.5">
+                  {user.active ? 'yes' : 'no'}
+                  <Tooltip text="Whether this principal can authenticate right now. Separate from the lifecycle: a principal can exist and be recorded without being usable." />
+                </span>
+              </Fact>
               <Fact label="Lifecycle">
                 <span className="flex items-center gap-1.5">
                   {extension.lifecycleState ?? 'unknown'}
                   <Tooltip text="A suspended principal and a retired one are both inactive and are not the same thing to anyone reviewing them, which is why the lifecycle is carried separately from the usable flag." />
                 </span>
               </Fact>
-              <Fact label="Upstream provider" value={extension.domainId} mono />
-              <Fact label="Business reference" value={extension.accountHolderRef} mono />
+              <Fact label="Authentication path">
+                <span className="flex items-center gap-1.5">
+                  {extension.domainId
+                    ? (
+                      <Link
+                        href={`/system/domains/${encodeURIComponent(extension.domainId)}`}
+                        className="text-[#001E2B] hover:underline"
+                      >
+                        {domainName.name(extension.domainId) ?? extension.domainId}
+                      </Link>
+                    )
+                    : 'not recorded'}
+                  <Tooltip text="Which directory this principal was provisioned or signed in through. A remote directory's own administrator decides who exists there; this authority only decides what they may do once they arrive." />
+                </span>
+              </Fact>
+              <Fact label="Business reference">
+                <span className="flex items-center gap-1.5">
+                  {extension.accountHolderRef ?? 'not set'}
+                  <Tooltip text="Binds this principal to the party or account it represents in the business domain, for a self-scoped role that reaches only its own records." />
+                </span>
+              </Fact>
               <Fact label="Last changed" value={when(user.meta?.lastModified)} />
             </dl>
           </section>
@@ -222,13 +259,15 @@ export default function IdentityDetailPage() {
                 Roles held
               </h2>
               {mayManageAssignments && !assigning && (
-                <button
-                  type="button"
-                  onClick={() => setAssigning(true)}
-                  className="text-xs font-medium text-[#001E2B] hover:underline"
-                >
-                  Assign a role
-                </button>
+                <Tooltip text="Grants a role of this realm's own catalog. It takes effect at this principal's next token.">
+                  <button
+                    type="button"
+                    onClick={() => setAssigning(true)}
+                    className="text-xs font-medium text-[#001E2B] hover:underline"
+                  >
+                    Assign a role
+                  </button>
+                </Tooltip>
               )}
             </div>
 
@@ -264,15 +303,17 @@ export default function IdentityDetailPage() {
                           </span>
                         </div>
                         {mayManageAssignments && assignment.live && (
-                          <button
-                            type="button"
-                            disabled={roleBusy === assignment.roleId}
-                            onClick={() => void revokeRole(assignment.roleId)}
-                            aria-label={`Revoke ${assignment.roleId}`}
-                            className="shrink-0 rounded-md border border-red-200 p-1.5 text-red-700 hover:bg-red-50 disabled:opacity-50"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <Tooltip text="Takes effect at this principal's next token. Everyone else holding this role is unaffected.">
+                            <button
+                              type="button"
+                              disabled={roleBusy === assignment.roleId}
+                              onClick={() => void revokeRole(assignment.roleId)}
+                              aria-label={`Revoke ${assignment.roleId}`}
+                              className="shrink-0 rounded-md border border-red-200 p-1.5 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </Tooltip>
                         )}
                       </li>
                     ))}
@@ -294,33 +335,42 @@ export default function IdentityDetailPage() {
             )
             : (
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  disabled={retired}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+                <Tooltip text="A name, an email, an external id and a user name. Nothing here changes what this principal may do.">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    disabled={retired}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+                  >
+                    Correct the record
+                  </button>
+                </Tooltip>
+                <Tooltip text={user.active
+                  ? 'Every token already issued stops working immediately, not at its expiry.'
+                  : 'Restores access. Existing role assignments are unchanged; nothing has to be re-granted.'}
                 >
-                  Correct the record
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || retired}
-                  onClick={() => void setActive(!user.active)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
-                >
-                  {user.active
-                    ? <><UserMinus size={12} aria-hidden /> Deactivate</>
-                    : <><UserCheck size={12} aria-hidden /> Reactivate</>}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || retired}
-                  onClick={() => void deprovision()}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
-                >
-                  <UserMinus size={12} aria-hidden />
-                  Deprovision
-                </button>
+                  <button
+                    type="button"
+                    disabled={busy || retired}
+                    onClick={() => void setActive(!user.active)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+                  >
+                    {user.active
+                      ? <><UserMinus size={12} aria-hidden /> Deactivate</>
+                      : <><UserCheck size={12} aria-hidden /> Reactivate</>}
+                  </button>
+                </Tooltip>
+                <Tooltip text="Retires the record rather than deleting it, so the audit trail still resolves. Every token stops working at once.">
+                  <button
+                    type="button"
+                    disabled={busy || retired}
+                    onClick={() => void deprovision()}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
+                  >
+                    <UserMinus size={12} aria-hidden />
+                    Deprovision
+                  </button>
+                </Tooltip>
               </div>
             )}
         </>
@@ -517,9 +567,11 @@ function PasswordReset({ id }: { id: string }) {
           Password
         </h2>
         {!open && (
-          <button type="button" onClick={() => { setOpen(true); setDone(false); }} className="text-xs font-medium text-[#001E2B] hover:underline">
-            Set a new password
-          </button>
+          <Tooltip text="Sets the password directly, without knowing the current one. Checked against the same policy self-registration enforces, and never shown back once set.">
+            <button type="button" onClick={() => { setOpen(true); setDone(false); }} className="text-xs font-medium text-[#001E2B] hover:underline">
+              Set a new password
+            </button>
+          </Tooltip>
         )}
       </div>
 

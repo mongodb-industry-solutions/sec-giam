@@ -121,6 +121,10 @@ export async function registrationController(fastify: FastifyInstance) {
       ...(body.email ? { primaryEmail: body.email.toLowerCase() } : {}),
       ...(body.formattedName ? { name: { formatted: body.formattedName } } : {}),
       kind: 'human',
+      // Which directory this principal joined through, so a screen reading the record can say so
+      // rather than leaving it unattributed. This IS the internal path: it is the only one anybody
+      // can self-register through (ADR-002).
+      ...(localDomain ? { domainId: localDomain.domainId } : {}),
       // Two fields rather than one because they answer different questions: whether this principal is
       // usable at all, and where it stands in its lifecycle. A realm that reviews sign-ups produces a
       // principal that EXISTS and cannot authenticate, so the person can be told where they stand.

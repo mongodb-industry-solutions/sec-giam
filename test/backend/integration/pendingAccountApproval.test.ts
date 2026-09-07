@@ -63,10 +63,17 @@ describe('v43: approving a self-registered account', () => {
       signal: AbortSignal.timeout(20000),
     });
     expect(approved.status).toBe(200);
-    const user = await approved.json() as { active: boolean; 'urn:mongodb:params:scim:schemas:extension:principal:2.0:Principal'?: { lifecycleState?: string } };
+    const user = await approved.json() as {
+      active: boolean;
+      'urn:mongodb:params:scim:schemas:extension:principal:2.0:Principal'?: { lifecycleState?: string; domainId?: string };
+    };
     expect(user.active).toBe(true);
     // The bug: `lifecycleState` stayed `pending` here, which is `active: true` and `pending` at once.
-    expect(user['urn:mongodb:params:scim:schemas:extension:principal:2.0:Principal']?.lifecycleState).toBe('active');
+    const extension = user['urn:mongodb:params:scim:schemas:extension:principal:2.0:Principal'];
+    expect(extension?.lifecycleState).toBe('active');
+    // v43: self-registration used to leave `domainId` unset entirely, so the console could never say
+    // which directory a principal belonged to. It resolves through the realm's local domain now.
+    expect(extension?.domainId, 'self-registration should attribute the principal to a directory').toBeTruthy();
 
     const listedPending = await fetch(
       `${GIAM}/realms/leafypay/scim/v2/Users?pending=true`,

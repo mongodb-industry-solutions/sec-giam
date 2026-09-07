@@ -8,10 +8,11 @@ import { SectionHeader } from '../../../components/SectionHeader';
 import { Pagination } from '../../../components/Pagination';
 import { FilterChips } from '../../../components/FilterChips';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
+import { Tooltip } from '../../../components/Tooltip';
 import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
 import { usePermissions } from '../../../lib/profile';
 import {
-  FilterAttribute, ScimList, ScimUser, extensionOf, primaryEmail, scimFilter,
+  FilterAttribute, ScimList, ScimUser, extensionOf, primaryEmail, scimFilter, useDomainNames,
 } from '../../../lib/identities';
 
 const PATCH_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
@@ -53,6 +54,7 @@ function IdentitiesInner() {
 
   usePermissions();
   const mayManage = can(currentClaims(), 'identities', 'manage');
+  const domainName = useDomainNames();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,14 +119,16 @@ function IdentitiesInner() {
         description="People, services and workloads this authority knows about."
         info="Provisioning says a principal exists; whether it may operate is a separate decision. A principal created here is not activated unless the realm approves new principals automatically, and no authority can be granted from this screen: roles are assigned elsewhere, so a directory sync can never become a way to grant yourself something."
         actions={(
-          <button
-            type="button"
-            onClick={() => setCreating((open) => !open)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
-          >
-            <Plus size={13} aria-hidden />
-            Provision a principal
-          </button>
+          <Tooltip text="Creates the record only. It is not activated unless this realm auto-approves new principals, and no role can be granted from here.">
+            <button
+              type="button"
+              onClick={() => setCreating((open) => !open)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+            >
+              <Plus size={13} aria-hidden />
+              Provision a principal
+            </button>
+          </Tooltip>
         )}
       />
 
@@ -149,12 +153,16 @@ function IdentitiesInner() {
         </div>
       )}
 
-      <FilterChips
-        label="Filter by lifecycle"
-        value={scope}
-        onChange={(next) => { setScope(next); setPageNumber(1); }}
-        options={[{ key: 'all', label: 'All' }, { key: 'pending', label: 'Awaiting approval' }]}
-      />
+      <Tooltip text="A principal awaiting approval exists but cannot sign in yet: this realm reviews sign-ups rather than approving them automatically.">
+        <div className="inline-block">
+          <FilterChips
+            label="Filter by lifecycle"
+            value={scope}
+            onChange={(next) => { setScope(next); setPageNumber(1); }}
+            options={[{ key: 'all', label: 'All' }, { key: 'pending', label: 'Awaiting approval' }]}
+          />
+        </div>
+      </Tooltip>
 
       <form
         className="flex flex-wrap items-end gap-2"
@@ -258,6 +266,13 @@ function IdentitiesInner() {
                               {extension.kind}
                             </span>
                           )}
+                          {extension.domainId && (
+                            <Tooltip text="The authentication path this principal was provisioned through. Every credential it can sign in with belongs to this path.">
+                              <span className="rounded border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                                {domainName.name(extension.domainId) ?? 'unknown path'}
+                              </span>
+                            </Tooltip>
+                          )}
                         </div>
                         <p className="mt-0.5 truncate font-mono text-xs text-gray-400">{user.id}</p>
                       </div>
@@ -265,24 +280,28 @@ function IdentitiesInner() {
                       <span className="w-40 shrink-0 text-xs text-gray-400">{when(user.meta?.created)}</span>
                       {mayManage && extension.lifecycleState === 'pending' && (
                         <div className="flex shrink-0 items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={decisionBusy === user.id}
-                            onClick={() => void decide(user, 'approve')}
-                            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-                          >
-                            <Check size={11} aria-hidden />
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            disabled={decisionBusy === user.id}
-                            onClick={() => void decide(user, 'reject')}
-                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                          >
-                            <UserX size={11} aria-hidden />
-                            Reject
-                          </button>
+                          <Tooltip text="Activates the account. It can sign in immediately afterwards.">
+                            <button
+                              type="button"
+                              disabled={decisionBusy === user.id}
+                              onClick={() => void decide(user, 'approve')}
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                            >
+                              <Check size={11} aria-hidden />
+                              Approve
+                            </button>
+                          </Tooltip>
+                          <Tooltip text="Retires the request rather than deleting it, so the record it left survives.">
+                            <button
+                              type="button"
+                              disabled={decisionBusy === user.id}
+                              onClick={() => void decide(user, 'reject')}
+                              className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <UserX size={11} aria-hidden />
+                              Reject
+                            </button>
+                          </Tooltip>
                         </div>
                       )}
                     </li>
@@ -346,7 +365,9 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       <h2 className="text-sm font-semibold text-[#001E2B]">Provision a principal</h2>
       <p className="text-xs text-gray-500">
         Whether the new principal may operate is the realm&apos;s decision, not this form&apos;s. Any
-        active flag sent from here is deliberately ignored.
+        active flag sent from here is deliberately ignored. Provisioning always lands in this
+        realm&apos;s own internal directory; a principal reached through a federated path is created
+        by signing in through it, not from here.
       </p>
 
       {failure && <ErrorState message={failure} />}
