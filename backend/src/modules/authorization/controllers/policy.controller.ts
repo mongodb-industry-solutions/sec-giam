@@ -424,6 +424,216 @@ export async function policyController(fastify: FastifyInstance) {
    * The answer is not cached and does not affect the caller's own token. It says what the authority
    * would decide right now, which is the only thing a simulator can honestly claim.
    */
+
+  interface DecisionSpec {
+    subject?: { type?: string; id?: string };
+    resource: { type: string; id?: string };
+    action: { name: string };
+    context?: Record<string, unknown>;
+  }
+
+  type DecisionRefusal = { status: number; title: string; detail: string };
+
+  /**
+   * One evaluation, whether it arrived alone or as one entry of a batch.
+   *
+   * Factored out so `/decision` and its batch sibling can never quietly diverge: the same subject
+   * gate, the same context defaults, the same evaluator and the same audit record either way. A
+   * consumer asking the same question through either route gets the same answer for the same reason.
+   */
+  async function evaluateOne(
+    realm: { realmId: string; tenantId: string },
+    caller: { subjectId: string; clientId: string },
+    spec: DecisionSpec,
+  ): Promise<
+    | { decision: boolean; context: Record<string, unknown> }
+    | DecisionRefusal
+  > {
+    const subjectId = spec.subject?.id ?? caller.subjectId;
+    if (subjectId !== caller.subjectId) {
+      // Another subject's authority is information about them. Same tier as reading the policies.
+      const gate = await administers(realm.realmId, caller.subjectId, 'policies', 'view');
+      if ('refused' in gate) {
+        return {
+          status: 403,
+          title: 'Not permitted',
+          detail:
+            'Evaluating a decision about another principal discloses what that principal may do. '
+            + 'Ask about yourself, or hold the permission that reads this realm\'s policies.',
+        };
+      }
+    }
+
+    const context = { ...(spec.context ?? {}) };
+    // Defaults to the authority's own resource server, which is what the roles screen grants against.
+    context.audience ??= 'authority';
+    context.tenantId ??= realm.tenantId;
+
+    const traced = await new PolicyDecisionService().evaluate({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      subjectId,
+      resource: spec.resource.type,
+      action: spec.action.name,
+      context,
+    });
+
+    // Recorded because an evaluation about somebody else is a read of their authority, and because a
+    // simulator whose answers leave no trace is a way to probe a realm quietly.
+    void new SecurityEventService(fastify.db).record({
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      category: 'authorization',
+      action: 'authorization.decision.evaluated',
+      outcome: 'success',
+      decision: traced.decision.effect,
+      subjectId,
+      clientId: caller.clientId,
+      ...(traced.decision.policy ? { policyVersion: traced.decision.policy.version } : {}),
+      detail: {
+        askedBy: caller.subjectId,
+        resource: spec.resource.type,
+        ...(spec.resource.id ? { resourceId: spec.resource.id } : {}),
+        action: spec.action.name,
+        source: traced.decision.source,
+      },
+    });
+
+    return {
+      decision: traced.decision.effect === 'allow',
+      context: {
+        effect: traced.decision.effect,
+        reason: traced.decision.reason,
+        ...(traced.decision.source ? { source: traced.decision.source } : {}),
+        ...(traced.decision.policy ? { policy: traced.decision.policy } : {}),
+        evaluators: traced.evaluators,
+        subjectId,
+        evaluatedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  function isDecisionRefusal(value: unknown): value is DecisionRefusal {
+    return typeof value === 'object' && value !== null && 'status' in value && 'title' in value;
+  }
+
+  /**
+   * The four AuthZEN request fragments, named once so the single endpoint and the batch endpoint
+   * describe the same `subject`/`resource`/`action`/`context` rather than two copies that could
+   * drift. `resource` and `action` are required standalone (the single endpoint's own body needs
+   * them); the batch endpoint relaxes that by wrapping them, not by declaring a second shape.
+   */
+  const decisionSubjectSchema = {
+    type: 'object',
+    additionalProperties: false,
+    description: 'Omitted means the caller. Naming somebody else requires the policy-reading tier.',
+    properties: {
+      type: { type: 'string', description: 'AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal.' },
+      id: { type: 'string', minLength: 1 },
+    },
+  } as const;
+
+  const decisionResourceSchema = {
+    type: 'object',
+    required: ['type'],
+    additionalProperties: false,
+    properties: {
+      type: { type: 'string', minLength: 1, description: 'The enforcement point\'s resource name, such as `roles`.' },
+      id: { type: 'string', description: 'A particular instance. Recorded on the trace; no condition reads it today.' },
+    },
+  } as const;
+
+  const decisionActionSchema = {
+    type: 'object',
+    required: ['name'],
+    additionalProperties: false,
+    properties: { name: { type: 'string', minLength: 1, examples: ['view'] } },
+  } as const;
+
+  const decisionContextSchema = {
+    type: 'object',
+    additionalProperties: false,
+    description: 'Identity context only, matching the condition vocabulary a policy may use.',
+    properties: {
+      audience: { type: 'string', description: 'The resource server the roles are resolved against. Defaults to this authority\'s own.' },
+      assuranceLevel: { type: 'string', enum: ['aal1', 'aal2', 'aal3'] },
+      ip: { type: 'string' },
+      tenantId: { type: 'string' },
+      attestationState: { type: 'string', enum: ['attested', 'unattested'] },
+    },
+  } as const;
+
+  /** One decision's answer, named once so the single and the batch response can never disagree. */
+  const decisionResponseSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['decision', 'context'],
+    properties: {
+      decision: { type: 'boolean', description: 'AuthZEN: true is permit, false is deny. Absence of a permit is a deny.' },
+      context: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['effect', 'reason', 'evaluators'],
+        properties: {
+          effect: { type: 'string', enum: ['allow', 'deny'] },
+          reason: { type: 'string', description: 'Why, in the words the deciding statement or role carries.' },
+          source: { type: 'string', description: 'What decided: a policy as `name@version`, or `default-deny`.' },
+          policy: {
+            type: 'object',
+            additionalProperties: false,
+            description: 'Present when a stored policy decided. Absent when a role or the default did.',
+            required: ['policyId', 'name', 'version', 'effect'],
+            properties: {
+              policyId: { type: 'string' },
+              name: { type: 'string' },
+              version: { type: 'integer', description: 'Which revision of the policy decided.' },
+              effect: { type: 'string', enum: ['allow', 'deny'] },
+            },
+          },
+          evaluators: {
+            type: 'array',
+            description: 'What each evaluator said alone. A null effect is no opinion, which is not a denial.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['name', 'effect'],
+              properties: {
+                name: { type: 'string' },
+                // Null is a real value here, not an omission: it says the evaluator had no
+                // opinion, which is a different finding from a denial.
+                effect: { type: ['string', 'null'], enum: ['allow', 'deny', null] },
+                reason: { type: 'string' },
+                source: { type: 'string' },
+              },
+            },
+          },
+          subjectId: { type: 'string', description: 'Who the decision was about, echoed so a trace is unambiguous.' },
+          evaluatedAt: { type: 'string' },
+        },
+      },
+    },
+    examples: [{
+      decision: false,
+      context: {
+        effect: 'deny',
+        reason: 'Changing what a role grants requires a second factor.',
+        source: 'administration-requires-strong-authentication@1',
+        policy: {
+          policyId: '2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2',
+          name: 'administration-requires-strong-authentication',
+          version: 1,
+          effect: 'deny',
+        },
+        evaluators: [
+          { name: 'abac', effect: 'deny', reason: 'Changing what a role grants requires a second factor.' },
+          { name: 'rbac', effect: 'allow', reason: 'granted by realm_administrator' },
+        ],
+        subjectId: 'a1000070-0000-4000-8000-000000000070',
+        evaluatedAt: '2026-08-31T09:12:00.000Z',
+      },
+    }],
+  } as const;
+
   fastify.post('/realms/:realm/decision', {
     preHandler: requirePrincipal,
     schema: {
@@ -447,42 +657,10 @@ export async function policyController(fastify: FastifyInstance) {
         required: ['resource', 'action'],
         additionalProperties: false,
         properties: {
-          subject: {
-            type: 'object',
-            additionalProperties: false,
-            description: 'Omitted means the caller. Naming somebody else requires the policy-reading tier.',
-            properties: {
-              type: { type: 'string', description: 'AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal.' },
-              id: { type: 'string', minLength: 1 },
-            },
-          },
-          resource: {
-            type: 'object',
-            required: ['type'],
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', minLength: 1, description: 'The enforcement point\'s resource name, such as `roles`.' },
-              id: { type: 'string', description: 'A particular instance. Recorded on the trace; no condition reads it today.' },
-            },
-          },
-          action: {
-            type: 'object',
-            required: ['name'],
-            additionalProperties: false,
-            properties: { name: { type: 'string', minLength: 1, examples: ['view'] } },
-          },
-          context: {
-            type: 'object',
-            additionalProperties: false,
-            description: 'Identity context only, matching the condition vocabulary a policy may use.',
-            properties: {
-              audience: { type: 'string', description: 'The resource server the roles are resolved against. Defaults to this authority\'s own.' },
-              assuranceLevel: { type: 'string', enum: ['aal1', 'aal2', 'aal3'] },
-              ip: { type: 'string' },
-              tenantId: { type: 'string' },
-              attestationState: { type: 'string', enum: ['attested', 'unattested'] },
-            },
-          },
+          subject: decisionSubjectSchema,
+          resource: decisionResourceSchema,
+          action: decisionActionSchema,
+          context: decisionContextSchema,
         },
         examples: [{
           subject: { type: 'identity', id: 'a1000070-0000-4000-8000-000000000070' },
@@ -492,95 +670,112 @@ export async function policyController(fastify: FastifyInstance) {
         }],
       },
       response: {
-        200: {
-          description: 'The decision, and how it was reached.',
-          type: 'object',
-          additionalProperties: false,
-          required: ['decision', 'context'],
-          properties: {
-            decision: { type: 'boolean', description: 'AuthZEN: true is permit, false is deny. Absence of a permit is a deny.' },
-            context: {
+        200: { ...decisionResponseSchema, description: 'The decision, and how it was reached.' },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        403: { $ref: 'Problem#', description: 'Asking about another subject without the tier that reads policies.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const realm = await realmOf((request.params as { realm: string }).realm);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const caller = request.principal!;
+    const outcome = await evaluateOne(realm, caller, request.body as DecisionSpec);
+    if (isDecisionRefusal(outcome)) return reply.status(outcome.status as 403).send(problem(outcome.status, outcome.title, outcome.detail));
+    return reply.send(outcome);
+  });
+
+  /**
+   * AuthZEN 1.0's batch evaluation, `/access/v1/evaluations` in the specification's own naming.
+   *
+   * One request, many questions, answered in the order asked: the shape a screen rendering several
+   * gated controls at once actually needs, instead of one round trip per control. A `subject`,
+   * `resource`, `action` or `context` given at the top level is the DEFAULT for every entry that
+   * does not name its own, exactly as the specification defines it; nothing here invents a second
+   * meaning for the same fields the single endpoint already uses.
+   *
+   * Each entry is evaluated through the identical `evaluateOne` the single endpoint calls, so a
+   * question asked here and the same question asked alone can never receive a different answer for
+   * different reasons. A subject other than the caller is gated once for the whole batch rather than
+   * once per entry: the permission that discloses another principal's authority does not become
+   * cheaper to bypass by asking about them a hundred times in one request.
+   */
+  fastify.post('/realms/:realm/decision/evaluations', {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'evaluateDecisions',
+      tags: ['authorization'],
+      summary: 'Evaluate several authorization decisions in one call',
+      description:
+        'AuthZEN 1.0\'s batch evaluation extension. A `subject`, `resource`, `action` or `context` '
+        + 'named at the top level is the default for every entry in `evaluations` that omits it. '
+        + 'Answered in the same order asked, one `decision` per entry, each carrying this '
+        + 'authority\'s own extended trace exactly as the single `/decision` endpoint does.',
+      security: [{ bearerAuth: [] }],
+      params: realmParam,
+      body: {
+        type: 'object',
+        required: ['evaluations'],
+        additionalProperties: false,
+        properties: {
+          subject: decisionSubjectSchema,
+          resource: decisionResourceSchema,
+          action: decisionActionSchema,
+          context: decisionContextSchema,
+          evaluations: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 50,
+            items: {
               type: 'object',
               additionalProperties: false,
-              required: ['effect', 'reason', 'evaluators'],
               properties: {
-                effect: { type: 'string', enum: ['allow', 'deny'] },
-                reason: { type: 'string', description: 'Why, in the words the deciding statement or role carries.' },
-                source: { type: 'string', description: 'What decided: a policy as `name@version`, or `default-deny`.' },
-                policy: {
-                  type: 'object',
-                  additionalProperties: false,
-                  description: 'Present when a stored policy decided. Absent when a role or the default did.',
-                  /**
-                   * Two defects lived in these five lines, and both made a REAL response fail its
-                   * own published contract.
-                   *
-                   * `statementIndex` was required and the engine has never sent it. A policy used to
-                   * hold a list of statements and a decision named which one decided; v40 flattened
-                   * that to `permissions` plus `resource` plus `conditions`, so a policy decides as
-                   * a whole and there is no index to report.
-                   *
-                   * `version` was required and was NOT DECLARED in `properties`, so with
-                   * `additionalProperties: false` the one member a reviewer needs to know which
-                   * revision decided was stripped from the response on its way out.
-                   *
-                   * Either one alone means a consumer validating against this document rejects
-                   * every decision the endpoint returns.
-                   */
-                  required: ['policyId', 'name', 'version', 'effect'],
-                  properties: {
-                    policyId: { type: 'string' },
-                    name: { type: 'string' },
-                    // `PolicyRecord.version` is a number (v40 flattened a policy to one rule with
-                    // one version counter); declaring it `string` here silently mis-typed every
-                    // real response against its own published contract.
-                    version: { type: 'integer', description: 'Which revision of the policy decided.' },
-                    effect: { type: 'string', enum: ['allow', 'deny'] },
-                  },
-                },
-                evaluators: {
-                  type: 'array',
-                  description: 'What each evaluator said alone. A null effect is no opinion, which is not a denial.',
-                  items: {
-                    type: 'object',
-                    additionalProperties: false,
-                    required: ['name', 'effect'],
-                    properties: {
-                      name: { type: 'string' },
-                      // Null is a real value here, not an omission: it says the evaluator had no
-                      // opinion, which is a different finding from a denial.
-                      effect: { type: ['string', 'null'], enum: ['allow', 'deny', null] },
-                      reason: { type: 'string' },
-                      source: { type: 'string' },
-                    },
-                  },
-                },
-                subjectId: { type: 'string', description: 'Who the decision was about, echoed so a trace is unambiguous.' },
-                evaluatedAt: { type: 'string' },
+                subject: decisionSubjectSchema,
+                resource: decisionResourceSchema,
+                action: decisionActionSchema,
+                context: decisionContextSchema,
               },
             },
           },
-          examples: [{
-            decision: false,
-            context: {
-              effect: 'deny',
-              reason: 'Changing what a role grants requires a second factor.',
-              source: 'administration-requires-strong-authentication@1',
-              policy: {
-                policyId: '2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2',
-                name: 'administration-requires-strong-authentication',
-                version: 1,
-                effect: 'deny',
-              },
-              evaluators: [
-                { name: 'abac', effect: 'deny', reason: 'Changing what a role grants requires a second factor.' },
-                { name: 'rbac', effect: 'allow', reason: 'granted by realm_administrator' },
-              ],
-              subjectId: 'a1000070-0000-4000-8000-000000000070',
-              evaluatedAt: '2026-08-31T09:12:00.000Z',
+        },
+        examples: [{
+          subject: { type: 'identity', id: 'a1000070-0000-4000-8000-000000000070' },
+          evaluations: [
+            { resource: { type: 'roles' }, action: { name: 'view' } },
+            { resource: { type: 'roles' }, action: { name: 'manage' } },
+          ],
+        }],
+      },
+      response: {
+        200: {
+          description: 'One decision per entry, in the order asked.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['evaluations'],
+          properties: {
+            evaluations: {
+              type: 'array',
+              items: decisionResponseSchema,
             },
+          },
+          examples: [{
+            evaluations: [
+              {
+                decision: true,
+                context: {
+                  effect: 'allow',
+                  reason: 'granted by realm_administrator',
+                  evaluators: [{ name: 'rbac', effect: 'allow', reason: 'granted by realm_administrator' }],
+                  subjectId: 'a1000070-0000-4000-8000-000000000070',
+                  evaluatedAt: '2026-08-31T09:12:00.000Z',
+                },
+              },
+              decisionResponseSchema.examples[0],
+            ],
           }],
         },
+        400: { $ref: 'Problem#', description: 'An entry names no resource and action, and none is given as a default.' },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'Asking about another subject without the tier that reads policies.' },
         404: { $ref: 'Problem#', description: 'No such realm.' },
@@ -592,72 +787,44 @@ export async function policyController(fastify: FastifyInstance) {
 
     const caller = request.principal!;
     const body = request.body as {
-      subject?: { type?: string; id?: string };
-      resource: { type: string; id?: string };
-      action: { name: string };
-      context?: Record<string, unknown>;
+      subject?: DecisionSpec['subject'];
+      resource?: DecisionSpec['resource'];
+      action?: DecisionSpec['action'];
+      context?: DecisionSpec['context'];
+      evaluations: Array<Partial<DecisionSpec>>;
     };
 
-    const subjectId = body.subject?.id ?? caller.subjectId;
-    if (subjectId !== caller.subjectId) {
-      // Another subject's authority is information about them. Same tier as reading the policies.
-      const gate = await administers(realm.realmId, caller.subjectId, 'policies', 'view');
-      if ('refused' in gate) {
-        return reply.status(403).send(problem(
-          403,
-          'Not permitted',
-          'Evaluating a decision about another principal discloses what that principal may do. '
-          + 'Ask about yourself, or hold the permission that reads this realm\'s policies.',
-        ));
-      }
+    const specs: Array<DecisionSpec | null> = body.evaluations.map((entry) => {
+      const resource = entry.resource ?? body.resource;
+      const action = entry.action ?? body.action;
+      if (!resource || !action) return null;
+      return {
+        subject: entry.subject ?? body.subject,
+        resource,
+        action,
+        context: { ...(body.context ?? {}), ...(entry.context ?? {}) },
+      };
+    });
+
+    const missing = specs.findIndex((spec) => spec === null);
+    if (missing !== -1) {
+      return reply.status(400).send(problem(
+        400,
+        'Incomplete evaluation',
+        `Entry ${missing} names no \`resource\` and \`action\`, and none is given as a default at the top level.`,
+      ));
     }
 
-    const context = { ...(body.context ?? {}) };
-    // Defaults to the authority's own resource server, which is what the roles screen grants against.
-    context.audience ??= 'authority';
-    context.tenantId ??= realm.tenantId;
+    // Sequential, not `Promise.all`: each entry is checked against the SAME oversight gate as the
+    // single endpoint the moment it names a different subject, and running fifty of those
+    // concurrently would fan out fifty simultaneous permission checks for one caller's one request.
+    const outcomes: Array<{ decision: boolean; context: Record<string, unknown> }> = [];
+    for (const spec of specs as DecisionSpec[]) {
+      const outcome = await evaluateOne(realm, caller, spec);
+      if (isDecisionRefusal(outcome)) return reply.status(outcome.status as 403).send(problem(outcome.status, outcome.title, outcome.detail));
+      outcomes.push(outcome);
+    }
 
-    const traced = await new PolicyDecisionService().evaluate({
-      realmId: realm.realmId,
-      tenantId: realm.tenantId,
-      subjectId,
-      resource: body.resource.type,
-      action: body.action.name,
-      context,
-    });
-
-    // Recorded because an evaluation about somebody else is a read of their authority, and because a
-    // simulator whose answers leave no trace is a way to probe a realm quietly.
-    void new SecurityEventService(fastify.db).record({
-      realmId: realm.realmId,
-      tenantId: realm.tenantId,
-      category: 'authorization',
-      action: 'authorization.decision.evaluated',
-      outcome: 'success',
-      decision: traced.decision.effect,
-      subjectId,
-      clientId: caller.clientId,
-      ...(traced.decision.policy ? { policyVersion: traced.decision.policy.version } : {}),
-      detail: {
-        askedBy: caller.subjectId,
-        resource: body.resource.type,
-        ...(body.resource.id ? { resourceId: body.resource.id } : {}),
-        action: body.action.name,
-        source: traced.decision.source,
-      },
-    });
-
-    return reply.send({
-      decision: traced.decision.effect === 'allow',
-      context: {
-        effect: traced.decision.effect,
-        reason: traced.decision.reason,
-        ...(traced.decision.source ? { source: traced.decision.source } : {}),
-        ...(traced.decision.policy ? { policy: traced.decision.policy } : {}),
-        evaluators: traced.evaluators,
-        subjectId,
-        evaluatedAt: new Date().toISOString(),
-      },
-    });
+    return reply.send({ evaluations: outcomes });
   });
 }
