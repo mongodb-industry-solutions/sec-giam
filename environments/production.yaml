@@ -1,4 +1,4 @@
-# GIAM production values. Both releases (sec-giam and sec-giam-console) read
+# GIAM production values. Both releases (sec-giam-api and sec-giam-ui) read
 # this one file, so it carries the API's variables and the console's single private address.
 env:
   NODE_ENV: production
@@ -8,17 +8,17 @@ env:
   # introspection, JWKS. The name is derived from the helm release by the web-app chart. GIAM is its
   # own repository and its own release, so it owns this name; relying parties resolve it by
   # configuration rather than by sharing a deployment with it.
-  GIAM_BASE_URL: "http://sec-giam-web-app:80"
+  GIAM_BASE_URL: "http://sec-giam-api-web-app:80"
   # PUBLIC, and it has to be. A realm issuer URL is built from this value and ends up inside every
   # token as `iss`, and the browser is redirected here to sign in. A private in-cluster host would
   # verify correctly server side and be unreachable from the browser doing the signing in, which
   # reads as a broken login rather than as a wrong URL.
-  GIAM_PUBLIC_URL: "https://sec-giam.industrysolutions.prod.corp.mongodb.com"
+  GIAM_PUBLIC_URL: "https://sec-giam-api.industrysolutions.prod.corp.mongodb.com"
   # Where the login, consent, registration and administration screens live.
-  GIAM_FRONTEND_URL: "https://sec-giam-console.industrysolutions.prod.corp.mongodb.com"
+  GIAM_FRONTEND_URL: "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com"
   # The origins allowed to call the identity API from a browser: the console and each relying party.
   # Enumerated rather than "*": this API issues and introspects tokens.
-  GIAM_CORS_ORIGIN: "https://sec-giam-console.industrysolutions.prod.corp.mongodb.com,https://sec-giam-frontend.industrysolutions.prod.corp.mongodb.com,https://sec-giam-merchant.industrysolutions.prod.corp.mongodb.com"
+  GIAM_CORS_ORIGIN: "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com,https://sec-giam-frontend.industrysolutions.prod.corp.mongodb.com,https://sec-giam-merchant.industrysolutions.prod.corp.mongodb.com"
   # The container listens on 8080 in every environment, which is the port the platform probes.
   GIAM_PORT: "8080"
 
@@ -26,7 +26,7 @@ env:
   # Read by the frontend release only. Server side: the console forwards /api, /realms and
   # /.well-known to this address through the Next.js rewrites, so the browser never makes a
   # cross-origin call and the console needs no CORS entry of its own.
-  GIAM_API_PRIVATE_URL: "http://sec-giam-web-app:80"
+  GIAM_API_PRIVATE_URL: "http://sec-giam-api-web-app:80"
 
   # ── Storage ────────────────────────────────────────────────────────────────────────────────────
   # GIAM_DB_URI is deliberately NOT set: the config falls back to MONGODB_URI, so one cluster secret
