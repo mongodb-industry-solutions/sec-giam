@@ -1,6 +1,6 @@
 import { Db } from 'mongodb';
-import { IDENTITY_COLLECTION, CREDENTIAL_COLLECTION, REALM_COLLECTION } from '../../shared/models/collections';
-import { IdentityRecord } from '../../modules/directory/models/identity.model';
+import { PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, REALM_COLLECTION, DOMAIN_COLLECTION } from '../../shared/models/collections';
+import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import { CredentialRecord } from '../../modules/directory/models/credential.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { blindDigest } from '../encryption/digest';
@@ -27,26 +27,32 @@ interface IdentityFixture {
   realm: string;
   subjectId: string;
   userName: string;
-  kind: IdentityRecord['kind'];
+  kind: PrincipalRecord['kind'];
   email?: string;
   phone?: string;
-  name?: { formatted?: string; givenName?: string; familyName?: string };
+  name?: {
+    formatted?: string;
+    givenName?: string;
+    familyName?: string;
+    honorificPrefix?: string;
+    honorificSuffix?: string;
+  };
   active: boolean;
-  lifecycleState: IdentityRecord['lifecycleState'];
+  lifecycleState: PrincipalRecord['lifecycleState'];
   demoFeatured?: boolean;
   demoNote?: string;
   roleName?: string;
   /** Binds an account holder to their own records, for a self-scoped role. */
   accountHolderRef?: string;
   owner?: { kind: string; ref: string; displayName?: string };
-  workload?: IdentityRecord['workload'];
+  workload?: PrincipalRecord['workload'];
 }
 
 interface CredentialFixture {
   credentialId: string;
   subjectId: string;
   type: CredentialRecord['type'];
-  secretHash?: string;
+  hash?: string;
   publicKeyPem?: string;
   algorithm?: CredentialRecord['algorithm'];
   signCount?: number;
@@ -59,7 +65,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
   const fixtures = readSeedFile<IdentityFixture[]>(fixtureName);
   const credentialFixtures = readSeedFile<CredentialFixture[]>(credentialFixtureName);
 
-  const identities = db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+  const identities = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
   const credentials = db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
   const now = new Date().toISOString();
 
@@ -71,13 +77,29 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
   const realmIdBySubject = new Map<string, string>();
 
+  /**
+   * Every fixture here joins through the realm's own internal directory, never a federated one, so
+   * its `domainId` is that realm's local domain. `seedRealms` runs first and guarantees one exists
+   * per realm; a fixture is otherwise "provisioned" but belongs nowhere, which is the state that
+   * left the console unable to say whose directory a principal came from.
+   */
+  const localDomains = await db.collection(DOMAIN_COLLECTION)
+    .find({ protocol: 'internal' }, { projection: { _id: 0, realmId: 1, domainId: 1 } })
+    .toArray() as unknown as Array<{ realmId: string; domainId: string }>;
+  const localDomainByRealm = new Map(localDomains.map((domain) => [domain.realmId, domain.domainId]));
+
   const byKind: Record<string, number> = {};
   for (const fixture of fixtures) {
     const realmId = realmIdByName.get(fixture.realm);
     if (!realmId) throw new Error(`identities.json names realm "${fixture.realm}", which is not seeded`);
+    const domainId = localDomainByRealm.get(realmId);
+    // Every principal belongs to a domain; there is no admitted case of one that does not. Failing
+    // the seed run here is the same rigor P43's runtime paths apply: `seedRealms` runs first and
+    // guarantees one internal domain per realm, so reaching this without one is a seed order bug.
+    if (!domainId) throw new Error(`realm "${fixture.realm}" has no internal domain seeded yet`);
     realmIdBySubject.set(fixture.subjectId, realmId);
     byKind[fixture.kind] = (byKind[fixture.kind] ?? 0) + 1;
-    await upsertSeed<IdentityRecord>(
+    await upsertSeed<PrincipalRecord>(
       identities,
       { subjectId: fixture.subjectId },
       {
@@ -96,6 +118,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
         demoFeatured: Boolean(fixture.demoFeatured),
         ...(fixture.demoNote ? { demoNote: fixture.demoNote } : {}),
         ...(fixture.accountHolderRef ? { accountHolderRef: fixture.accountHolderRef } : {}),
+        domainId,
       },
       { subjectId: fixture.subjectId, realmId, tenantId: DEFAULT_TENANT_ID },
       'Identity',
@@ -115,7 +138,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
       {
         subjectId: fixture.subjectId,
         type: fixture.type,
-        ...(fixture.secretHash ? { secretHash: fixture.secretHash } : {}),
+        ...(fixture.hash ? { hash: fixture.hash } : {}),
         ...(fixture.publicKeyPem ? { publicKeyPem: fixture.publicKeyPem } : {}),
         ...(fixture.algorithm ? { algorithm: fixture.algorithm } : {}),
         ...(fixture.signCount !== undefined ? { signCount: fixture.signCount } : {}),

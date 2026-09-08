@@ -1,11 +1,12 @@
 import { Db } from 'mongodb';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 import { RealmRecord } from '../../realm/models/realm.model';
-import { ClientRecord } from '../models/client.model';
+import { OAuthClient } from '../models/client.model';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { DecisionService } from '../../authorization/services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { IdentityRecord, canAuthenticate } from '../../directory/models/identity.model';
-import { ActorClaim } from '../models/token.model';
+import { PrincipalRecord, canAuthenticate } from '../../directory/models/principal.model';
+import { ActorClaim } from '../models/actor.model';
 
 /**
  * Token exchange: acting as somebody else, on the record.
@@ -33,12 +34,13 @@ const AUTHORITY_AUDIENCE = 'authority';
 
 export interface ExchangeRefusal {
   status: number;
-  error: string;
+  /** Typed to the closed RFC 6749 set, so a code a client cannot switch on will not compile. */
+  error: OAuthErrorCode;
   description?: string;
 }
 
 export interface ExchangeSubject {
-  identity: IdentityRecord;
+  identity: PrincipalRecord;
   actor: ActorClaim;
 }
 
@@ -58,7 +60,7 @@ export class TokenExchangeService {
    */
   async resolve(
     realm: RealmRecord,
-    client: ClientRecord,
+    client: OAuthClient,
     requested: { subjectToken?: string; subject?: string; subjectTokenType?: string },
   ): Promise<ExchangeSubject | ExchangeRefusal> {
     const refuse = (cause: string): ExchangeRefusal => {
@@ -114,6 +116,6 @@ export class TokenExchangeService {
 
     // Carried into the token, so the trail reads "the simulator acting as Julia Santos" rather than
     // "Julia Santos". That is strictly better evidence than the flow it replaces.
-    return { identity, actor: { subjectId: client.clientId, clientId: client.clientId } };
+    return { identity, actor: { sub: client.clientId, client_id: client.clientId } };
   }
 }

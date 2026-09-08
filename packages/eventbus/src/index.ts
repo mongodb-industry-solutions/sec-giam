@@ -126,7 +126,7 @@ export function makeEvent<T>(input: {
 export * from './types';
 export * from './EventBus';
 export * from './signals';
-export { MongoEventStore, DOMAIN_EVENT_COLLECTION } from './EventStore';
+export { MongoEventStore, EVENTBUS_COLLECTION } from './EventStore';
 export type { EventStore, EventStoreDb, EventStoreCollection, EventStoreCursor } from './EventStore';
 // Engines and transports are part of the surface, so consumers need one import path.
 export { EventBusInProcess } from './EventBusInProcess';

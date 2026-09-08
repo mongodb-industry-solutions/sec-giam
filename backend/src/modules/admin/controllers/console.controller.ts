@@ -3,9 +3,9 @@ import { requireAdmin } from '../../../vendors/middleware/adminAuth';
 import { requireAuthorityCaller } from '../../../vendors/middleware/authorityAuth';
 import { problem } from '../../../shared/models/problem';
 import {
-  REALM_COLLECTION, IDENTITY_PROVIDER_COLLECTION, IDENTITY_COLLECTION, CREDENTIAL_COLLECTION,
-  CLIENT_COLLECTION, ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, POLICY_COLLECTION,
-  PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION, SESSION_COLLECTION, SIGNING_KEY_COLLECTION,
+  REALM_COLLECTION, DOMAIN_COLLECTION, PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION,
+  ROLE_COLLECTION, POLICY_COLLECTION,
+  RESOURCE_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
   GRANT_COLLECTION,
 } from '../../../shared/models/collections';
 
@@ -28,6 +28,13 @@ interface ConsoleView {
   projection: Record<string, 0 | 1>;
   /** Narrows a listing to one realm when asked. Absent where a record is not realm scoped. */
   realmScoped: boolean;
+  /**
+   * Always applied, for a view over a collection that holds more than this view is about.
+   *
+   * `clients` reads the credential collection, which also holds passwords and API keys, so without
+   * this the view would list every credential in the realm under a heading that says applications.
+   */
+  filter?: Record<string, unknown>;
   sort: Record<string, 1 | -1>;
   summary: string;
   /** Why this view shows what it shows, where the answer is not obvious. */
@@ -46,7 +53,7 @@ const VIEWS: Record<string, ConsoleView> = {
     summary: 'The trust boundaries this authority serves',
   },
   providers: {
-    collection: IDENTITY_PROVIDER_COLLECTION,
+    collection: DOMAIN_COLLECTION,
     projection: { _id: 0, realmId: 1, name: 1, displayName: 1, protocol: 1, enabled: 1, issuer: 1, notice: 1 },
     realmScoped: true,
     sort: { name: 1 },
@@ -54,7 +61,7 @@ const VIEWS: Record<string, ConsoleView> = {
     note: 'Client secrets and endpoints a provider authenticates with are deliberately not returned.',
   },
   identities: {
-    collection: IDENTITY_COLLECTION,
+    collection: PRINCIPAL_COLLECTION,
     projection: { _id: 0, realmId: 1, subjectId: 1, userName: 1, primaryEmail: 1, name: 1, type: 1, status: 1, demoFeatured: 1, sessionEpoch: 1, accountHolderRef: 1 },
     realmScoped: true,
     sort: { userName: 1 },
@@ -70,12 +77,18 @@ const VIEWS: Record<string, ConsoleView> = {
     note: 'The hash and the public key are both withheld. An operator needs to know a credential EXISTS and what kind it is, never its material.',
   },
   clients: {
-    collection: CLIENT_COLLECTION,
-    projection: { _id: 0, realmId: 1, clientId: 1, clientName: 1, type: 1, status: 1, grantTypes: 1, redirectUris: 1, scope: 1, logoUri: 1, owners: 1, requirePkce: 1, backchannel: 1 },
+    // An application registration IS a credential of type oauth_client, so this reads the
+    // credential collection and shows the metadata sub document the registration lives in.
+    collection: CREDENTIAL_COLLECTION,
+    filter: { type: 'oauth_client' },
+    projection: {
+      _id: 0, realmId: 1, clientId: 1, status: 1, ownerId: 1, administrators: 1,
+      secretPrefix: 1, createdAt: 1, metadata: 1,
+    },
     realmScoped: true,
-    sort: { clientName: 1 },
+    sort: { 'metadata.clientName': 1 },
     summary: 'The applications registered against this authority',
-    note: 'The secret hash is never returned, and neither is anything that would let a reader impersonate the client.',
+    note: 'The secret hash is never returned, and neither is anything that would let a reader impersonate the client. The non-secret prefix IS shown, so two secrets can be told apart during a rotation window.',
   },
   roles: {
     collection: ROLE_COLLECTION,
@@ -86,11 +99,14 @@ const VIEWS: Record<string, ConsoleView> = {
     note: 'The separation-of-duties rationale travels with the role: an absence with no recorded reason reads as an oversight rather than a decision.',
   },
   assignments: {
-    collection: ROLE_ASSIGNMENT_COLLECTION,
-    projection: { _id: 0, realmId: 1, subjectId: 1, roleId: 1, grantedAt: 1, grantedBy: 1, expiresAt: 1 },
+    // Read from the principal, because a role a subject holds lives on the subject now. The console
+    // shows the holder and its array; who-holds-role-X is served by the multikey index.
+    collection: PRINCIPAL_COLLECTION,
+    projection: { _id: 0, realmId: 1, subjectId: 1, userName: 1, roles: 1 },
     realmScoped: true,
-    sort: { grantedAt: -1 },
+    sort: { userName: 1 },
     summary: 'Who holds which role',
+    note: 'A holding is an entry on the principal rather than a record of its own, so it is identified by the subject and the role together.',
   },
   policies: {
     collection: POLICY_COLLECTION,
@@ -99,19 +115,19 @@ const VIEWS: Record<string, ConsoleView> = {
     sort: { name: 1 },
     summary: 'The rules evaluated beyond role membership',
   },
-  permissions: {
-    collection: PERMISSION_COLLECTION,
-    projection: { _id: 0, realmId: 1, resourceServerId: 1, resource: 1, action: 1, description: 1 },
-    realmScoped: true,
-    sort: { resource: 1 },
-    summary: 'Every permission a resource server has declared',
-  },
-  'resource-servers': {
-    collection: RESOURCE_SERVER_COLLECTION,
-    projection: { _id: 0, realmId: 1, resourceServerId: 1, name: 1, displayName: 1, registeredAt: 1 },
+  resources: {
+    // One view, because an API, a tool and a Model Context Protocol server are the same kind of
+    // thing. The action catalog is read WITH the resource, since that is where it lives now: a
+    // permission is the string `resource:action` and has no row of its own to list.
+    collection: RESOURCE_COLLECTION,
+    projection: {
+      _id: 0, realmId: 1, resourceId: 1, kind: 1, name: 1, displayName: 1, audience: 1,
+      parentResourceId: 1, actions: 1, catalogVersion: 1, status: 1, validationMode: 1, registeredAt: 1,
+    },
     realmScoped: true,
     sort: { name: 1 },
-    summary: 'The applications that enforce this authority decisions',
+    summary: 'Every protected object, and the actions it declares',
+    note: 'The catalog is what a policy naming this resource is validated against: an action absent here cannot be granted.',
   },
   sessions: {
     collection: SESSION_COLLECTION,
@@ -128,7 +144,7 @@ const VIEWS: Record<string, ConsoleView> = {
     summary: 'What principals have authorised applications to do',
   },
   keys: {
-    collection: SIGNING_KEY_COLLECTION,
+    collection: KEY_COLLECTION,
     projection: { _id: 0, realmId: 1, kid: 1, instanceId: 1, provider: 1, status: 1, publishedAt: 1, leaseExpiresAt: 1, publicationExpiresAt: 1, algorithm: 1 },
     realmScoped: true,
     sort: { publishedAt: -1 },
@@ -259,7 +275,8 @@ export async function consoleController(fastify: FastifyInstance) {
     }
 
     const { realm, q, limit, skip } = request.query as { realm?: string; q?: string; limit?: number; skip?: number };
-    const filter: Record<string, unknown> = {};
+    // The view's own discriminator first, so nothing a caller sends can widen it.
+    const filter: Record<string, unknown> = { ...(view.filter ?? {}) };
 
     if (view.realmScoped && realm) {
       const realmRecord = await fastify.db.collection(REALM_COLLECTION)

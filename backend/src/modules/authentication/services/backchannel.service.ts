@@ -1,11 +1,13 @@
 import { Db } from 'mongodb';
+import type { OAuthErrorCode } from '../../../shared/models/problem';
 import { randomBytes, createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { AUTHORIZATION_REQUEST_COLLECTION, CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
-import { AuthorizationRequestRecord } from '../../oauth/models/authorizationRequest.model';
+import { TICKET_COLLECTION, CREDENTIAL_COLLECTION, DOMAIN_COLLECTION } from '../../../shared/models/collections';
+import { TicketRecord } from '../../oauth/models/ticket.model';
 import { CredentialRecord, isUsable } from '../../directory/models/credential.model';
-import { ClientRecord, scopesOf } from '../../oauth/models/client.model';
+import { OAuthClient, scopesOf } from '../../oauth/models/client.model';
 import { RealmRecord } from '../../realm/models/realm.model';
+import { DomainRecord } from '../../realm/models/domain.model';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { credentialStores } from '../../../shared/ports';
@@ -33,7 +35,8 @@ const POLL_INTERVAL_SECONDS = 5;
 
 export interface BackchannelFailure {
   status: number;
-  error: string;
+  /** Typed to the closed RFC 6749 set, so a code a client cannot switch on will not compile. */
+  error: OAuthErrorCode;
   description?: string;
 }
 
@@ -41,7 +44,7 @@ export function isFailure(value: unknown): value is BackchannelFailure {
   return typeof value === 'object' && value !== null && 'error' in value && 'status' in value;
 }
 
-function refuse(status: number, error: string, description?: string): BackchannelFailure {
+function refuse(status: number, error: OAuthErrorCode, description?: string): BackchannelFailure {
   return { status, error, description };
 }
 
@@ -69,7 +72,7 @@ export class BackchannelService {
   constructor(private readonly db: Db) {}
 
   private get requests() {
-    return this.db.collection<AuthorizationRequestRecord>(AUTHORIZATION_REQUEST_COLLECTION);
+    return this.db.collection<TicketRecord>(TICKET_COLLECTION);
   }
 
   private audit(realm: RealmRecord, input: {
@@ -143,7 +146,7 @@ export class BackchannelService {
 
   async initiate(
     realm: RealmRecord,
-    client: ClientRecord,
+    client: OAuthClient,
     input: InitiateInput,
   ): Promise<{ auth_req_id: string; expires_in: number; interval: number } | BackchannelFailure> {
     const mode = client.backchannel?.deliveryMode ?? 'poll';
@@ -158,6 +161,23 @@ export class BackchannelService {
 
     const subjectId = await this.resolveHint(realm.realmId, input);
     if (isFailure(subjectId)) return subjectId;
+
+    /**
+     * Whether the path THIS PRINCIPAL authenticates through allows CIBA at all.
+     *
+     * Read from the principal's own `domainId`, not from the client: this refuses an identified
+     * person whose path has switched it off, exactly as a disabled path already refuses password
+     * sign-in on it. Absent `domainId` (never populated, or a domain that has since been removed)
+     * defaults to allowed, matching the field's own "narrows what was implicitly open" contract.
+     */
+    const identity = await new DirectoryService(this.db).findBySubjectId(subjectId);
+    if (identity?.domainId) {
+      const domain = await this.db.collection<DomainRecord>(DOMAIN_COLLECTION)
+        .findOne({ realmId: realm.realmId, domainId: identity.domainId }, { projection: { _id: 0, authentication: 1 } });
+      if (domain?.authentication?.cibaEnabled === false) {
+        return refuse(400, 'unauthorized_client', 'the identified principal\'s authentication path does not allow CIBA');
+      }
+    }
 
     // Without a registered key there is nothing that can approve, so the flow is refused now rather
     // than left pending until it expires with no explanation.
@@ -185,7 +205,7 @@ export class BackchannelService {
       attemptCount: 0,
       expiresAt: new Date(Date.now() + lifetime * 1000).toISOString(),
       meta: newMeta('AuthorizationRequest'),
-    } as AuthorizationRequestRecord);
+    } as TicketRecord);
 
     this.audit(realm, {
       action: 'authentication.backchannel.initiated',
@@ -199,7 +219,7 @@ export class BackchannelService {
   }
 
   /** Loads a request, expiring it in passing so a stale one is never presented as live. */
-  private async active(realmId: string, authReqId: string): Promise<AuthorizationRequestRecord | BackchannelFailure> {
+  private async active(realmId: string, authReqId: string): Promise<TicketRecord | BackchannelFailure> {
     const request = await this.requests.findOne({ realmId, authReqId }, { projection: { _id: 0 } });
     if (!request) return refuse(404, 'invalid_grant', 'unknown auth_req_id');
     if (request.status === 'pending' && Date.parse(request.expiresAt) < Date.now()) {
@@ -345,7 +365,7 @@ export class BackchannelService {
     realm: RealmRecord,
     clientId: string,
     authReqId: string,
-  ): Promise<AuthorizationRequestRecord | BackchannelFailure> {
+  ): Promise<TicketRecord | BackchannelFailure> {
     if (!authReqId) return refuse(400, 'invalid_request', 'auth_req_id is required');
     const request = await this.requests.findOne({ realmId: realm.realmId, authReqId }, { projection: { _id: 0 } });
     // Unknown and foreign are the same answer: which of the two it was is not the caller's business.
@@ -384,7 +404,7 @@ export class BackchannelService {
    * Fire and forget on purpose: a client whose endpoint is down must not turn a completed approval
    * into a failed one. The poll path remains available and is the baseline every client supports.
    */
-  async notify(client: ClientRecord, authReqId: string, tokens?: Record<string, unknown>): Promise<void> {
+  async notify(client: OAuthClient, authReqId: string, tokens?: Record<string, unknown>): Promise<void> {
     const endpoint = client.backchannel?.notificationEndpoint;
     const request = await this.requests.findOne({ authReqId }, { projection: { _id: 0 } });
     const notificationToken = request?.clientNotificationToken;

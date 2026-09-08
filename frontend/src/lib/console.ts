@@ -1,7 +1,9 @@
 'use client';
 
 import { apiUrl } from './env';
-import { PROFILE_KEY, storedHomeRealm, storedRealm, storedToken } from './session';
+import {
+  PERMISSIONS_KEY, PROFILE_KEY, REALM_CHANGED_EVENT, storedHomeRealm, storedRealm, storedToken, storedUserName,
+} from './session';
 
 /**
  * What the console knows about the signed-in principal, and how it talks to the authority.
@@ -11,21 +13,28 @@ import { PROFILE_KEY, storedHomeRealm, storedRealm, storedToken } from './sessio
  * refused by the API when somebody types the address, which is the order these two checks belong in.
  */
 
-export interface Permission {
-  resource: string;
-  action: string;
-}
-
 export interface Claims {
   sub: string;
   preferred_username?: string;
   name?: string;
   email?: string;
   roles?: string[];
-  /** Realms this principal may administer besides the issuing one. Explicit data, never inferred. */
-  admin_realms?: Array<{ id: string; name: string }>;
+  /**
+   * Realms this principal may administer besides the issuing one, by NAME.
+   *
+   * It was `[{id, name}]` until v41 P1. Nothing here read the id: the switcher calls
+   * `/administrable-realms`, which answers with the realm record and the permissions actually held
+   * there, because a switcher showing only names would hide that a grant is usually narrower away
+   * from home. So the id was two UUIDs per realm in every administrator's token, serving nobody.
+   */
+  admin_realms?: string[];
   scope?: string;
-  permissions?: Permission[];
+  /**
+   * Fine-grained authority, when the client asked to narrow. `entitlements` per RFC 9068 2.2.3.1,
+   * as `resource:action` STRINGS. This was typed as the v39 `{resource, action}` objects under the
+   * name `permissions`, which had been wrong on both counts since v40.
+   */
+  entitlements?: string[];
   exp?: number;
   iat?: number;
   iss?: string;
@@ -123,6 +132,67 @@ export async function loadUserInfo(): Promise<UserInfo | null> {
   return profileInFlight;
 }
 
+export interface MyPermissions {
+  permissions: string[];
+  roles: string[];
+  scopeKind: 'self' | 'all';
+}
+
+// Kept beside the profile cache, and invalidated the same two ways: signing out, and switching the
+// realm being acted on, because the answer is a property of that realm, not just of the token.
+let permissionsCache: MyPermissions | null = null;
+let permissionsInFlight: Promise<MyPermissions | null> | null = null;
+
+// `setActiveRealm` clears the storage half; this clears the in-memory half, so a switch cannot leave
+// the module holding the previous realm's answer after the storage key it was read from is gone.
+if (typeof window !== 'undefined') {
+  window.addEventListener(REALM_CHANGED_EVENT, () => { permissionsCache = null; });
+}
+
+export function cachedPermissions(): MyPermissions | null {
+  if (permissionsCache) return permissionsCache;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(PERMISSIONS_KEY);
+    permissionsCache = raw ? JSON.parse(raw) as MyPermissions : null;
+  } catch {
+    permissionsCache = null;
+  }
+  return permissionsCache;
+}
+
+/**
+ * Reads the caller's own effective permissions once per realm.
+ *
+ * The access token carries roles rather than entitlements by default (P9), so `can()` cannot decide
+ * what to render from the token alone without being wrong on every ordinary login: the entitlements
+ * claim is populated only when a client deliberately narrows, which the console itself never does.
+ * This asks the authority the same question it asks itself when it decides, so the answer is never
+ * stale about a role withdrawn a moment ago the way a claim baked into a token would be.
+ */
+export async function loadPermissions(): Promise<MyPermissions | null> {
+  if (!currentClaims()) return null;
+
+  const cached = cachedPermissions();
+  if (cached) return cached;
+
+  permissionsInFlight ??= callApi<MyPermissions>('/me/permissions', { subject: 'your permissions' })
+    .then((info) => {
+      permissionsCache = info;
+      try { window.sessionStorage.setItem(PERMISSIONS_KEY, JSON.stringify(info)); } catch {}
+      return info;
+    })
+    .catch((err) => {
+      // Degrading to "nothing granted" is deliberate: a console that cannot ask still works, it just
+      // shows less rather than guessing.
+      console.warn('[console] effective permissions unavailable, gated screens stay hidden:', err);
+      return null;
+    })
+    .finally(() => { permissionsInFlight = null; });
+
+  return permissionsInFlight;
+}
+
 /**
  * The friendliest name the console can put on screen for this principal.
  *
@@ -132,7 +202,24 @@ export async function loadUserInfo(): Promise<UserInfo | null> {
 export function displayName(claims: Claims): string {
   const info = cachedUserInfo();
   const fromProfile = info && info.sub === claims.sub ? info.name || info.preferred_username : '';
-  return fromProfile || claims.name || claims.preferred_username || claims.sub;
+  /**
+   * A NAME, and never a subject id.
+   *
+   * The subject used to be the last resort here, and it was reached constantly: v40 slimmed the
+   * access token to the claims that carry authority, so `name` and `preferred_username` are simply
+   * not in it, and the profile read is asynchronous. Every header and menu therefore rendered
+   * `a1000070-0000-4000-8000-000000000070` on first paint, and permanently whenever UserInfo failed.
+   *
+   * An opaque identifier is not a name. It tells the person nothing they did not know, it is
+   * unreadable at a glance, and it is the wrong thing to put where somebody looks to confirm who
+   * they are signed in as. The identifier still matters, so it is shown on the profile screen where
+   * that level of detail belongs, and never as a substitute for a name.
+   */
+  return fromProfile
+    || claims.name
+    || claims.preferred_username
+    || storedUserName()
+    || 'Your account';
 }
 
 export function initials(claims: Claims): string {
@@ -143,10 +230,19 @@ export function initials(claims: Claims): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** Whether the claims carry a named permission. Absent claims mean no, never "probably". */
+/**
+ * Whether this principal holds a permission, for deciding what to render.
+ *
+ * The token's `entitlements` claim is checked first, for a client that deliberately narrowed. The
+ * console never does, so this falls back to the effective permissions read fresh from the authority
+ * (`loadPermissions`): without the fallback, every default login carries roles only and this would
+ * answer "no" for everybody, hiding controls the API would in fact allow.
+ */
 export function can(claims: Claims | null, resource: string, action: string): boolean {
   if (!claims) return false;
-  return (claims.permissions ?? []).some((p) => p.resource === resource && p.action === action);
+  const wanted = `${resource}:${action}`;
+  if ((claims.entitlements ?? []).includes(wanted)) return true;
+  return (cachedPermissions()?.permissions ?? []).includes(wanted);
 }
 
 // Offered only when the claims say the person administers identity, so the console never advertises
@@ -154,7 +250,8 @@ export function can(claims: Claims | null, resource: string, action: string): bo
 export function administersIdentity(claims: Claims | null): boolean {
   if (!claims) return false;
   if ((claims.roles ?? []).some((role) => /admin|auditor|security/i.test(role))) return true;
-  return (claims.permissions ?? []).some((p) => /realm|client|identit|role|polic|key|session|audit/i.test(p.resource));
+  const granted = [...(claims.entitlements ?? []), ...(cachedPermissions()?.permissions ?? [])];
+  return granted.some((entitlement) => /realm|client|identit|role|polic|key|session|audit/i.test(entitlement));
 }
 
 /** A failure a screen can print as it is, rather than a stack trace or a bare status code. */
@@ -187,13 +284,24 @@ interface CallOptions {
    * unanswerable exactly when it needs answering.
    */
   realm?: string;
+  /**
+   * Skips the `/realms/{realm}` prefix entirely.
+   *
+   * For the handful of routes that act ON a realm rather than inside one (`/realms`,
+   * `/realms/:realm` themselves): those are never reached "as the realm currently selected", they
+   * are the thing being administered, so nesting them under the switcher's realm would ask for a
+   * path that does not exist. `path` must then start with `/realms` itself when that is what is
+   * meant, since nothing prepends it here.
+   */
+  topLevel?: boolean;
 }
 
 /**
  * One call to the authority, addressed to the realm the person signed into.
  *
  * Path is written without the realm prefix so no caller has to remember to add it, and so a page
- * cannot accidentally read a realm the person is not in.
+ * cannot accidentally read a realm the person is not in. `topLevel` is the one deliberate escape
+ * from that rule, for the routes that administer a realm itself rather than something inside one.
  */
 export async function callApi<T>(path: string, options: CallOptions = {}): Promise<T> {
   const token = storedToken();
@@ -206,9 +314,13 @@ export async function callApi<T>(path: string, options: CallOptions = {}): Promi
   }
   const suffix = search.toString() ? `?${search}` : '';
 
+  const address = options.topLevel
+    ? path
+    : `/realms/${encodeURIComponent(options.realm ?? storedRealm())}${path}`;
+
   let response: Response;
   try {
-    response = await fetch(apiUrl(`/realms/${encodeURIComponent(options.realm ?? storedRealm())}${path}${suffix}`), {
+    response = await fetch(apiUrl(`${address}${suffix}`), {
       method: options.method ?? 'GET',
       headers: {
         authorization: `Bearer ${token}`,

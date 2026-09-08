@@ -52,11 +52,11 @@ export interface CredentialStore extends PortImplementation {
 
 /** Upstream federation. A realm with no provider authenticates internally. */
 export interface IdentityProviderAdapter extends PortImplementation {
-  readonly protocol: 'internal' | 'oidc' | 'saml' | 'spiffe';
+  readonly protocol: 'internal' | 'oidc' | 'saml' | 'ldap' | 'spiffe';
   /** The URL to send the browser to, or null when the protocol has no redirect step. */
-  authorizationUrl(providerId: string, state: string): Promise<string | null>;
+  authorizationUrl(domainId: string, state: string): Promise<string | null>;
   /** Turns whatever came back into claims. Mapping to a role happens above this line. */
-  exchange(providerId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  exchange(domainId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 /** Signing key custody and rotation. The private key never crosses this interface. */
@@ -101,16 +101,20 @@ export interface AuthorizationDecision {
    * a document with a version. Carried as data rather than parsed back out of `source`, so a screen
    * can link to the record instead of guessing which one the text meant.
    */
-  policy?: DecidingStatement;
+  policy?: DecidingPolicy;
 }
 
-/** Which document, which version, and which line of it. Enough to open the record and read it. */
-export interface DecidingStatement {
+/**
+ * Which policy decided, and which version of it. Enough to open the record and read it.
+ *
+ * No statement index any more: a policy states ONE effect over one resource pattern, so naming the
+ * policy names the rule. Two rules are two policies, which is also what lets each be versioned,
+ * approved and withdrawn on its own.
+ */
+export interface DecidingPolicy {
   policyId: string;
   name: string;
-  version: string;
-  /** Position in the policy's own statement list, which is what the editor shows. */
-  statementIndex: number;
+  version: number;
   effect: 'allow' | 'deny';
 }
 
@@ -137,7 +141,7 @@ export interface ProofOfPossession extends PortImplementation {
   verify(token: Record<string, unknown>, request: { headers: Record<string, unknown>; certificateThumbprint?: string }): Promise<boolean>;
 }
 
-export interface SecurityEventRecord extends Scoped {
+export interface AuditRecord extends Scoped {
   ts: string;
   action: string;
   outcome: 'success' | 'failure';
@@ -147,7 +151,7 @@ export interface SecurityEventRecord extends Scoped {
 
 /** Where security events go. More than one sink may be active; none of them may swallow an event. */
 export interface EventSink extends PortImplementation {
-  emit(event: SecurityEventRecord): Promise<void>;
+  emit(event: AuditRecord): Promise<void>;
 }
 
 /** Outbound identity lifecycle. Provisioning creates a principal; it never activates one. */

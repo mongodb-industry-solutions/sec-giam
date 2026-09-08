@@ -3,13 +3,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, UserCheck, UserMinus, UserRound } from 'lucide-react';
+import { ArrowLeft, KeyRound, Pencil, ShieldHalf, Trash2, UserCheck, UserMinus, UserRound } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { Fact } from '../../../../components/Fact';
 import { ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
-import { ApiError, callApi, when } from '../../../../lib/console';
-import { ScimUser, extensionOf, primaryEmail } from '../../../../lib/identities';
+import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/console';
+import { usePermissions } from '../../../../lib/profile';
+import { ScimUser, extensionOf, primaryEmail, useDomainNames } from '../../../../lib/identities';
+import type { RoleSummary } from '../../roles/types';
+
+interface Assignment {
+  subjectId: string;
+  roleId: string;
+  grantedAt: string;
+  expiresAt?: string;
+  live: boolean;
+}
 
 /**
  * One principal, and the two things that can be done to it from here.
@@ -31,6 +41,18 @@ export default function IdentityDetailPage() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
 
+  const [assignments, setAssignments] = useState<Assignment[] | null>(null);
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
+  const [roleBusy, setRoleBusy] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState(false);
+  // The catalog this realm defines, read once so a role holding shows a name rather than the
+  // identifier nobody but the database reads.
+  const [roleCatalog, setRoleCatalog] = useState<RoleSummary[]>([]);
+
+  usePermissions();
+  const mayManageAssignments = can(currentClaims(), 'assignments', 'manage');
+  const domainName = useDomainNames();
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -44,7 +66,36 @@ export default function IdentityDetailPage() {
     }
   }, [id]);
 
+  const loadRoles = useCallback(async () => {
+    if (!id) return;
+    try {
+      const body = await callApi<{ assignments: Assignment[] }>(
+        `/principals/${encodeURIComponent(id)}/roles`,
+        { subject: 'the roles this principal holds' },
+      );
+      setAssignments(body.assignments);
+      setAssignmentsError(null);
+    } catch (failure) {
+      setAssignmentsError(failure instanceof ApiError ? failure.message : 'The roles held could not be read.');
+    }
+  }, [id]);
+
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void loadRoles(); }, [loadRoles]);
+  useEffect(() => {
+    // Read once the roles-held call has actually succeeded, which already proves `assignments:view`,
+    // and only once: a role is renamed rarely enough that refetching on every grant or revoke would
+    // be a request this screen never needed.
+    if (assignments === null || roleCatalog.length > 0) return;
+    callApi<{ roles: RoleSummary[] }>('/roles', { query: { limit: 200 }, subject: 'the roles this realm defines' })
+      .then((body) => setRoleCatalog(body.roles))
+      .catch(() => setRoleCatalog([]));
+  }, [assignments, roleCatalog.length]);
+
+  const roleName = useCallback(
+    (roleId: string) => roleCatalog.find((role) => role.roleId === roleId)?.displayName ?? roleId,
+    [roleCatalog],
+  );
 
   async function patch(value: Record<string, unknown>, subject: string) {
     setBusy(true);
@@ -86,6 +137,39 @@ export default function IdentityDetailPage() {
     }
   }
 
+  async function assignRole(roleId: string) {
+    setRoleBusy(roleId);
+    try {
+      await callApi(`/roles/${encodeURIComponent(roleId)}/assignments`, {
+        method: 'POST',
+        body: { subjectId: id },
+        subject: 'that role assignment',
+      });
+      await loadRoles();
+      setAssigning(false);
+    } catch (failure) {
+      setAssignmentsError(failure instanceof ApiError ? failure.message : 'That role could not be assigned.');
+    } finally {
+      setRoleBusy(null);
+    }
+  }
+
+  async function revokeRole(roleId: string) {
+    if (!window.confirm('Take this role back? It stops applying at this principal\'s next token.')) return;
+    setRoleBusy(roleId);
+    try {
+      await callApi(`/principals/${encodeURIComponent(id)}/roles/${encodeURIComponent(roleId)}`, {
+        method: 'DELETE',
+        subject: 'that role',
+      });
+      await loadRoles();
+    } catch (failure) {
+      setAssignmentsError(failure instanceof ApiError ? failure.message : 'That role could not be revoked.');
+    } finally {
+      setRoleBusy(null);
+    }
+  }
+
   const extension = extensionOf(user);
   const retired = extension.lifecycleState === 'deprovisioned';
 
@@ -102,7 +186,9 @@ export default function IdentityDetailPage() {
       <SectionHeader
         icon={UserRound}
         title={user?.name?.formatted || user?.userName || id || 'Principal'}
-        description={user ? `Recorded ${when(user.meta?.created)}` : 'One principal in the directory.'}
+        description={user
+          ? `Recorded ${when(user.meta?.created)}${extension.domainId ? ` · ${domainName.name(extension.domainId) ?? 'an authentication path'}` : ''}`
+          : 'One principal in the directory.'}
         actions={user ? <StatusBadge status={extension.lifecycleState || (user.active ? 'active' : 'inactive')} /> : undefined}
       />
 
@@ -115,22 +201,128 @@ export default function IdentityDetailPage() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">The principal</h2>
             <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
               <Fact label="Subject" value={user.id} mono />
-              <Fact label="User name" value={user.userName} />
+              <Fact label="User name">
+                <span className="flex items-center gap-1.5">
+                  {user.userName}
+                  <Tooltip text="What this principal signs in as. Changed here, it changes for every credential this principal holds." />
+                </span>
+              </Fact>
               <Fact label="External id" value={user.externalId} mono />
               <Fact label="Primary email" value={primaryEmail(user) || 'not set'} />
-              <Fact label="Kind" value={extension.kind} />
-              <Fact label="Usable" value={user.active ? 'yes' : 'no'} />
+              <Fact label="Kind">
+                <span className="flex items-center gap-1.5">
+                  {extension.kind ?? 'unknown'}
+                  <Tooltip text="A human, a workload or a service account: what this authority checks are different rules for, carried once rather than guessed from which fields happen to be filled in." />
+                </span>
+              </Fact>
+              <Fact label="Usable">
+                <span className="flex items-center gap-1.5">
+                  {user.active ? 'yes' : 'no'}
+                  <Tooltip text="Whether this principal can authenticate right now. Separate from the lifecycle: a principal can exist and be recorded without being usable." />
+                </span>
+              </Fact>
               <Fact label="Lifecycle">
                 <span className="flex items-center gap-1.5">
                   {extension.lifecycleState ?? 'unknown'}
                   <Tooltip text="A suspended principal and a retired one are both inactive and are not the same thing to anyone reviewing them, which is why the lifecycle is carried separately from the usable flag." />
                 </span>
               </Fact>
-              <Fact label="Upstream provider" value={extension.providerId} mono />
-              <Fact label="Business reference" value={extension.accountHolderRef} mono />
+              <Fact label="Authentication path">
+                <span className="flex items-center gap-1.5">
+                  {extension.domainId
+                    ? (
+                      <Link
+                        href={`/system/domains/${encodeURIComponent(extension.domainId)}`}
+                        className="text-[#001E2B] hover:underline"
+                      >
+                        {domainName.name(extension.domainId) ?? extension.domainId}
+                      </Link>
+                    )
+                    : 'not recorded'}
+                  <Tooltip text="Which directory this principal was provisioned or signed in through. A remote directory's own administrator decides who exists there; this authority only decides what they may do once they arrive." />
+                </span>
+              </Fact>
+              <Fact label="Business reference">
+                <span className="flex items-center gap-1.5">
+                  {extension.accountHolderRef ?? 'not set'}
+                  <Tooltip text="Binds this principal to the party or account it represents in the business domain, for a self-scoped role that reaches only its own records." />
+                </span>
+              </Fact>
               <Fact label="Last changed" value={when(user.meta?.lastModified)} />
             </dl>
           </section>
+
+          <section className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
+                <ShieldHalf size={14} className="text-gray-400" aria-hidden />
+                Roles held
+              </h2>
+              {mayManageAssignments && !assigning && (
+                <Tooltip text="Grants a role of this realm's own catalog. It takes effect at this principal's next token.">
+                  <button
+                    type="button"
+                    onClick={() => setAssigning(true)}
+                    className="text-xs font-medium text-[#001E2B] hover:underline"
+                  >
+                    Assign a role
+                  </button>
+                </Tooltip>
+              )}
+            </div>
+
+            {assigning && (
+              <RoleAssigner
+                busy={roleBusy !== null}
+                catalog={roleCatalog}
+                held={new Set((assignments ?? []).filter((a) => a.live).map((a) => a.roleId))}
+                onCancel={() => setAssigning(false)}
+                onAssign={(roleId) => void assignRole(roleId)}
+              />
+            )}
+
+            {assignmentsError && <p className="mt-3 text-xs text-red-700">{assignmentsError}</p>}
+
+            {assignments && (
+              assignments.length === 0
+                ? <p className="mt-3 text-sm text-gray-400">This principal holds no role.</p>
+                : (
+                  <ul className="mt-3 space-y-2">
+                    {assignments.map((assignment) => (
+                      <li
+                        key={assignment.roleId}
+                        className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${
+                          assignment.live ? 'border-gray-200' : 'border-gray-100 bg-gray-50 text-gray-400'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <span className="font-medium">{roleName(assignment.roleId)}</span>
+                          <span className="ml-2 text-xs text-gray-400">
+                            {assignment.live ? `since ${when(assignment.grantedAt)}` : 'lapsed'}
+                            {assignment.expiresAt ? ` · until ${when(assignment.expiresAt)}` : ''}
+                          </span>
+                        </div>
+                        {mayManageAssignments && assignment.live && (
+                          <Tooltip text="Takes effect at this principal's next token. Everyone else holding this role is unaffected.">
+                            <button
+                              type="button"
+                              disabled={roleBusy === assignment.roleId}
+                              onClick={() => void revokeRole(assignment.roleId)}
+                              aria-label={`Revoke ${assignment.roleId}`}
+                              className="shrink-0 rounded-md border border-red-200 p-1.5 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </Tooltip>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )
+            )}
+          </section>
+
+          {!retired && <PasswordReset id={id} />}
 
           {editing
             ? (
@@ -143,33 +335,43 @@ export default function IdentityDetailPage() {
             )
             : (
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  disabled={retired}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+                <Tooltip text="Edit the name, email, external id and user name. Nothing here changes what this principal may do.">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    disabled={retired}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50 disabled:border-gray-300 disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    <Pencil size={12} aria-hidden />
+                    Edit principal
+                  </button>
+                </Tooltip>
+                <Tooltip text={user.active
+                  ? 'Every token already issued stops working immediately, not at its expiry.'
+                  : 'Restores access. Existing role assignments are unchanged; nothing has to be re-granted.'}
                 >
-                  Correct the record
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || retired}
-                  onClick={() => void setActive(!user.active)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
-                >
-                  {user.active
-                    ? <><UserMinus size={12} aria-hidden /> Deactivate</>
-                    : <><UserCheck size={12} aria-hidden /> Reactivate</>}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || retired}
-                  onClick={() => void deprovision()}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
-                >
-                  <UserMinus size={12} aria-hidden />
-                  Deprovision
-                </button>
+                  <button
+                    type="button"
+                    disabled={busy || retired}
+                    onClick={() => void setActive(!user.active)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+                  >
+                    {user.active
+                      ? <><UserMinus size={12} aria-hidden /> Deactivate</>
+                      : <><UserCheck size={12} aria-hidden /> Reactivate</>}
+                  </button>
+                </Tooltip>
+                <Tooltip text="Retires the record rather than deleting it, so the audit trail still resolves. Every token stops working at once.">
+                  <button
+                    type="button"
+                    disabled={busy || retired}
+                    onClick={() => void deprovision()}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
+                  >
+                    <UserMinus size={12} aria-hidden />
+                    Deprovision
+                  </button>
+                </Tooltip>
               </div>
             )}
         </>
@@ -273,5 +475,153 @@ function EditForm({ user, busy, onCancel, onSave }: {
         </button>
       </div>
     </form>
+  );
+}
+
+/** A picker over the realm's own role catalog, so assigning one never invents a role by hand. */
+function RoleAssigner({ catalog, held, busy, onCancel, onAssign }: {
+  catalog: RoleSummary[];
+  held: Set<string>;
+  busy: boolean;
+  onCancel: () => void;
+  onAssign: (roleId: string) => void;
+}) {
+  const available = catalog.filter((role) => !held.has(role.roleId));
+  const [roleId, setRoleId] = useState(available[0]?.roleId ?? '');
+
+  return (
+    <form
+      onSubmit={(event) => { event.preventDefault(); if (roleId) onAssign(roleId); }}
+      className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3"
+    >
+      <label className="block">
+        <span className="text-[10px] uppercase tracking-wider text-gray-400">Role</span>
+        <select
+          value={roleId}
+          onChange={(event) => setRoleId(event.target.value)}
+          className="mt-1 block h-[34px] min-w-[220px] rounded-lg border border-gray-200 px-2 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+        >
+          {available.length === 0
+            ? <option value="">Every defined role is already held</option>
+            : available.map((role) => <option key={role.roleId} value={role.roleId}>{role.displayName}</option>)}
+        </select>
+      </label>
+      <button
+        type="submit"
+        disabled={busy || !roleId}
+        className="h-[34px] rounded-md bg-[#001E2B] px-3 text-xs font-medium text-[#00ED64] hover:bg-[#023430] disabled:opacity-50"
+      >
+        {busy ? 'Assigning…' : 'Assign'}
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="h-[34px] rounded-md border border-gray-300 px-3 text-xs font-medium text-gray-700 hover:bg-white"
+      >
+        Cancel
+      </button>
+    </form>
+  );
+}
+
+/**
+ * An administrator setting a new password directly, without knowing the current one.
+ *
+ * The v43 replacement for LeafyPay's old "forced password reset". The value is never shown back:
+ * once submitted, the form clears itself and only the outcome remains on screen.
+ */
+function PasswordReset({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (password !== confirm) { setFailure('The two entries do not match.'); return; }
+    setBusy(true);
+    setFailure(null);
+    try {
+      await callApi(`/identities/${encodeURIComponent(id)}/credentials/password`, {
+        method: 'POST',
+        body: { password },
+        subject: 'that password',
+      });
+      setPassword('');
+      setConfirm('');
+      setDone(true);
+      setOpen(false);
+    } catch (failureValue) {
+      setFailure(failureValue instanceof ApiError ? failureValue.message : 'That password could not be set.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
+          <KeyRound size={14} className="text-gray-400" aria-hidden />
+          Password
+        </h2>
+        {!open && (
+          <Tooltip text="Sets the password directly, without knowing the current one. Checked against the same policy self-registration enforces, and never shown back once set.">
+            <button type="button" onClick={() => { setOpen(true); setDone(false); }} className="text-xs font-medium text-[#001E2B] hover:underline">
+              Set a new password
+            </button>
+          </Tooltip>
+        )}
+      </div>
+
+      {done && !open && <p className="mt-2 text-xs text-gray-500">The password was changed. It is not shown here.</p>}
+
+      {open && (
+        <form onSubmit={submit} className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">New password</span>
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">Confirm</span>
+            <input
+              type="password"
+              required
+              value={confirm}
+              onChange={(event) => setConfirm(event.target.value)}
+              className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+            />
+          </label>
+
+          {failure && <p className="text-xs text-red-700 sm:col-span-2">{failure}</p>}
+
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <button
+              type="submit"
+              disabled={busy || password.length < 8}
+              className="rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] hover:bg-[#023430] disabled:opacity-50"
+            >
+              {busy ? 'Setting…' : 'Set password'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setPassword(''); setConfirm(''); setFailure(null); }}
+              className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }

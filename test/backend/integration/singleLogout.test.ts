@@ -81,7 +81,7 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
     const session = await signIn();
     if (!session) return;
 
-    const before = await app.db.collection('identity').findOne({ subjectId: session.subjectId });
+    const before = await app.db.collection('principal').findOne({ subjectId: session.subjectId });
     const epochBefore = (before?.sessionEpoch as number) ?? 0;
 
     const response = await app.inject({
@@ -91,19 +91,28 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
     });
     expect(response.statusCode).toBe(200);
 
-    // 1. The session is over.
+    /**
+     * 1. The session is GONE, not marked.
+     *
+     * v40 removed `terminatedAt` on purpose, and asserting absence is the stronger test. A record
+     * left behind marked dead is a record some query forgets to filter, and the filter being
+     * forgotten is exactly how a revoked session keeps working. Absence cannot be forgotten.
+     */
     const ended = await app.db.collection('session').findOne({ sessionId: session.sessionId });
-    expect(ended?.terminatedAt, 'the session was not terminated').toBeTruthy();
+    expect(ended, 'the session document survived the logout').toBeNull();
 
-    // 2. Nothing issued under it survives. Revoked rather than deleted, so "what was live when this
-    //    happened" is still answerable afterwards.
-    const outstanding = await app.db.collection('token')
-      .find({ sessionId: session.sessionId, revokedAt: { $exists: false } })
-      .toArray();
-    expect(outstanding, 'tokens from the ended session are still live').toEqual([]);
+    /**
+     * 2. Nothing issued under it survives, and there is nothing to look for.
+     *
+     * No token was ever written down: both kinds are JWTs, so storing one kept a redeemable
+     * artifact at rest for no information the token did not already carry. What made access live
+     * was the session, and the session is gone.
+     */
+    const tokenCollections = await app.db.listCollections({ name: 'token' }).toArray();
+    expect(tokenCollections, 'a token collection exists again').toEqual([]);
 
     // 3. The generation is retired, which covers anything the authority never recorded.
-    const after = await app.db.collection('identity').findOne({ subjectId: session.subjectId });
+    const after = await app.db.collection('principal').findOne({ subjectId: session.subjectId });
     expect(
       (after?.sessionEpoch as number) ?? 0,
       'the epoch did not rise, so an unrecorded token would still be honoured',

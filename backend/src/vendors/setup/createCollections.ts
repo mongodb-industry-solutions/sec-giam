@@ -1,6 +1,7 @@
 import { Db } from 'mongodb';
-import { GIAM_COLLECTIONS, SECURITY_EVENT_COLLECTION } from '../../shared/models/collections';
+import { GIAM_COLLECTIONS, AUDIT_COLLECTION } from '../../shared/models/collections';
 import { buildEncryptedFieldsMaps, GiamDeks } from '../encryption/encryptedFieldsMaps';
+import { config } from '../../config';
 
 /**
  * Creates every collection from the canonical registry.
@@ -16,6 +17,48 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
   const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
   const maps = buildEncryptedFieldsMaps(deks);
 
+  /**
+   * On `--reset`, drop collections the registry NO LONGER NAMES as well as the ones it does.
+   *
+   * Without this the loop below only ever touches registered collections, so a collection the model
+   * has dropped or renamed away survives every reset forever. That is not a cosmetic leftover: its
+   * `encryptedFields` still reference DEKs the rebuilt vault no longer holds, so validation reports
+   * a stale DEK on a collection nothing reads, and "rebuild with --reset" does not fix it because
+   * the reset is exactly what skips it.
+   *
+   * Guarded to `reset`, so an ordinary setup run never removes anything.
+   */
+  if (reset) {
+    const registered = new Set<string>(GIAM_COLLECTIONS.map((spec) => spec.name));
+    for (const name of existing) {
+      if (registered.has(name)) continue;
+      /**
+       * The driver's encrypted-state collections go with their parent, not on their own.
+       *
+       * Unless the parent is gone. `enxcol_.identity.esc` outlived `identity` through the rename to
+       * `principal`, and a state collection whose parent no longer exists holds index metadata for
+       * DEKs the rebuilt vault does not have. It is unreachable, unreadable and indistinguishable
+       * from a live one to anybody auditing the database.
+       */
+      if (name.startsWith('enxcol_.')) {
+        const parent = name.split('.')[1];
+        if (parent && !registered.has(parent)) {
+          await db.collection(name).drop();
+          existing.delete(name);
+          console.log(`  dropped: ${name} (encrypted state for a collection that is gone)`);
+        }
+        continue;
+      }
+      // The server's own namespaces, including the view a time series collection creates. Dropping
+      // one is not permitted and is not ours to attempt.
+      if (name.startsWith('system.')) continue;
+      if (name === config.mongodb.keyVaultCollection) continue;
+      await db.collection(name).drop();
+      existing.delete(name);
+      console.log(`  dropped: ${name} (the model no longer names it)`);
+    }
+  }
+
   for (const spec of GIAM_COLLECTIONS) {
     if (existing.has(spec.name) && !reset) {
       const note = spec.encrypted ? ' (already exists; encryptedFields changes need --reset)' : ' (already exists)';
@@ -30,16 +73,58 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
     if (spec.kind === 'timeseries') {
       // Append-only, high volume, queried by range. Seconds granularity: security events arrive in
       // bursts around a sign-in, and a coarser bucket would put a whole login flow in one document.
+      /**
+       * Retention, applied at creation, from configuration.
+       *
+       * A time series collection expires on its own time field, so this needs no TTL index. Zero
+       * disables it, for a deployment that archives externally and wants nothing removed here.
+       *
+       * Stated in the log because "long retention" was what the registry claimed while nothing
+       * implemented it, and a deployment could not say what its retention actually was.
+       */
+      const retentionDays = config.app.auditRetentionDays;
+      const expireAfterSeconds = retentionDays > 0 ? retentionDays * 86_400 : undefined;
       await db.createCollection(spec.name, {
         timeseries: { timeField: 'ts', metaField: 'meta', granularity: 'seconds' },
+        ...(expireAfterSeconds ? { expireAfterSeconds } : {}),
       });
-      console.log(`  created: ${spec.name} (time series) (${spec.purpose})`);
+      console.log(
+        `  created: ${spec.name} (time series, ${expireAfterSeconds ? `${retentionDays} day retention` : 'no expiry'})`
+        + ` (${spec.purpose})`,
+      );
       continue;
     }
 
     if (spec.encrypted) {
-      await db.createCollection(spec.name, { encryptedFields: maps[spec.name] as never });
-      console.log(`  created: ${spec.name} (QE) (${spec.purpose})`);
+      /**
+       * Created with the declared map, and DEGRADED if the driver cannot support it.
+       *
+       * `encryptedFieldsMaps` claims that on an older cluster the substring field "degrades to
+       * equality rather than failing setup". That was not true: the choice was made from a static
+       * configuration flag, so a deployment whose `crypt_shared` predates the substring query type
+       * failed here instead, leaving `principal` uncreated, unindexed and unencrypted. `setup:db`
+       * then reported `requires-reset` forever, because the reset is what had failed.
+       *
+       * The claim is now true. A refusal naming the query type is caught, the map is rebuilt with
+       * equality, and the loss of capability is stated rather than silent: administrative search by
+       * name FRAGMENT stops working, and somebody has to know that rather than discover it.
+       */
+      try {
+        await db.createCollection(spec.name, { encryptedFields: maps[spec.name] as never });
+        console.log(`  created: ${spec.name} (QE) (${spec.purpose})`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/queryType|substring/i.test(message)) throw err;
+
+        console.warn(
+          `  warn:    ${spec.name}: this driver refuses the declared query type, so the encrypted `
+          + 'name field falls back to equality. Search by name FRAGMENT will not work until '
+          + 'crypt_shared and the server support it.',
+        );
+        const degraded = buildEncryptedFieldsMaps(deks, { forceEquality: true });
+        await db.createCollection(spec.name, { encryptedFields: degraded[spec.name] as never });
+        console.log(`  created: ${spec.name} (QE, equality only) (${spec.purpose})`);
+      }
       continue;
     }
 
@@ -49,7 +134,7 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
 
   // Stated rather than assumed: the audit collection is the one that must never be created plain, or
   // a range query over it would work and a reviewer would never learn it is not a time series.
-  if (!existing.has(SECURITY_EVENT_COLLECTION) || reset) {
-    console.log(`  note:    ${SECURITY_EVENT_COLLECTION} is a time series; it cannot be converted in place`);
+  if (!existing.has(AUDIT_COLLECTION) || reset) {
+    console.log(`  note:    ${AUDIT_COLLECTION} is a time series; it cannot be converted in place`);
   }
 }

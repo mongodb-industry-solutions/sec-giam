@@ -24,7 +24,9 @@ async function corsPlugin(fastify: FastifyInstance) {
   await fastify.register(cors, {
     origin: buildOrigin(),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'If-Match', 'Idempotency-Key', 'X-Request-ID', 'DPoP'],
+    // Only headers the server actually honours. Idempotency-Key and DPoP were advertised here with
+    // nothing implementing them, which invites a client to rely on a guarantee that does not exist.
+    allowedHeaders: ['Content-Type', 'Authorization', 'If-Match', 'X-Request-ID'],
     exposedHeaders: ['ETag', 'X-Request-ID'],
     credentials: true,
   });

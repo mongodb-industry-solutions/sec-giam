@@ -6,10 +6,10 @@ import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { JwtTokenFormat } from '../services/jwtTokenFormat';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { canAuthenticate } from '../../directory/models/identity.model';
+import { canAuthenticate } from '../../directory/models/principal.model';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { oauthError } from '../../../shared/models/problem';
-import { RESOURCE_SERVER_COLLECTION } from '../../../shared/models/collections';
+import { RESOURCE_COLLECTION, GRANT_COLLECTION } from '../../../shared/models/collections';
 
 /**
  * Introspection and revocation: the centralised half of token validation.
@@ -68,7 +68,14 @@ export async function introspectController(fastify: FastifyInstance) {
             exp: { type: 'integer' },
             iat: { type: 'integer' },
             token_type: { type: 'string' },
-            permissions: { type: 'array', items: { type: 'object', additionalProperties: true } },
+            aud: { description: 'What the token is addressed to. Compare it against your own.' },
+            iss: { type: 'string' },
+            jti: { type: 'string', description: 'The identifier of this token, for one-time use or for naming it in an incident.' },
+            nbf: { type: 'integer' },
+            username: { type: 'string', description: 'The login identifier, per SCIM. Not a display name.' },
+            entitlements: { type: 'array', items: { type: 'string' } },
+            grant_id: { type: 'string', description: 'The consent this token was issued under.' },
+            txn: { type: 'string', description: 'The flow it belongs to, RFC 8417.' },
           },
           examples: [{ active: true, sub: 'ada', client_id: 'orders-web', scope: 'openid profile' }],
         },
@@ -80,7 +87,7 @@ export async function introspectController(fastify: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>;
 
     const realm = await new RealmService(fastify.db).byName(realmName);
-    if (!realm) return reply.status(401).send(oauthError(401, 'unknown realm'));
+    if (!realm) return reply.status(401).send(oauthError('invalid_client', 'unknown realm', 401));
 
     const clientAuth = new ClientAuthService(fastify.db);
     const outcome = await clientAuth.authenticate(
@@ -90,7 +97,7 @@ export async function introspectController(fastify: FastifyInstance) {
       // the token endpoint; it explains nothing here.
       { requireAuthentication: true, allowSoftAdmission: false },
     );
-    if ('error' in outcome) return reply.status(401).send(oauthError(401, outcome.description));
+    if ('error' in outcome) return reply.status(401).send(oauthError('invalid_client', outcome.description, 401));
 
     /**
      * Every negative answer is the same answer.
@@ -135,10 +142,46 @@ export async function introspectController(fastify: FastifyInstance) {
     };
 
     const issuer = new TokenIssuer(fastify.db, ring());
-    const record = typeof claims.jti === 'string' ? await issuer.findByJti(realm.realmId, claims.jti) : null;
-    // The authoritative part: a signature says it was issued, the record says whether it still counts.
-    if (!record) return reply.send(inactive);
-    if (record.revokedAt) return refused('token_revoked', claims.sub);
+
+    /**
+     * P6.8. The authoritative part answers from the SESSION, not from a stored token.
+     *
+     * A signature says the token was issued; the session says whether access is still live. That is
+     * the same question the old token row answered, asked of one document per session instead of one
+     * per token, and the absence of that document IS the revocation.
+     *
+     * A token with no `sid` carries no session by design: `client_credentials` creates none. Such a
+     * token is active for as long as its signature and expiry say, because there is nothing to
+     * revoke and pretending otherwise would make introspection lie.
+     */
+    const sid = typeof claims.sid === 'string' ? claims.sid : undefined;
+    if (sid) {
+      const live = await issuer.sessionIsLive(realm.realmId, sid);
+      if (!live) return refused('session_revoked', claims.sub);
+    }
+
+    /**
+     * The GRANT, which is the whole point of the centralised model.
+     *
+     * Revocation here was implemented as session deletion only, so a grant withdrawn while the
+     * session stayed live was reported `active: true` by the endpoint whose entire purpose is to
+     * be authoritative about revocation. A person could take an application's access away in the
+     * console and the application would keep working until the token expired.
+     *
+     * Only asked when the token names one: `client_credentials` and a first-party client carry no
+     * `grant_id`, and a lookup for a grant that was never meant to exist would be a read per
+     * introspection buying nothing.
+     */
+    const grantId = typeof claims.grant_id === 'string' ? claims.grant_id : undefined;
+    if (grantId) {
+      const grant = await fastify.db
+        .collection<{ grantId: string; status: string; expiresAt?: string }>(GRANT_COLLECTION)
+        .findOne({ realmId: realm.realmId, grantId }, { projection: { _id: 0, status: 1, expiresAt: 1 } });
+      if (!grant || grant.status !== 'active') return refused('grant_revoked', claims.sub);
+      if (grant.expiresAt && Date.parse(grant.expiresAt) <= Date.now()) {
+        return refused('grant_expired', claims.sub);
+      }
+    }
 
     /**
      * A caller may introspect only tokens addressed to it. Otherwise introspection becomes a way for
@@ -155,30 +198,49 @@ export async function introspectController(fastify: FastifyInstance) {
      */
     const audience = (Array.isArray(claims.aud) ? claims.aud : [claims.aud]).map(String);
     const servers = await fastify.db
-      .collection<{ audience: string }>(RESOURCE_SERVER_COLLECTION)
+      .collection<{ audience: string }>(RESOURCE_COLLECTION)
       .find({ realmId: realm.realmId }, { projection: { _id: 0, audience: 1 } })
       .toArray();
     const addressable = new Set([outcome.client.clientId, ...servers.map((server) => server.audience)]);
     if (!audience.some((entry) => addressable.has(entry))) return reply.send(inactive);
 
     // Current status, not status at issuance. This is the whole reason to ask.
-    if (claims.sub && claims.sub !== record.clientId) {
+    // A machine token's `sub` is its own owning principal, so comparing against the presenting
+    // client's id is what tells a person's token apart from a service's without a stored row.
+    let username: string | undefined;
+    if (claims.sub && claims.sub !== claims.client_id) {
       const identity = await new DirectoryService(fastify.db).findBySubjectId(String(claims.sub));
       if (!identity || !canAuthenticate(identity)) return refused('subject_cannot_authenticate', claims.sub);
+      username = identity.userName;
       if (typeof claims.session_epoch === 'number' && claims.session_epoch < identity.sessionEpoch) {
         return refused('session_epoch_raised', claims.sub);
       }
     }
 
+    /**
+     * RFC 7662 2.2. `aud` and `iss` are the members a resource server MUST compare, and they were
+     * both missing, so a resource server relying on introspection alone could not perform audience
+     * validation at all: it learned that a token was active without learning who it was for.
+     *
+     * `username` is the human-readable identifier the specification names, which is `userName` in
+     * SCIM terms and therefore a login rather than a display name.
+     */
     return reply.send({
       active: true,
       scope: claims.scope,
       client_id: claims.client_id,
       sub: claims.sub,
+      ...(claims.aud !== undefined ? { aud: claims.aud } : {}),
+      ...(claims.iss !== undefined ? { iss: claims.iss } : {}),
+      ...(claims.jti !== undefined ? { jti: claims.jti } : {}),
+      ...(claims.nbf !== undefined ? { nbf: claims.nbf } : {}),
+      ...(username ? { username } : {}),
       exp: claims.exp,
       iat: claims.iat,
       token_type: 'Bearer',
-      ...(claims.permissions ? { permissions: claims.permissions } : {}),
+      ...(claims.entitlements ? { entitlements: claims.entitlements } : {}),
+      ...(claims.grant_id ? { grant_id: claims.grant_id } : {}),
+      ...(claims.txn ? { txn: claims.txn } : {}),
     });
   });
 
@@ -225,7 +287,7 @@ export async function introspectController(fastify: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>;
 
     const realm = await new RealmService(fastify.db).byName(realmName);
-    if (!realm) return reply.status(401).send(oauthError(401, 'unknown realm'));
+    if (!realm) return reply.status(401).send(oauthError('invalid_client', 'unknown realm', 401));
 
     const clientAuth = new ClientAuthService(fastify.db);
     const outcome = await clientAuth.authenticate(
@@ -235,30 +297,34 @@ export async function introspectController(fastify: FastifyInstance) {
       // the token endpoint; it explains nothing here.
       { requireAuthentication: true, allowSoftAdmission: false },
     );
-    if ('error' in outcome) return reply.status(401).send(oauthError(401, outcome.description));
+    if ('error' in outcome) return reply.status(401).send(oauthError('invalid_client', outcome.description, 401));
 
     const issuer = new TokenIssuer(fastify.db, ring());
     const presented = String(body.token ?? '');
     let revoked = false;
 
-    // A refresh token is opaque and carries its identifier; an access token is a JWT and carries it
-    // as a claim. Both are accepted, because a client should not have to know which it holds.
-    // Carried out so the event names the person the token was for, not only the client that asked.
+    /**
+     * RFC 7009. Revoking a token means DELETING THE SESSION it belongs to.
+     *
+     * Both token kinds are JWTs now and both carry `sid`, so one path handles them and a client
+     * does not have to know which it holds. The session is what access depends on, so removing it
+     * is what "revoked" can honestly mean: there is no stored token to mark.
+     *
+     * Accepted and stated: the presented access token keeps verifying until it expires, because it
+     * is verified without touching the database. With a five minute lifetime that window is the
+     * revocation objective, and no design that verifies locally can do better.
+     *
+     * The subject is carried out so the event names the person the token was for, not only the
+     * client that asked.
+     */
     let subjectId: string | undefined;
 
-    const asRefresh = await issuer.findRefreshToken(realm.realmId, presented);
-    if (asRefresh && asRefresh.clientId === outcome.client.clientId) {
-      subjectId = asRefresh.subjectId;
-      revoked = await issuer.revoke(realm.realmId, asRefresh.jti, 'client_requested');
-    } else {
-      const claims = await new JwtTokenFormat(ring(), realm.realmId).inspect(presented);
-      if (claims && typeof claims.jti === 'string') {
-        const record = await issuer.findByJti(realm.realmId, claims.jti);
-        if (record && record.clientId === outcome.client.clientId) {
-          subjectId = record.subjectId;
-          revoked = await issuer.revoke(realm.realmId, record.jti, 'client_requested');
-        }
-      }
+    const claims = await new JwtTokenFormat(ring(), realm.realmId).inspect(presented);
+    const sid = claims && typeof claims.sid === 'string' ? claims.sid : undefined;
+    const tokenClientId = claims && typeof claims.client_id === 'string' ? claims.client_id : undefined;
+    if (sid && tokenClientId === outcome.client.clientId) {
+      subjectId = typeof claims?.sub === 'string' ? claims.sub : undefined;
+      revoked = (await issuer.revokeSession(realm.realmId, sid)) > 0;
     }
 
     if (revoked) {
@@ -274,7 +340,15 @@ export async function introspectController(fastify: FastifyInstance) {
       });
     }
 
-    return reply.send({ revoked });
+    /**
+     * 200 with NO BODY, per RFC 7009 2.2.
+     *
+     * It answered `{ revoked: true | false }`, which contradicted the comment three lines above it:
+     * reporting whether anything was revoked tells a caller which of the tokens it holds are real,
+     * which is exactly what answering identically was meant to prevent. The value is not lost, it is
+     * in the trail, where it belongs and where the caller cannot read it.
+     */
+    return reply.status(200).send();
   });
 }
 

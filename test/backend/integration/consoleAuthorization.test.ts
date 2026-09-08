@@ -11,7 +11,7 @@
  * Skipped unless the authority is listening.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createHash, randomBytes } from 'crypto';
+import { tokenFor as runFlow } from './support/authorizationFlow';
 
 const GIAM = process.env.GIAM_BASE_URL ?? 'http://127.0.0.1:8085';
 const DEMO_PASSWORD = 'demo-password';
@@ -33,12 +33,12 @@ const PLATFORM = { clientId: 'giam-console', redirectUri: 'http://localhost:8086
 const BANK = { clientId: 'bankcore-console', redirectUri: 'http://localhost:8084/api/auth/callback' };
 
 const MATRIX: Expectation[] = [
-  { label: 'manager', realm: 'leafypay', login: 'Alex Rivera', ...PLATFORM, views: 'all', manageable: 'all-but-keys', identities: 200 },
-  { label: 'security auditor', realm: 'leafypay', login: 'Diego Sans', ...PLATFORM, views: 'all', manageable: 'none', identities: 200 },
-  { label: 'customer', realm: 'leafypay', login: 'Luis Fernandez', ...PLATFORM, views: 'none', manageable: 'none', identities: 403 },
-  { label: 'bank administrator', realm: 'bankcore', login: 'Samuel Adeyemi', ...BANK, views: 'all', manageable: 'all-but-keys', identities: 200 },
-  { label: 'bank compliance', realm: 'bankcore', login: 'Ingrid Larsen', ...BANK, views: 'all', manageable: 'none', identities: 200 },
-  { label: 'bank customer', realm: 'bankcore', login: 'Elena Duarte', ...BANK, views: 'none', manageable: 'none', identities: 403 },
+  { label: 'manager', realm: 'leafypay', login: 'alex.rivera', ...PLATFORM, views: 'all', manageable: 'all-but-keys', identities: 200 },
+  { label: 'security auditor', realm: 'leafypay', login: 'diego.sans', ...PLATFORM, views: 'all', manageable: 'none', identities: 200 },
+  { label: 'customer', realm: 'leafypay', login: 'luis.fernandez', ...PLATFORM, views: 'none', manageable: 'none', identities: 403 },
+  { label: 'bank administrator', realm: 'leafypay', login: 'samuel.adeyemi', ...BANK, views: 'all', manageable: 'all-but-keys', identities: 200 },
+  { label: 'bank compliance', realm: 'leafypay', login: 'ingrid.larsen', ...BANK, views: 'all', manageable: 'none', identities: 200 },
+  { label: 'bank customer', realm: 'leafypay', login: 'elena.duarte', ...BANK, views: 'none', manageable: 'none', identities: 403 },
 ];
 
 async function reachable(): Promise<boolean> {
@@ -50,51 +50,18 @@ async function reachable(): Promise<boolean> {
   }
 }
 
-/** A real access token for a persona, through the ordinary code flow. */
+/**
+ * A real access token for a persona, through the ordinary code flow.
+ *
+ * The flow lives in `support/authorizationFlow` now. This helper had grown its own copy of it,
+ * including the two-step consent dance the endpoint used to require, and that copy is what broke
+ * when the endpoint became conforming. Each expectation names its own client, so the shared helper
+ * takes one.
+ */
 async function tokenFor(expectation: Expectation): Promise<string> {
-  const session = await fetch(`${GIAM}/realms/${expectation.realm}/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ login: expectation.login, password: DEMO_PASSWORD }),
-    signal: AbortSignal.timeout(20000),
+  return runFlow(GIAM, expectation.realm, expectation.login, DEMO_PASSWORD, {
+    client: { clientId: expectation.clientId, redirectUri: expectation.redirectUri },
   });
-  if (!session.ok) return '';
-  const { sessionId } = await session.json() as { sessionId: string };
-
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-
-  const authorize = await fetch(`${GIAM}/realms/${expectation.realm}/protocol/openid-connect/auth`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_id: expectation.clientId,
-      redirect_uri: expectation.redirectUri,
-      response_type: 'code',
-      scope: 'openid profile email',
-      session_id: sessionId,
-      code_challenge: challenge,
-      code_challenge_method: 'S256',
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!authorize.ok) return '';
-  const { code } = await authorize.json() as { code: string };
-
-  const token = await fetch(`${GIAM}/realms/${expectation.realm}/protocol/openid-connect/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: expectation.redirectUri,
-      client_id: expectation.clientId,
-      code_verifier: verifier,
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!token.ok) return '';
-  return (await token.json() as { access_token: string }).access_token;
 }
 
 describe('v39: administering the authority is authorised by role', () => {
@@ -141,4 +108,53 @@ describe('v39: administering the authority is authorised by role', () => {
       expect(guarded.status).toBe(expectation.identities);
     });
   }
+});
+
+/**
+ * v42: what `GET /me/permissions` answers, which is what the console's own `can()` falls back to.
+ *
+ * The access token carries roles rather than entitlements by default, so a screen deciding what to
+ * show cannot read the token alone: this endpoint is the console's only reliable source for that
+ * decision, and a manager who cannot see `sessions:view` here is a manager whose realm-wide session
+ * list silently stays hidden in the UI even though the API would have honoured the request.
+ */
+describe('v42: a principal reads their own effective permissions, fresh', () => {
+  let live = false;
+
+  beforeAll(async () => { live = await reachable(); });
+
+  it('refuses with no credential at all', async () => {
+    if (!live) return;
+    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, { signal: AbortSignal.timeout(20000) });
+    expect(response.status).toBe(401);
+  });
+
+  it('a manager holds sessions:view and sessions:manage, realm wide', async () => {
+    if (!live) return;
+    const token = await tokenFor(MATRIX[0]);
+    expect(token).toBeTruthy();
+    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { permissions: string[]; roles: string[]; scopeKind: string };
+    expect(body.scopeKind).toBe('all');
+    expect(body.permissions).toContain('sessions:view');
+    expect(body.permissions).toContain('sessions:manage');
+  });
+
+  it('an ordinary customer holds no authority permission at all', async () => {
+    if (!live) return;
+    const token = await tokenFor(MATRIX[2]);
+    expect(token).toBeTruthy();
+    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { permissions: string[]; scopeKind: string };
+    expect(body.scopeKind).toBe('self');
+    expect(body.permissions).not.toContain('sessions:view');
+  });
 });

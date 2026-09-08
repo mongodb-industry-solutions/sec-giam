@@ -1,12 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { v5 as uuidv5 } from 'uuid';
-import {
-  RESOURCE_SERVER_COLLECTION, PERMISSION_COLLECTION, REALM_COLLECTION,
-} from '../../../shared/models/collections';
-import { ResourceServerRecord, PermissionRecord } from '../models/authorization.model';
+import { RESOURCE_COLLECTION, REALM_COLLECTION } from '../../../shared/models/collections';
 import { newMeta, touchMeta, DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
 import { requireAdmin } from '../../../vendors/middleware/adminAuth';
 import { problem } from '../../../shared/models/problem';
+import { ResourceRecord } from '../models/resource.model';
 
 // The same namespace the seeders use, so a catalog registered at boot and one seeded resolve to one
 // record rather than two that look alike.
@@ -24,7 +22,7 @@ const AUTHORIZATION_NAMESPACE = 'a1c4e7b2-5d9f-4a3c-8e6b-2f7d1c9a4b83';
  * that disappears from a catalog is marked DEPRECATED rather than deleted, because grants already
  * reference it and deleting it would leave those grants unexplainable.
  */
-export async function resourceServerController(fastify: FastifyInstance) {
+export async function resourceController(fastify: FastifyInstance) {
   fastify.put('/admin/resource-servers/:name/permissions', {
     preHandler: requireAdmin,
     schema: {
@@ -50,7 +48,7 @@ export async function resourceServerController(fastify: FastifyInstance) {
           name: { type: 'string' },
           realm: { type: 'string', description: 'Defaults to the realm whose name matches the audience.' },
           audience: { type: 'string', examples: ['orders-api'] },
-          permissionCatalogVersion: { type: 'string', examples: ['3'] },
+          catalogVersion: { type: 'integer', examples: [3] },
           validationMode: { type: 'string', enum: ['local-jwks', 'introspection', 'hybrid'] },
           permissions: {
             type: 'array',
@@ -72,14 +70,14 @@ export async function resourceServerController(fastify: FastifyInstance) {
           description: 'The catalog as the authority now holds it.',
           type: 'object',
           additionalProperties: false,
-          required: ['resourceServerId', 'registered', 'deprecated'],
+          required: ['resourceId', 'registered', 'deprecated'],
           properties: {
-            resourceServerId: { type: 'string' },
+            resourceId: { type: 'string' },
             registered: { type: 'integer', description: 'Permissions in the catalog after this call.' },
             deprecated: { type: 'integer', description: 'Permissions no longer declared, kept for existing grants.' },
-            permissionCatalogVersion: { type: 'string' },
+            catalogVersion: { type: 'integer' },
           },
-          examples: [{ resourceServerId: 'a1c4…', registered: 27, deprecated: 0, permissionCatalogVersion: '1' }],
+          examples: [{ resourceId: 'a1c4…', registered: 27, deprecated: 0, catalogVersion: 1 }],
         },
         401: { $ref: 'Problem#', description: 'No valid administrative token was presented.' },
         404: { $ref: 'Problem#', description: 'No such realm.' },
@@ -91,8 +89,8 @@ export async function resourceServerController(fastify: FastifyInstance) {
     const body = request.body as {
       realm?: string;
       audience: string;
-      permissionCatalogVersion?: string;
-      validationMode?: ResourceServerRecord['validationMode'];
+      catalogVersion?: number;
+      validationMode?: ResourceRecord['validationMode'];
       permissions: Array<{ resource: string; action: string; description?: string }>;
     };
 
@@ -103,18 +101,19 @@ export async function resourceServerController(fastify: FastifyInstance) {
       { realmId: string; tenantId: string } | null;
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm', realmName));
 
-    const resourceServerId = uuidv5(`resource-server:${realm.realmId}:${name}`, AUTHORIZATION_NAMESPACE);
-    const servers = fastify.db.collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION);
-    const permissions = fastify.db.collection<PermissionRecord>(PERMISSION_COLLECTION);
+    const resourceId = uuidv5(`resource-server:${realm.realmId}:${name}`, AUTHORIZATION_NAMESPACE);
+    const servers = fastify.db.collection<ResourceRecord>(RESOURCE_COLLECTION);
 
-    const existing = await servers.findOne({ resourceServerId });
-    const version = body.permissionCatalogVersion ?? '1';
+    const existing = await servers.findOne({ resourceId });
+    // A NUMBER now, not a string: it is compared and incremented, and '10' < '9' as a string is the
+    // kind of ordering bug that only shows up on the tenth deploy.
+    const version = Number(body.catalogVersion ?? 1);
     if (existing) {
-      await servers.updateOne({ resourceServerId }, {
+      await servers.updateOne({ resourceId }, {
         $set: {
           name,
           audience: body.audience,
-          permissionCatalogVersion: version,
+          catalogVersion: version,
           ...(body.validationMode ? { validationMode: body.validationMode } : {}),
           meta: touchMeta(existing.meta),
         },
@@ -123,62 +122,97 @@ export async function resourceServerController(fastify: FastifyInstance) {
       await servers.insertOne({
         realmId: realm.realmId,
         tenantId: realm.tenantId ?? DEFAULT_TENANT_ID,
-        resourceServerId,
+        resourceId,
         name,
         audience: body.audience,
-        permissionCatalogVersion: version,
+        // An API is one kind of resource among several. A tool and a Model Context Protocol server
+        // are the others, and they go through the same decision function.
+        kind: 'api',
+        catalogVersion: version,
+        actions: [],
+        status: 'active',
         validationMode: body.validationMode ?? 'hybrid',
         registeredAt: new Date().toISOString(),
-        meta: newMeta('ResourceServer'),
+        meta: newMeta('Resource'),
       });
     }
 
-    const declared = new Set<string>();
+    /**
+     * The catalog is replaced as a BLOCK, per resource type, and the version is bumped.
+     *
+     * P5.2. Row by row edits were how a catalog drifted: a permission removed from the application
+     * but left in the database looked exactly like one that still worked, and reviving it needed a
+     * `deprecated` flag to be flipped back. Declaring the whole set means the database says what the
+     * application says, and nothing else.
+     *
+     * Each resource TYPE the application declares becomes a resource of its own, parented to the
+     * API. That is what lets a permission stay the single string `type:action` while the audience
+     * still knows which types it enforces.
+     */
+    const actionsByType = new Map<string, Set<string>>();
     for (const permission of body.permissions) {
-      const key = `${permission.resource}:${permission.action}`;
-      declared.add(key);
-      const permissionId = uuidv5(
-        `permission:${resourceServerId}:${permission.resource}:${permission.action}`,
-        AUTHORIZATION_NAMESPACE,
-      );
-      await permissions.updateOne(
-        { permissionId },
-        {
-          $set: {
-            resourceServerId,
-            resource: permission.resource,
-            action: permission.action,
-            description: permission.description ?? `${permission.action} on ${permission.resource}`,
-            // Re-declaring revives one that had been retired, so an application that removed a guard
-            // and put it back does not need anyone to intervene.
-            deprecated: false,
-          },
-          $setOnInsert: {
-            permissionId,
-            realmId: realm.realmId,
-            tenantId: realm.tenantId ?? DEFAULT_TENANT_ID,
-            meta: newMeta('Permission'),
-          },
-        },
-        { upsert: true },
-      );
+      const held = actionsByType.get(permission.resource) ?? new Set<string>();
+      held.add(permission.action);
+      actionsByType.set(permission.resource, held);
     }
 
-    // Anything the application no longer declares. Marked, never removed: a role may still grant it,
-    // and deleting the catalog row would leave that grant referring to nothing.
-    const held = await permissions.find({ resourceServerId }, { projection: { _id: 0 } }).toArray();
-    let deprecated = 0;
-    for (const permission of held) {
-      if (declared.has(`${permission.resource}:${permission.action}`)) continue;
-      await permissions.updateOne({ permissionId: permission.permissionId }, { $set: { deprecated: true } });
-      deprecated += 1;
+    let registered = 0;
+    for (const [type, actions] of actionsByType) {
+      const childId = uuidv5(`resource:${realm.realmId}:${name}:${type}`, AUTHORIZATION_NAMESPACE);
+      const declaredActions = [...actions].sort();
+      const child = await servers.findOne({ resourceId: childId });
+      if (child) {
+        await servers.updateOne({ resourceId: childId }, {
+          $set: {
+            name: type,
+            actions: declaredActions,
+            // Bumped whenever the set changes, so drift is visible rather than silent.
+            catalogVersion: JSON.stringify(child.actions ?? []) === JSON.stringify(declaredActions)
+              ? child.catalogVersion
+              : child.catalogVersion + 1,
+            status: 'active',
+            meta: touchMeta(child.meta),
+          },
+        });
+      } else {
+        await servers.insertOne({
+          realmId: realm.realmId,
+          tenantId: realm.tenantId ?? DEFAULT_TENANT_ID,
+          resourceId: childId,
+          name: type,
+          // An object the API protects, reached through it rather than addressed by an audience of
+          // its own.
+          kind: 'object',
+          parentResourceId: resourceId,
+          actions: declaredActions,
+          catalogVersion: 1,
+          status: 'active',
+          registeredAt: new Date().toISOString(),
+          meta: newMeta('Resource'),
+        });
+      }
+      registered += declaredActions.length;
+    }
+
+    // A type the application no longer declares at all. Marked withdrawn, never deleted: a role may
+    // still grant something over it, and removing the resource would leave that grant referring to
+    // nothing with no way to find out what it once meant.
+    const children = await servers
+      .find({ realmId: realm.realmId, parentResourceId: resourceId }, { projection: { _id: 0 } })
+      .toArray();
+    let withdrawn = 0;
+    for (const child of children) {
+      if (actionsByType.has(child.name)) continue;
+      if (child.status === 'withdrawn') continue;
+      await servers.updateOne({ resourceId: child.resourceId }, { $set: { status: 'withdrawn' } });
+      withdrawn += 1;
     }
 
     return reply.send({
-      resourceServerId,
-      registered: declared.size,
-      deprecated,
-      permissionCatalogVersion: version,
+      resourceId,
+      registered,
+      deprecated: withdrawn,
+      catalogVersion: version,
     });
   });
 }

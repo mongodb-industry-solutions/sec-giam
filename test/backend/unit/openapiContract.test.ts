@@ -40,14 +40,32 @@ const PROVABLY_PUBLIC = new Set([
   // either would break every conforming client and protect nothing.
   'get /realms/{realm}/.well-known/openid-configuration',
   'get /realms/{realm}/.well-known/oauth-authorization-server',
+  // RFC 8414 3.1 puts the well-known segment BETWEEN the host and the path when the issuer has
+  // path components, so this is the location a client following that RFC actually requests.
+  'get /.well-known/oauth-authorization-server/realms/{realm}',
   'get /realms/{realm}/protocol/openid-connect/certs',
 
   // Public by nature: it is where a credential is presented, so it cannot require one first.
   'post /realms/{realm}/login',
 
-  // Public because a session is the credential, and the session id is in the body. A client
-  // secret here would exclude the public clients this endpoint exists to serve.
-  'post /realms/{realm}/protocol/openid-connect/auth',
+  /**
+   * The authorization endpoint, and the consent decision that belongs to it.
+   *
+   * Public BY SPECIFICATION and not by convenience: RFC 6749 3.1 has a browser arrive here from a
+   * relying party, before anything about this authority is known to it, so a bearer token would make
+   * the flow unreachable. Neither is unauthenticated in EFFECT, which is the change v41 P4 made.
+   * `auth` reads the session from a cookie and redirects to sign-in when there is none, and
+   * `auth/consent` refuses with 401 without one, so the party that approves is always the person the
+   * browser is signed in as. They are listed here rather than given a `security` entry because
+   * `security` describes bearer schemes and a cookie is not one.
+   *
+   * The previous entry said "a session is the credential, and the session id is in the body", which
+   * was an accurate description of the defect: a session identifier accepted from a caller as a
+   * bearer credential, on a route nothing protected.
+   */
+  'get /realms/{realm}/protocol/openid-connect/auth',
+  'get /realms/{realm}/protocol/openid-connect/auth/consent',
+  'post /realms/{realm}/protocol/openid-connect/auth/consent',
 
   // Public because a session identifier is the thing being surrendered. Requiring a credential to
   // END a session would leave a session alive whenever the credential was the problem.
@@ -185,8 +203,17 @@ describe('v39 P0.4: OpenAPI is the contract, enforced in CI', () => {
 
   it('carries at least one response example wherever it returns content', () => {
     for (const { path, method, operation } of operations()) {
-      const contents = Object.values(operation.responses ?? {})
-        .flatMap((response) => Object.values(response.content ?? {}));
+      const contents = Object.entries(operation.responses ?? {})
+        /**
+         * A redirect and a 204 carry no body, so there is no example to give.
+         *
+         * The document says they have `content: application/json` only because the emitter defaults
+         * to it for any declared response, and satisfying this rule by inventing a schema for a
+         * body that is never sent would document a lie to make a test pass. v41 P4 added the first
+         * 302 on this surface, which is what surfaced the gap in the rule.
+         */
+        .filter(([status]) => !status.startsWith('3') && status !== '204')
+        .flatMap(([, response]) => Object.values(response.content ?? {}));
       if (contents.length === 0) continue;
       const hasExample = contents.some((media) => {
         const schema = media.schema as { example?: unknown; examples?: unknown } | undefined;

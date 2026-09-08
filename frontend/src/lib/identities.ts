@@ -1,5 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { callApi } from './console';
+
 /**
  * The principal directory, as the console sees it.
  *
@@ -33,7 +36,7 @@ export interface ScimList {
 export interface PrincipalExtension {
   kind?: string;
   lifecycleState?: string;
-  providerId?: string;
+  domainId?: string;
   accountHolderRef?: string;
 }
 
@@ -58,4 +61,35 @@ export type FilterAttribute = 'none' | 'userName' | 'externalId' | 'active';
 export function scimFilter(attribute: FilterAttribute, value: string): string | undefined {
   if (attribute === 'none' || !value) return undefined;
   return `${attribute} eq "${value}"`;
+}
+
+interface DomainSummary {
+  domainId: string;
+  displayName: string;
+}
+
+/**
+ * Which authentication path each principal came through, by name rather than by identifier.
+ *
+ * Read once and shared: a principal names its `domainId`, never the path's display name, so every
+ * screen that shows "whose directory is this" would otherwise run its own lookup. A domain is
+ * realm-scoped and few, so one read for the whole page is the right shape, not one per row.
+ */
+export function useDomainNames(): { name: (domainId?: string) => string | undefined; loading: boolean } {
+  const [domains, setDomains] = useState<DomainSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    callApi<{ items: DomainSummary[] }>('/domains', { query: { limit: 200 }, subject: 'the authentication paths of this realm' })
+      .then((body) => { if (live) setDomains(body.items); })
+      .catch(() => { if (live) setDomains([]); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, []);
+
+  return {
+    name: (domainId) => (domainId ? domains.find((domain) => domain.domainId === domainId)?.displayName : undefined),
+    loading,
+  };
 }

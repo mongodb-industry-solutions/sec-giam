@@ -85,8 +85,10 @@ export function UserMenu({ claims, onSignOut }: { claims: Claims; onSignOut: () 
               </span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-white">{who}</p>
+                {/* The name and the address, which is what identifies a person to themselves. The
+                    subject id lives on the profile screen: it is an opaque identifier, it says
+                    nothing anybody can act on here, and it is not a name. */}
                 {email && <p className="truncate text-[11px] text-gray-300" title={email}>{email}</p>}
-                <p className="truncate font-mono text-[10px] text-gray-400" title={claims.sub}>{claims.sub}</p>
               </div>
             </div>
 

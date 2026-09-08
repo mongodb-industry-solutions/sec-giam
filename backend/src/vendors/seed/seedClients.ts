@@ -3,16 +3,17 @@ import * as bcrypt from 'bcryptjs';
 import { v5 as uuidv5 } from 'uuid';
 import { clientSecretFor } from '@leafypay/platform-links';
 import {
-  CLIENT_COLLECTION, REALM_COLLECTION, IDENTITY_COLLECTION, ROLE_ASSIGNMENT_COLLECTION, ROLE_COLLECTION,
-  PERMISSION_COLLECTION, RESOURCE_SERVER_COLLECTION,
+  CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION,
+  RESOURCE_COLLECTION,
 } from '../../shared/models/collections';
-import { ClientRecord } from '../../modules/oauth/models/client.model';
-import { IdentityRecord } from '../../modules/directory/models/identity.model';
-import {
-  RoleAssignmentRecord, RoleRecord, RolePermission, PermissionRecord, ResourceServerRecord,
-} from '../../modules/authorization/models/authorization.model';
+import { OAuthClient } from '../../modules/oauth/models/client.model';
+import { PrincipalRecord } from '../../modules/directory/models/principal.model';
+import { RoleRecord } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
-import { upsertSeed } from './upsertSeed';
+import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
+import { CredentialRecord } from '../../modules/directory/models/credential.model';
+import { ResourceRecord, permissionString } from '../../modules/authorization/models/resource.model';
+import { clientMetadata } from '../../modules/oauth/models/client.model';
 import { readSeedFile } from './readSeedFile';
 
 /**
@@ -35,31 +36,48 @@ interface ClientFixture {
   realm: string;
   clientId: string;
   clientName: string;
-  clientType: ClientRecord['clientType'];
+  clientType: OAuthClient['clientType'];
   redirectUris: string[];
   postLogoutRedirectUris?: string[];
-  grantTypes: ClientRecord['grantTypes'];
+  grantTypes: OAuthClient['grantTypes'];
   scope: string;
   requirePkce: boolean;
-  tokenEndpointAuthMethod: ClientRecord['tokenEndpointAuthMethod'];
-  applicationType?: ClientRecord['applicationType'];
-  status: ClientRecord['status'];
-  backchannel?: ClientRecord['backchannel'];
+  tokenEndpointAuthMethod: OAuthClient['tokenEndpointAuthMethod'];
+  applicationType?: OAuthClient['applicationType'];
+  status: OAuthClient['status'];
+  backchannel?: OAuthClient['backchannel'];
   demoRoster?: string[];
+  /** Which resource servers a token for this client is addressed to. Declared, never inferred. */
+  audience?: string[];
   /** Only the authority's own console. Absent means the client asks for consent. */
   firstParty?: boolean;
   /** A set: every owner administers the registration equally, and there is never zero of them. */
   owners?: Array<{ kind: string; ref: string; displayName?: string }>;
   /** Present when this client is a principal in its own right rather than an application's agent. */
   serviceIdentity?: {
-    kind: IdentityRecord['kind'];
-    userName: string;
+    kind: PrincipalRecord['kind'];
+    /**
+     * The NAME to show. The login is the `clientId`, and is not repeated here.
+     *
+     * It was `userName`, holding strings like "LeafyPay, as a registered third party": a display
+     * name in the field that carries the unique login index, which is the same defect the human
+     * fixtures had. A machine's identifier is the client id it authenticates as, which is already
+     * this record's `subjectId`.
+     */
+    displayName: string;
     roleName?: string;
     owner?: { kind: string; ref: string; displayName?: string };
     /** Which resource server the permissions below belong to. */
     resourceServer?: string;
     permissions?: Record<string, string[]>;
   };
+  /**
+   * What this client's resource server tells a person each scope means.
+   *
+   * On the fixture because the vocabulary is the deployment's. `required` marks a scope the flow
+   * cannot proceed without, which is `openid` and, in practice, nothing else.
+   */
+  scopeDescriptions?: Array<{ name: string; description: string; required?: boolean }>;
 }
 
 export async function seedClients(db: Db): Promise<void> {
@@ -70,9 +88,9 @@ export async function seedClients(db: Db): Promise<void> {
     .toArray() as unknown as Array<{ realmId: string; name: string }>;
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
 
-  const clients = db.collection<ClientRecord>(CLIENT_COLLECTION);
-  const identities = db.collection<IdentityRecord>(IDENTITY_COLLECTION);
-  const assignments = db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
+  const clients = db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
+  const identities = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
+
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
 
   const now = new Date().toISOString();
@@ -89,47 +107,73 @@ export async function seedClients(db: Db): Promise<void> {
       ? clientSecretFor(fixture.clientId)
       : undefined;
 
-    await upsertSeed<ClientRecord>(
+    /**
+     * A client registration is a credential of type `oauth_client`.
+     *
+     * The hash goes in ON INSERT ONLY, never as a field the seeder owns and compares. bcrypt salts
+     * randomly, so a freshly computed hash never equals the stored one and treating it as owned made
+     * every reseed rewrite every client. The secret itself is derived from the client id, so
+     * re-hashing buys nothing: what matters is that the stored hash verifies.
+     */
+    await upsertSeed<CredentialRecord>(
       clients,
-      { realmId, clientId: fixture.clientId },
+      { realmId, clientId: fixture.clientId, type: 'oauth_client' },
       {
-        clientName: fixture.clientName,
-        clientType: fixture.clientType,
-        // Derived from the client id, then hashed. The fixture says WHETHER a client is confidential
-        // and never what its secret is: a literal in a checked-in file is indistinguishable from a
-        // leaked credential, to a scanner and to a reader. What is STORED is the hash either way.
-        ...(clientSecret
-          ? {
-            clientSecretHash: await bcrypt.hash(clientSecret, 12),
-            clientSecretPrefix: clientSecret.slice(0, 8),
-          }
-          : {}),
-        redirectUris: fixture.redirectUris,
-        ...(fixture.postLogoutRedirectUris ? { postLogoutRedirectUris: fixture.postLogoutRedirectUris } : {}),
-        grantTypes: fixture.grantTypes,
-        scope: fixture.scope,
-        requirePkce: fixture.requirePkce,
-        tokenEndpointAuthMethod: fixture.tokenEndpointAuthMethod,
-        ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
-        ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
-        ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),
-        ...(fixture.firstParty ? { firstParty: fixture.firstParty } : {}),
-        ...(fixture.owners?.length ? { owners: fixture.owners } : {}),
+        // Owned and compared: the registration metadata, which a fixture edit should propagate.
+        metadata: clientMetadata({
+          clientName: fixture.clientName,
+          clientType: fixture.clientType,
+          redirectUris: fixture.redirectUris,
+          ...(fixture.postLogoutRedirectUris ? { postLogoutRedirectUris: fixture.postLogoutRedirectUris } : {}),
+          grantTypes: fixture.grantTypes as OAuthClient['grantTypes'],
+          scope: fixture.scope,
+          requirePkce: fixture.requirePkce,
+          tokenEndpointAuthMethod: fixture.tokenEndpointAuthMethod,
+          ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
+          ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
+          ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),
+          ...(fixture.audience ? { audience: fixture.audience } : {}),
+          ...(fixture.firstParty ? { firstParty: fixture.firstParty } : {}),
+        }),
+        ...(fixture.owners?.length ? { administrators: fixture.owners } : {}),
         status: fixture.status,
       },
-      { realmId, tenantId: DEFAULT_TENANT_ID, clientId: fixture.clientId },
-      'Client',
+      {
+        realmId,
+        tenantId: DEFAULT_TENANT_ID,
+        credentialId: uuidv5(`oauth-client:${realmId}:${fixture.clientId}`, CLIENT_NAMESPACE),
+        subjectId: fixture.clientId,
+        type: 'oauth_client',
+        clientId: fixture.clientId,
+        // The principal the client acts as. A service client is its own subject.
+        ownerId: fixture.clientId,
+        // The fixture says WHETHER a client is confidential and never what its secret is: a literal
+        // in a checked-in file is indistinguishable from a leaked credential, to a scanner and to a
+        // reader. What is STORED is the hash either way.
+        ...(clientSecret
+          ? {
+            hash: await bcrypt.hash(clientSecret, 12),
+            secretPrefix: clientSecret.slice(0, 8),
+          }
+          : {}),
+        assurance: { level: 'aal1', method: 'client_secret' },
+        createdAt: SEED_GRANTED_AT,
+      },
+      'Credential',
     );
     clientCount += 1;
 
     if (!fixture.serviceIdentity) continue;
 
     // The machine's own principal record, keyed by the client id it authenticates as.
-    await upsertSeed<IdentityRecord>(
+    await upsertSeed<PrincipalRecord>(
       identities,
       { subjectId: fixture.clientId },
       {
-        userName: fixture.serviceIdentity.userName,
+        // The login is the client id: unique in the realm, already this record's subject, and an
+        // identifier rather than a sentence.
+        userName: fixture.clientId,
+        name: { formatted: fixture.serviceIdentity.displayName },
         kind: fixture.serviceIdentity.kind,
         active: true,
         lifecycleState: 'active',
@@ -155,27 +199,68 @@ export async function seedClients(db: Db): Promise<void> {
     // The resource server, if the roles seeder has not already created it. A permission pointing at a
     // server that does not exist is unenforceable and invisible: the decision point could not scope
     // it to an audience, so it would silently travel in every token instead of one.
-    await upsertSeed<ResourceServerRecord>(
-      db.collection<ResourceServerRecord>(RESOURCE_SERVER_COLLECTION),
-      { resourceServerId: serverId },
-      { name: serverName, audience: serverName, permissionCatalogVersion: '0', validationMode: 'hybrid', registeredAt: now },
-      { resourceServerId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
-      'ResourceServer',
+    await upsertSeed<ResourceRecord>(
+      db.collection<ResourceRecord>(RESOURCE_COLLECTION),
+      { resourceId: serverId },
+      {
+        name: serverName,
+        audience: serverName,
+        kind: 'api',
+        catalogVersion: 0,
+        actions: [],
+        // What each scope MEANS, from the fixture. A consent screen that lists `payments:read` and
+        // asks for agreement has obtained a click rather than consent.
+        ...(fixture.scopeDescriptions ? { scopes: fixture.scopeDescriptions } : {}),
+        status: 'active',
+        validationMode: 'hybrid',
+        registeredAt: SEED_GRANTED_AT,
+      },
+      { resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
+      'Resource',
     );
 
-    const held: RolePermission[] = [];
+    /**
+     * The machine's permissions, as strings, with each resource TYPE declared as a resource.
+     *
+     * Ordinary catalog entries, identical in shape to an application's, so the decision point
+     * resolves a service exactly as it resolves a person. That is the point of granting one at all:
+     * if a machine needed its own mechanism, the two halves would drift and one would end up wrong.
+     */
+    const held: string[] = [];
+    const actionsByType = new Map<string, Set<string>>();
     for (const [resource, actions] of Object.entries(fixture.serviceIdentity.permissions ?? {})) {
       for (const action of actions) {
-        const permissionId = uuidv5(`permission:${serverId}:${resource}:${action}`, AUTHORIZATION_NAMESPACE);
-        await upsertSeed<PermissionRecord>(
-          db.collection<PermissionRecord>(PERMISSION_COLLECTION),
-          { permissionId },
-          { resourceServerId: serverId, resource, action, description: `${action} on ${resource}` },
-          { permissionId, resourceServerId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
-          'Permission',
-        );
-        held.push({ resourceServerId: serverId, resource, action });
+        const declared = actionsByType.get(resource) ?? new Set<string>();
+        declared.add(action);
+        actionsByType.set(resource, declared);
+        held.push(permissionString(resource, action));
       }
+    }
+    for (const [type, actions] of actionsByType) {
+      /**
+       * Keyed on the server's ID, matching `seedAuthorization`.
+       *
+       * This derived from the server NAME while the roles seeder derived from its uuid, so the same
+       * logical resource was written twice under two different ids. The published catalog then
+       * listed five enforcement points twice, and worse, the two documents each owned their own
+       * `actions`: which verbs a resource declared depended on which of the two a reader happened
+       * to load. One derivation, in both places, or they drift again.
+       */
+      const childId = uuidv5(`resource:${realmId}:${serverId}:${type}`, AUTHORIZATION_NAMESPACE);
+      await upsertSeed<ResourceRecord>(
+        db.collection<ResourceRecord>(RESOURCE_COLLECTION),
+        { resourceId: childId },
+        { name: type, actions: [...actions].sort(), catalogVersion: 1, status: 'active' },
+        {
+          resourceId: childId,
+          realmId,
+          tenantId: DEFAULT_TENANT_ID,
+          kind: 'object',
+          parentResourceId: serverId,
+          registeredAt: SEED_GRANTED_AT,
+        },
+        'Resource',
+      );
     }
 
     // The role a service holds, named for what the machine does rather than for who it is.
@@ -199,13 +284,12 @@ export async function seedClients(db: Db): Promise<void> {
       'Role',
     );
 
-    const assignmentId = uuidv5(`service-assignment:${fixture.clientId}`, CLIENT_NAMESPACE);
-    await upsertSeed<RoleAssignmentRecord>(
-      assignments,
-      { assignmentId },
-      { subjectId: fixture.clientId, roleId, grantedAt: now },
-      { assignmentId, subjectId: fixture.clientId, roleId, realmId, tenantId: DEFAULT_TENANT_ID },
-      'RoleAssignment',
+    // The service principal holds its role like anyone else: authority is never an implicit
+    // consequence of holding a credential.
+    await upsertHolding(
+      identities,
+      { realmId, subjectId: fixture.clientId },
+      { roleId, grantedAt: SEED_GRANTED_AT },
     );
   }
 

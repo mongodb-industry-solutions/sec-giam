@@ -126,6 +126,19 @@ export const config = {
     eventBusEngine: (giamEnv('EVENT_BUS_ENGINE', 'in-process')!) as 'in-process' | 'kafka' | 'rabbitmq',
     eventBusTopicPrefix: giamEnv('EVENT_BUS_TOPIC_PREFIX', 'giam')!,
     seedDataDir: giamEnv('SEED_DATA_DIR'),
+    /**
+     * How long the audit trail is kept, in days.
+     *
+     * CONFIGURATION and not a constant, because the requirement names no number. NIST SP 800-53
+     * AU-11 and ISO/IEC 27001 A.8.15 say evidence must be retained and leave the period to the
+     * regime; PCI DSS 10.5.1 is one such regime and asks for twelve months, which is the default
+     * here because it is what this deployment must meet. A retail or agent deployment sets its own
+     * against the same implementation, which is the whole point of not baking one industry's
+     * regime into an authority meant to serve several.
+     *
+     * Zero disables expiry, for a deployment that archives externally and wants nothing removed.
+     */
+    auditRetentionDays: Number(giamEnv('AUDIT_RETENTION_DAYS', '365')),
     // Administrative surface credential, until GIAM issues its own administrative tokens (P6).
     adminToken: giamEnv('ADMIN_TOKEN'),
     // The operator the console signs in as, and the SHA-256 of the password it must present. The

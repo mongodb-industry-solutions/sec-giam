@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { AppWindow, ArrowLeft, RefreshCw, ShieldOff, UserMinus, UserPlus } from 'lucide-react';
+import { Activity, AppWindow, ArrowLeft, Pencil, RefreshCw, ShieldOff, UserMinus, UserPlus } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { Fact } from '../../../../components/Fact';
 import { SecretOnce } from '../../../../components/SecretOnce';
-import { ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
+import { Pagination } from '../../../../components/Pagination';
+import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
 import { ApiError, callApi, when } from '../../../../lib/console';
+import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import {
   ClientOwner, RegisteredClient, SELF_SERVICE_SCOPES, firstRedirectProblem, linesToUris,
 } from '../../../../lib/clients';
@@ -231,24 +233,31 @@ export default function ClientDetailPage() {
             )
             : (
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
-                >
-                  Change registration
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || client.status === 'revoked'}
-                  onClick={() => void withdraw()}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
-                >
-                  <ShieldOff size={12} aria-hidden />
-                  Withdraw
-                </button>
+                <Tooltip text="Change the name, redirects, scopes and grant types. Never the credential: rotate it separately.">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
+                  >
+                    <Pencil size={12} aria-hidden />
+                    Edit application
+                  </button>
+                </Tooltip>
+                <Tooltip text="Revokes and drops the credential immediately. The record is kept, marked withdrawn, and there is no reactivate: this cannot be undone.">
+                  <button
+                    type="button"
+                    disabled={busy || client.status === 'revoked'}
+                    onClick={() => void withdraw()}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
+                  >
+                    <ShieldOff size={12} aria-hidden />
+                    Withdraw
+                  </button>
+                </Tooltip>
               </div>
             )}
+
+          <ActivityPanel clientId={clientId} />
         </>
       )}
     </main>
@@ -350,7 +359,16 @@ function OwnersPanel({ owners, busy, onAdd, onRemove }: {
           <li key={`${owner.kind}:${owner.ref}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-[#001E2B]">{owner.display_name || owner.ref}</span>
+                {owner.kind === 'principal'
+                  ? (
+                    <Link
+                      href={`/system/identities/${encodeURIComponent(owner.ref)}`}
+                      className="font-medium text-[#001E2B] hover:underline"
+                    >
+                      {owner.display_name || owner.ref}
+                    </Link>
+                  )
+                  : <span className="font-medium text-[#001E2B]">{owner.display_name || owner.ref}</span>}
                 {owner.is_caller && (
                   <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                     you
@@ -526,5 +544,91 @@ function EditForm({ client, onCancel, onSaved }: {
         </button>
       </div>
     </form>
+  );
+}
+
+interface ClientSecurityEvent {
+  ts: string;
+  action: string;
+  outcome: string;
+  cause?: string;
+  subjectId?: string;
+  correlationId?: string;
+}
+
+/**
+ * The identity trail for this application: who signed in through it, and what changed it.
+ *
+ * The same read the realm-wide activity screen offers, narrowed to this `clientId` by the API
+ * itself rather than filtered in the browser. An oversight caller sees every principal who used it;
+ * an ordinary owner sees only what they were themselves a party to, because seeing every user who
+ * signed in through an application you merely registered is an oversight permission, not an
+ * ownership one.
+ */
+function ActivityPanel({ clientId }: { clientId: string }) {
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
+  const read = useCallback(
+    () => callApi<{ events: ClientSecurityEvent[]; total?: number }>('/security-events', {
+      query: { clientId, offset: (page - 1) * limit, limit },
+      subject: 'this application\'s activity',
+    }),
+    [clientId, page, limit],
+  );
+  const activity = useConsoleResource(read, 'This application\'s activity could not be read.');
+
+  const rows = activity.data?.events ?? [];
+  const total = activity.data?.total ?? rows.length;
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
+        <Activity size={14} className="text-gray-400" aria-hidden />
+        Activity
+      </h2>
+      <p className="mt-1 text-sm text-gray-500">
+        Identity events naming this application: sign-ins through it, and changes made to its
+        registration. An application's own business events stay with that application; this is
+        identity evidence only.
+      </p>
+
+      {activity.error && <div className="mt-3"><ErrorState message={activity.error} onRetry={() => void activity.reload()} /></div>}
+
+      {activity.loading
+        ? <div className="mt-3"><LoadingState label="Reading activity…" /></div>
+        : rows.length === 0
+          ? (
+            <div className="mt-3">
+              <EmptyState icon={Activity} title="Nothing recorded yet" description="No identity event names this application yet." />
+            </div>
+          )
+          : (
+            <>
+              <ul className="mt-3 divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-100">
+                {rows.map((event, index) => (
+                  <li key={`${event.ts}-${index}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
+                    <span className="w-40 shrink-0 text-xs text-gray-500">{when(event.ts)}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-[#001E2B]">{event.action}</span>
+                    {event.subjectId && <span className="w-40 shrink-0 truncate font-mono text-[10px] text-gray-400">{event.subjectId}</span>}
+                    <StatusBadge status={event.outcome} />
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-2">
+                <Pagination
+                  page={page}
+                  totalPages={Math.max(1, Math.ceil(total / limit))}
+                  total={total}
+                  limit={limit}
+                  noun="events"
+                  onPageChange={setPage}
+                  onLimitChange={(next) => { setLimit(next); setPage(1); }}
+                />
+              </div>
+            </>
+          )}
+    </section>
   );
 }

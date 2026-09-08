@@ -46,13 +46,59 @@
     ],
     "serviceIdentity": {
       "kind": "service",
-      "userName": "Espresso Works, acting as itself",
       "owner": {
         "kind": "merchant",
         "ref": "m0000001-0000-4000-8000-000000000001",
         "displayName": "Espresso Works"
+      },
+      "displayName": "Espresso Works, acting as itself"
+    },
+    "audience": [
+      "leafypay"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
+      },
+      {
+        "name": "profile",
+        "description": "Read your name and profile details"
+      },
+      {
+        "name": "email",
+        "description": "Read your email address"
+      },
+      {
+        "name": "read:beneficiaries",
+        "description": "See the payees you have saved"
+      },
+      {
+        "name": "write:beneficiaries",
+        "description": "Add and remove saved payees"
+      },
+      {
+        "name": "write:transfers",
+        "description": "Start transfers from your accounts"
+      },
+      {
+        "name": "read:accounts",
+        "description": "See your accounts and their balances"
+      },
+      {
+        "name": "read:transactions",
+        "description": "See your transaction history"
+      },
+      {
+        "name": "read:rtp",
+        "description": "See requests to pay addressed to you"
+      },
+      {
+        "name": "write:rtp",
+        "description": "Send requests to pay on your behalf"
       }
-    }
+    ]
   },
   {
     "realm": "leafypay",
@@ -91,6 +137,9 @@
     ],
     "demoRoster": [
       "customer"
+    ],
+    "audience": [
+      "leafypay"
     ]
   },
   {
@@ -109,7 +158,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "LeafyPay backend service",
       "roleName": "platform_service",
       "owner": {
         "kind": "application",
@@ -124,7 +172,8 @@
         "modules": [
           "view"
         ]
-      }
+      },
+      "displayName": "LeafyPay backend service"
     },
     "demoRoster": [
       "customer",
@@ -134,10 +183,20 @@
       "level2_investigator",
       "security_auditor",
       "merchant_officer"
+    ],
+    "audience": [
+      "leafypay"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
+      }
     ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "leafypay-psp",
     "clientName": "LeafyPay, as a registered third party",
     "clientType": "confidential",
@@ -152,7 +211,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "LeafyPay, as a registered third party",
       "roleName": "third_party_provider",
       "owner": {
         "kind": "application",
@@ -172,11 +230,53 @@
           "PISP",
           "CBPII"
         ]
+      },
+      "displayName": "LeafyPay, as a registered third party"
+    },
+    "audience": [
+      "bankcore"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "accounts",
+        "description": "See your accounts"
+      },
+      {
+        "name": "balances",
+        "description": "See your balances"
+      },
+      {
+        "name": "transactions",
+        "description": "See your transaction history"
+      },
+      {
+        "name": "payments",
+        "description": "Start payments on your behalf"
+      },
+      {
+        "name": "funds-confirmations",
+        "description": "Check whether funds are available"
+      },
+      {
+        "name": "card-data",
+        "description": "See your card details"
+      },
+      {
+        "name": "card-authorisations",
+        "description": "See authorisations made on your cards"
+      },
+      {
+        "name": "credit-assessments",
+        "description": "See credit assessments about you"
+      },
+      {
+        "name": "demo-credits",
+        "description": "Use demonstration credits"
       }
-    }
+    ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "bankcore-backend",
     "clientName": "BankCore backend service",
     "clientType": "confidential",
@@ -191,8 +291,7 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "BankCore backend service",
-      "roleName": "platform_service",
+      "roleName": "bank_platform_service",
       "owner": {
         "kind": "application",
         "ref": "bankcore",
@@ -206,11 +305,22 @@
         "bankAudit": [
           "view"
         ]
+      },
+      "displayName": "BankCore backend service"
+    },
+    "audience": [
+      "bankcore"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
       }
-    }
+    ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "bankcore-console",
     "clientName": "BankCore administration console",
     "clientType": "public",
@@ -237,6 +347,9 @@
       "bank_operations",
       "bank_card_officer",
       "bank_customer"
+    ],
+    "audience": [
+      "bankcore"
     ]
   },
   {
@@ -270,6 +383,9 @@
       "operations_officer",
       "client_administrator",
       "customer"
+    ],
+    "audience": [
+      "leafypay"
     ]
   },
   {
@@ -300,7 +416,10 @@
       "client_administrator",
       "customer"
     ],
-    "firstParty": true
+    "firstParty": true,
+    "audience": [
+      "leafypay"
+    ]
   },
   {
     "realm": "leafypay",
@@ -319,7 +438,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "LeafyPay simulator",
       "roleName": "demonstration_simulator",
       "owner": {
         "kind": "application",
@@ -331,7 +449,8 @@
         "impersonation": [
           "exercise"
         ]
-      }
+      },
+      "displayName": "LeafyPay simulator"
     },
     "demoRoster": [
       "customer",
@@ -341,10 +460,28 @@
       "level2_investigator",
       "security_auditor",
       "merchant_officer"
+    ],
+    "audience": [
+      "leafypay"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "openid",
+        "description": "Confirm who you are",
+        "required": true
+      },
+      {
+        "name": "profile",
+        "description": "Read your name and profile details"
+      },
+      {
+        "name": "email",
+        "description": "Read your email address"
+      }
     ]
   },
   {
-    "realm": "bankcore",
+    "realm": "leafypay",
     "clientId": "another-tpp",
     "clientName": "Another Provider",
     "clientType": "confidential",
@@ -359,7 +496,6 @@
     "status": "active",
     "serviceIdentity": {
       "kind": "service",
-      "userName": "Another Provider, a second registered third party",
       "roleName": "third_party_provider_secondary",
       "owner": {
         "kind": "tenant",
@@ -378,7 +514,29 @@
           "AISP",
           "PISP"
         ]
+      },
+      "displayName": "Another Provider, a second registered third party"
+    },
+    "audience": [
+      "bankcore"
+    ],
+    "scopeDescriptions": [
+      {
+        "name": "accounts",
+        "description": "See your accounts"
+      },
+      {
+        "name": "balances",
+        "description": "See your balances"
+      },
+      {
+        "name": "transactions",
+        "description": "See your transaction history"
+      },
+      {
+        "name": "payments",
+        "description": "Start payments on your behalf"
       }
-    }
+    ]
   }
 ]

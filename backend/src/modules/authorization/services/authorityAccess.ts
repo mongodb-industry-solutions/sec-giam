@@ -1,5 +1,6 @@
 import { Db } from 'mongodb';
 import { DecisionService } from './decision.service';
+import { permissionString } from '../models/resource.model';
 
 /**
  * What a principal may do to the AUTHORITY'S OWN objects, and how widely.
@@ -38,9 +39,7 @@ export async function authorityAccess(
     roles: decision.roles,
     scopeKind: decision.scopeKind,
     realmWide: decision.scopeKind === 'all',
-    can: (resource, action) => decision.permissions.some(
-      (permission) => permission.resource === resource && permission.action === action,
-    ),
+    can: (resource, action) => decision.permissions.includes(permissionString(resource, action)),
   };
 }
 

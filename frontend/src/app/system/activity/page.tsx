@@ -72,9 +72,14 @@ export default function ActivityPage() {
   const [scope, setScope] = useState<Scope>('mine');
   const [outcome, setOutcome] = useState('');
   const [action, setAction] = useState('');
+  const [txn, setTxn] = useState('');
   const [actor, setActor] = useState<Actor>('');
-  const [query, setQuery] = useState({ outcome: '', action: '' });
+  // `txn` is the flow correlator an auditor reads off a token, which is the search that starts
+  // most investigations.
+  const [query, setQuery] = useState({ outcome: '', action: '', txn: '' });
   const [events, setEvents] = useState<SecurityEvent[]>([]);
+  // What MATCHES, not what was returned, so paging has something real to page against.
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -87,38 +92,49 @@ export default function ActivityPage() {
     if (!claims) return;
     setLoading(true);
     try {
-      const body = await callApi<{ events: SecurityEvent[] }>('/security-events', {
+      /**
+       * EVERY filter travels to the authority, and so does the paging.
+       *
+       * `actor` and the stakeholder narrowing were applied in the browser, and paging was a slice of
+       * one fetched batch, so "page 5" showed whatever the limit had returned and nothing beyond it.
+       * The header comment on the authority's own controller calls the first of those a defect: a
+       * filter applied by a client after the fact is a presentation choice rather than an access
+       * control, and it fails open the moment somebody calls the API directly.
+       */
+      const body = await callApi<{ events: SecurityEvent[]; total?: number }>('/security-events', {
         // Naming the subject asks for one person's slice; omitting it asks for the realm, which the
         // authority narrows back to the caller when their roles do not carry the wider view.
         query: {
           ...(scope === 'mine' ? { subjectId: claims.sub } : {}),
           ...(query.outcome ? { outcome: query.outcome } : {}),
           ...(query.action ? { action: query.action } : {}),
-          limit: 500,
+          ...(query.txn ? { txn: query.txn } : {}),
+          ...(actor === 'stakeholder' ? { scope: 'stakeholder' } : {}),
+          ...(actor === 'self' ? { actor: 'person' } : {}),
+          ...(actor === 'application' ? { actor: 'application' } : {}),
+          offset: (page - 1) * limit,
+          limit,
         },
         subject: scope === 'mine' ? 'your activity' : "the realm's activity",
       });
       setEvents(body.events ?? []);
+      setTotal(body.total ?? (body.events ?? []).length);
       setError(null);
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'The activity trail could not be read.');
     } finally {
       setLoading(false);
     }
-  }, [claims, scope, query]);
+  }, [claims, scope, query, actor, page, limit]);
 
-  useEffect(() => { setPage(1); void load(); }, [load]);
+  // Back to the first page whenever the SEARCH changes, but not when the page itself does, which
+  // would make paging impossible.
+  useEffect(() => { setPage(1); }, [scope, query, actor]);
+  useEffect(() => { void load(); }, [load]);
 
-  // Narrowed here rather than at the authority: this is a presentation choice over events the caller
-  // is already entitled to, not an access control. Whose events they are was decided server side.
-  const shown = actor === ''
-    ? events
-    : actor === 'stakeholder'
-      ? events.filter((event) => Boolean(event.stakeholder))
-      : events.filter((event) => !event.stakeholder && actedByApplication(event) === (actor === 'application'));
-
-  const totalPages = Math.max(1, Math.ceil(shown.length / limit));
-  const visible = shown.slice((page - 1) * limit, page * limit);
+  // Nothing is narrowed here any more: the authority applied every filter and returned this page.
+  const visible = events;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   /**
    * The filtered trail as a file, exactly as the authority returned it.
@@ -136,8 +152,8 @@ export default function ActivityPage() {
         outcome: query.outcome || null,
         actor: actor || 'anyone',
       },
-      count: shown.length,
-      events: shown,
+      count: total,
+      events,
     };
     downloadFile(`activity-${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json');
   }
@@ -153,7 +169,7 @@ export default function ActivityPage() {
 
       <form
         className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4"
-        onSubmit={(event) => { event.preventDefault(); setQuery({ outcome, action }); }}
+        onSubmit={(event) => { event.preventDefault(); setQuery({ outcome, action, txn }); }}
       >
         {mayReadRealm && (
           <div>
@@ -186,6 +202,20 @@ export default function ActivityPage() {
             value={action}
             onChange={(event) => setAction(event.target.value)}
             placeholder="token.issued"
+            className="h-9 w-full rounded-lg border border-gray-200 px-2.5 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          />
+        </div>
+
+        <div className="min-w-[16rem] flex-1">
+          <label htmlFor="txn" className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500">
+            Flow
+            <Tooltip text="The txn claim an access token carries. Decompose a token, paste its txn here, and this shows every step of the flow that minted it: the authorization, the credential check, the redemption and every refresh." />
+          </label>
+          <input
+            id="txn"
+            value={txn}
+            onChange={(event) => setTxn(event.target.value)}
+            placeholder="paste the txn from a token"
             className="h-9 w-full rounded-lg border border-gray-200 px-2.5 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
           />
         </div>
@@ -235,8 +265,8 @@ export default function ActivityPage() {
         <button
           type="button"
           onClick={exportJson}
-          disabled={loading || shown.length === 0}
-          title={shown.length === 0 ? 'Nothing matches this search yet' : `Download ${shown.length} events as JSON`}
+          disabled={loading || total === 0}
+          title={total === 0 ? 'Nothing matches this search yet' : `Download ${total} events as JSON`}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-[#001E2B] transition-colors hover:border-[#001E2B] hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#001E2B]/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download size={13} aria-hidden />
@@ -248,7 +278,7 @@ export default function ActivityPage() {
 
       {loading
         ? <LoadingState label="Reading the trail…" />
-        : shown.length === 0
+        : total === 0
           ? <EmptyState
               icon={Activity}
               title="No matching events"
@@ -311,7 +341,7 @@ export default function ActivityPage() {
               <Pagination
                 page={page}
                 totalPages={totalPages}
-                total={shown.length}
+                total={total}
                 limit={limit}
                 noun="events"
                 onPageChange={setPage}

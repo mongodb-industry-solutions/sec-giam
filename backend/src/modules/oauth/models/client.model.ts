@@ -1,10 +1,17 @@
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
+import { CredentialRecord, OAuthClientMetadata } from '../../directory/models/credential.model';
 
 /**
- * The OAuth client registry, in RFC 7591 vocabulary.
+ * The OAuth client, in RFC 7591 vocabulary.
  *
- * Renamed here rather than at extraction time on purpose: moving a record and renaming its fields in
- * one step makes a mechanical change unreviewable. The move happened first; this is the rename.
+ * NOT a stored record any more. An OAuth client registration is a credential of type
+ * `oauth_client`, because a `client_id` plus a `client_secret` authenticates a party to this server
+ * exactly as a username plus a password does. What lives here is the flat VIEW the protocol code
+ * reads, projected from that credential in one place by `clientFromCredential`.
+ *
+ * A view rather than `metadata.` prefixes at sixty call sites: the protocol code asks about redirect
+ * URIs and grant types, not about where they are stored, and one mapper is the seam where the two
+ * meet. The projection reads the new shape only. Nothing here falls back to the old collection.
  */
 
 export type GrantType =
@@ -16,7 +23,7 @@ export type GrantType =
 
 export type BackchannelDeliveryMode = 'poll' | 'ping' | 'push';
 
-export interface ClientRecord extends Scoped {
+export interface OAuthClient extends Scoped {
   clientId: string;
   /** bcrypt. Absent on a public client, which relies on PKCE instead. */
   clientSecretHash?: string;
@@ -33,6 +40,17 @@ export interface ClientRecord extends Scoped {
   requirePkce: boolean;
   tokenEndpointAuthMethod: 'client_secret_basic' | 'client_secret_post' | 'private_key_jwt' | 'tls_client_auth' | 'none';
   applicationType?: 'web' | 'native' | 'service';
+
+  /**
+   * Which resource servers a token for this client is addressed to. RFC 9068 `aud`.
+   *
+   * DECLARED, because the fallback cannot be correct once a realm holds more than one application.
+   * It names every resource server registered in the realm, so with a payment service and a bank in
+   * one realm every token was addressed to both, and audience stopped separating anything.
+   *
+   * A token that names one audience is refused by the other, which is the whole point of the claim.
+   */
+  audience?: string[];
 
   /** Overrides the realm default when present. */
   tokenPolicy?: {
@@ -77,6 +95,12 @@ export interface ClientRecord extends Scoped {
     certificateThumbprint: string;
   };
 
+  /** Where to send identity lifecycle notices, when this application asked for them. */
+  provisioning?: {
+    endpoint: string;
+    events?: Array<'create' | 'update' | 'deactivate'>;
+  };
+
   status: 'active' | 'suspended' | 'revoked';
 
   /**
@@ -102,10 +126,77 @@ export interface ClientRecord extends Scoped {
 /** Retired here so the seeder unsets them and nothing writes them again: `owner` became `owners`. */
 export const RETIRED_CLIENT_FIELDS: readonly string[] = ['owner'];
 
-export function scopesOf(client: Pick<ClientRecord, 'scope'>): string[] {
+export function scopesOf(client: Pick<OAuthClient, 'scope'>): string[] {
   return client.scope.split(' ').filter(Boolean);
 }
 
-export function isConfidential(client: Pick<ClientRecord, 'clientSecretHash'>): boolean {
+export function isConfidential(client: Pick<OAuthClient, 'clientSecretHash'>): boolean {
   return typeof client.clientSecretHash === 'string' && client.clientSecretHash.length > 0;
+}
+
+/**
+ * The one place a stored credential becomes the client the protocol code reads.
+ *
+ * `scope` is rebuilt space-delimited because that is RFC 7591's shape and the standard's shape is
+ * what the wire contract owes, even though the stored form is an array.
+ */
+export function clientFromCredential(credential: CredentialRecord): OAuthClient {
+  const metadata = credential.metadata ?? ({} as OAuthClientMetadata);
+  return {
+    realmId: credential.realmId,
+    tenantId: credential.tenantId,
+    clientId: credential.clientId as string,
+    ...(credential.hash ? { clientSecretHash: credential.hash } : {}),
+    ...(credential.secretPrefix ? { clientSecretPrefix: credential.secretPrefix } : {}),
+    clientName: metadata.clientName ?? (credential.clientId as string),
+    clientType: metadata.clientType ?? 'public',
+    redirectUris: metadata.redirectUris ?? [],
+    ...(metadata.postLogoutRedirectUris ? { postLogoutRedirectUris: metadata.postLogoutRedirectUris } : {}),
+    grantTypes: (metadata.grantTypes ?? []) as GrantType[],
+    scope: (metadata.scopes ?? []).join(' '),
+    requirePkce: metadata.requirePkce ?? true,
+    tokenEndpointAuthMethod: metadata.tokenEndpointAuthMethod ?? 'none',
+    ...(metadata.applicationType ? { applicationType: metadata.applicationType } : {}),
+    ...(metadata.tokenPolicy ? { tokenPolicy: metadata.tokenPolicy as OAuthClient['tokenPolicy'] } : {}),
+    ...(metadata.logoUri ? { logoUri: metadata.logoUri } : {}),
+    ...(metadata.clientUri ? { clientUri: metadata.clientUri } : {}),
+    ...(metadata.demoRoster ? { demoRoster: metadata.demoRoster } : {}),
+    ...(metadata.audience ? { audience: metadata.audience } : {}),
+    ...(metadata.firstParty !== undefined ? { firstParty: metadata.firstParty } : {}),
+    ...(metadata.backchannel ? { backchannel: metadata.backchannel as OAuthClient['backchannel'] } : {}),
+    ...(metadata.mtls ? { mtls: metadata.mtls as OAuthClient['mtls'] } : {}),
+    ...(metadata.provisioning ? { provisioning: metadata.provisioning } : {}),
+    ...(metadata.claimMappings ? { claimMappings: metadata.claimMappings } : {}),
+    // Who may administer the registration. Distinct from the principal it acts as, which is
+    // `ownerId` and is a token subject rather than a set of people.
+    owners: credential.administrators ?? [{ kind: 'principal', ref: credential.ownerId } as OwnerRef],
+    status: credential.status,
+    meta: credential.meta,
+  };
+}
+
+/** The metadata sub document a client registration writes. The inverse of the projection above. */
+export function clientMetadata(client: Partial<OAuthClient>): OAuthClientMetadata {
+  return {
+    clientName: client.clientName ?? '',
+    clientType: client.clientType ?? 'public',
+    redirectUris: client.redirectUris ?? [],
+    ...(client.postLogoutRedirectUris ? { postLogoutRedirectUris: client.postLogoutRedirectUris } : {}),
+    grantTypes: client.grantTypes ?? [],
+    scopes: client.scope ? client.scope.split(' ').filter(Boolean) : [],
+    // Defaults to REQUIRED. The seeded default was false, which is below the baseline RFC 9700 sets.
+    requirePkce: client.requirePkce ?? true,
+    tokenEndpointAuthMethod: client.tokenEndpointAuthMethod ?? 'none',
+    ...(client.applicationType ? { applicationType: client.applicationType } : {}),
+    ...(client.tokenPolicy ? { tokenPolicy: client.tokenPolicy as Record<string, unknown> } : {}),
+    ...(client.logoUri ? { logoUri: client.logoUri } : {}),
+    ...(client.clientUri ? { clientUri: client.clientUri } : {}),
+    ...(client.demoRoster ? { demoRoster: client.demoRoster } : {}),
+    ...(client.audience ? { audience: client.audience } : {}),
+    ...(client.firstParty !== undefined ? { firstParty: client.firstParty } : {}),
+    ...(client.backchannel ? { backchannel: client.backchannel as Record<string, unknown> } : {}),
+    ...(client.mtls ? { mtls: client.mtls } : {}),
+    ...(client.provisioning ? { provisioning: client.provisioning } : {}),
+    ...(client.claimMappings ? { claimMappings: client.claimMappings } : {}),
+  };
 }

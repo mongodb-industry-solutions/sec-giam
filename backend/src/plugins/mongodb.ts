@@ -6,6 +6,7 @@ import { resolve } from 'path';
 import { getQEClient, closeQEClient } from '../vendors/encryption/qeClient';
 import { initEventBus, getEventBus } from '../vendors/eventbus';
 import { bindPolicyEvaluators } from '../modules/authorization/services/policyEvaluators';
+import { SessionWatch } from '../modules/authorization/services/sessionWatch';
 import { config, keyVaultNamespace } from '../config';
 
 declare module 'fastify' {
@@ -35,10 +36,46 @@ async function connectAndWire(fastify: FastifyInstance): Promise<void> {
   // Here rather than at registration, so a reload re-binds too: the policy evaluator reads the
   // collection directly, and leaving it bound to a torn-down client would fail every decision.
   bindPolicyEvaluators(db);
+
+  /**
+   * P10.4, layer 2 of revocation propagation.
+   *
+   * Started HERE for the same reason the evaluators are bound here: a reload has to rebuild it. A
+   * watch left pointing at a torn-down client stops receiving changes and keeps answering from
+   * whatever it last saw, which is a cache that silently honours revoked sessions.
+   *
+   * Failure to start is not fatal. A change stream needs a replica set, and a single-node
+   * deployment has none; the authoritative read still works and layer 1, the five minute token
+   * lifetime, is always in force. Refusing to boot over an optional cache would be worse than
+   * running without it.
+   */
+  await stopSessionWatch();
+  sessionWatch = new SessionWatch(db);
+  try {
+    await sessionWatch.start();
+  } catch {
+    // Recorded by the caller's startup report rather than thrown: the cache is an optimisation and
+    // `isLive` returns null while it is unready, which callers already treat as "go and read".
+    sessionWatch = null;
+  }
+
   await initEventBus(db).start();
 }
 
+/** The live-session cache, when one could be started. Null on a deployment without a replica set. */
+let sessionWatch: SessionWatch | null = null;
+
+export function getSessionWatch(): SessionWatch | null {
+  return sessionWatch;
+}
+
+async function stopSessionWatch(): Promise<void> {
+  await sessionWatch?.stop().catch(() => {});
+  sessionWatch = null;
+}
+
 async function teardownRuntime(): Promise<void> {
+  await stopSessionWatch();
   try {
     await getEventBus().stop().catch(() => {});
   } catch { /* bus not initialised */ }

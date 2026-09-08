@@ -1,8 +1,10 @@
 import { Db } from 'mongodb';
 import { createHmac } from 'crypto';
 import type { ProvisioningTarget } from '../../../shared/ports';
-import { CLIENT_COLLECTION } from '../../../shared/models/collections';
-import { ClientRecord } from '../../oauth/models/client.model';
+import { CREDENTIAL_COLLECTION } from '../../../shared/models/collections';
+import { CredentialRecord } from '../../directory/models/credential.model';
+import { clientFromCredential } from '../../oauth/models/client.model';
+import { OAuthClient } from '../../oauth/models/client.model';
 import { derivedSecret } from '../../../shared/services/secrets';
 import { appendLog } from '../../../shared/services/logBuffer';
 
@@ -49,15 +51,33 @@ export function signNotice(body: string): string {
   return createHmac('sha256', derivedSecret('provisioning')).update(body).digest('hex');
 }
 
-async function receivers(realmId: string): Promise<ClientRecord[]> {
+/**
+ * The clients registered to receive provisioning notices.
+ *
+ * `metadata.provisioning.endpoint` is a DECLARED field as of v40. It was queried here and declared
+ * nowhere, so this matched nothing and no notice had ever been delivered: a filter on an undeclared
+ * field reads as a working feature and fails silently forever. The field now exists on the
+ * credential, the projection carries it, and the path translator knows it, so the same class of
+ * mistake fails at the call site instead.
+ *
+ * Opt-in: absent means this client receives nothing, because a notice sent to an application that
+ * never asked for one is an unsolicited push of identity data.
+ */
+async function receivers(realmId: string): Promise<OAuthClient[]> {
   if (!boundDb) return [];
-  return boundDb
-    .collection<ClientRecord>(CLIENT_COLLECTION)
+  const found = await boundDb
+    .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
     .find(
-      { realmId, status: 'active', 'provisioning.endpoint': { $exists: true } },
+      {
+        realmId,
+        type: 'oauth_client',
+        status: 'active',
+        'metadata.provisioning.endpoint': { $exists: true },
+      },
       { projection: { _id: 0 } },
     )
-    .toArray() as unknown as Promise<ClientRecord[]>;
+    .toArray();
+  return found.map(clientFromCredential);
 }
 
 export const webhookProvisioningTarget: ProvisioningTarget = {
@@ -86,7 +106,7 @@ export const webhookProvisioningTarget: ProvisioningTarget = {
     const signature = signNotice(body);
 
     await Promise.all(targets.map(async (client) => {
-      const endpoint = (client as ClientRecord & { provisioning?: { endpoint?: string } }).provisioning?.endpoint;
+      const endpoint = client.provisioning?.endpoint;
       if (!endpoint) return;
       try {
         const response = await fetch(endpoint, {

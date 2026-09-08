@@ -1,8 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { RoleAdminService, isRoleRefusal } from '../services/roleAdmin.service';
-import { authorityAccess, refusal } from '../services/authorityAccess';
+import { authorityAccess, refusal, AUTHORITY_RESOURCE_SERVER } from '../services/authorityAccess';
+import { DecisionService } from '../services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
+import { recordConfigurationChange } from '../../audit/services/configurationChange';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
 
@@ -57,6 +59,7 @@ export async function roleController(fastify: FastifyInstance) {
       description: { type: 'string' },
       scopeKind: { type: 'string', enum: ['self', 'all'], description: '`self` reaches only the holder\'s own records; `all` is realm wide.' },
       builtin: { type: 'boolean' },
+      enabled: { type: 'boolean', description: 'Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment.' },
       parentRoleIds: { type: 'array', items: { type: 'string' } },
       ownPermissionCount: { type: 'integer' },
       effectivePermissionCount: { type: 'integer' },
@@ -69,6 +72,7 @@ export async function roleController(fastify: FastifyInstance) {
       description: 'Administers the identities, roles, keys and sessions of one realm.',
       scopeKind: 'all',
       builtin: true,
+      enabled: true,
       parentRoleIds: [],
       ownPermissionCount: 14,
       effectivePermissionCount: 14,
@@ -119,22 +123,28 @@ export async function roleController(fastify: FastifyInstance) {
   const assignmentView = {
     type: 'object',
     additionalProperties: false,
-    required: ['assignmentId', 'subjectId', 'roleId', 'grantedAt', 'live'],
+    required: ['subjectId', 'roleId', 'grantedAt', 'live'],
     properties: {
-      assignmentId: { type: 'string' },
       subjectId: { type: 'string' },
+      /**
+       * The person behind the subject id.
+       *
+       * DECLARED, or it is stripped: `additionalProperties: false` means a field the schema does
+       * not name never reaches the caller, however carefully the service resolved it. The service
+       * was returning this and the screen was still showing an identifier.
+       */
+      userName: { type: 'string' },
       roleId: { type: 'string' },
       grantedAt: { type: 'string' },
       grantedBy: { type: 'string' },
-      notBefore: { type: 'string' },
       expiresAt: { type: 'string' },
       ephemeral: { type: 'boolean' },
       justification: { type: 'string' },
-      live: { type: 'boolean', description: 'False once an expiry has passed or a start has not arrived.' },
+      live: { type: 'boolean', description: 'False once an expiry has passed.' },
     },
     examples: [{
-      assignmentId: '0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05',
       subjectId: 'a1000070-0000-4000-8000-000000000070',
+      userName: 'Alex Rivera',
       roleId: 'a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4',
       grantedAt: '2026-08-30T09:12:00.000Z',
       live: true,
@@ -214,6 +224,48 @@ export async function roleController(fastify: FastifyInstance) {
     return problem(403, 'Not permitted', reason);
   }
 
+  fastify.get('/realms/:realm/me/permissions', {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'myPermissions',
+      tags: ['authorization'],
+      summary: 'What this principal may do to the authority\'s own objects, resolved fresh',
+      description:
+        'No applicable standard; console UI gating. The access token carries roles rather than '
+        + 'entitlements by default (P9), so a screen deciding what to show cannot read the token '
+        + 'alone without the answer being wrong for every default login. This is the same read the '
+        + 'authority does to decide, not a claim the caller could be stale about: a role withdrawn a '
+        + 'moment ago is withdrawn here too. It answers only for the CALLER, so no permission beyond '
+        + '"read your own" gates it.',
+      security: [{ bearerAuth: [] }],
+      params: realmParam,
+      response: {
+        200: {
+          description: 'The caller\'s own effective permissions on the authority.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['permissions', 'roles', 'scopeKind'],
+          properties: {
+            permissions: { type: 'array', items: { type: 'string' }, description: '`resource:action` strings.' },
+            roles: { type: 'array', items: { type: 'string' } },
+            scopeKind: { type: 'string', enum: ['self', 'all'] },
+          },
+          examples: [{ permissions: ['sessions:view', 'sessions:manage'], roles: ['realm_administrator'], scopeKind: 'all' }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const realm = await realmOf((request.params as { realm: string }).realm);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const decision = await new DecisionService(fastify.db)
+      .effectivePermissions(realm.realmId, caller.subjectId, AUTHORITY_RESOURCE_SERVER);
+    return reply.send({ permissions: decision.permissions, roles: decision.roles, scopeKind: decision.scopeKind });
+  });
+
   fastify.get(base, {
     preHandler: requirePrincipal,
     schema: {
@@ -231,6 +283,9 @@ export async function roleController(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           q: { type: 'string', description: 'Case-insensitive match on name, display name or description.' },
+          scopeKind: { type: 'string', enum: ['self', 'all'], description: 'Own-records roles versus realm-wide ones.' },
+          builtin: { type: 'boolean', description: 'Ships with the deployment versus defined by this realm.' },
+          enabled: { type: 'boolean', description: 'Whether the role currently grants anything.' },
           skip: { type: 'integer', default: 0 },
           limit: { type: 'integer', default: 20, maximum: 200 },
         },
@@ -256,8 +311,10 @@ export async function roleController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, request.principal!.subjectId, 'roles', 'view');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    const { q, skip, limit } = request.query as { q?: string; skip?: number; limit?: number };
-    return reply.send(await new RoleAdminService(fastify.db).list(realm.realmId, { q, skip, limit }));
+    const { q, scopeKind, builtin, enabled, skip, limit } = request.query as {
+      q?: string; scopeKind?: 'self' | 'all'; builtin?: boolean; enabled?: boolean; skip?: number; limit?: number;
+    };
+    return reply.send(await new RoleAdminService(fastify.db).list(realm.realmId, { q, scopeKind, builtin, enabled, skip, limit }));
   });
 
   // Its own path rather than a child of /roles: it is the resource servers' catalog, not a role's,
@@ -280,25 +337,59 @@ export async function roleController(fastify: FastifyInstance) {
           description: 'The declared enforcement points.',
           type: 'object',
           additionalProperties: false,
-          required: ['permissions'],
+          required: ['permissions', 'roles', 'catalogVersion'],
           properties: {
+            /**
+             * P9.5. The role catalog, with its version, so a resource server can CACHE it.
+             *
+             * A token carries roles by default, which means a resource server that enforces
+             * permissions has to expand them. It either calls the decision endpoint per request or
+             * caches this and expands locally, and caching needs a version to know when to stop.
+             *
+             * Derived from the resources rather than stored: the version is the highest
+             * catalogVersion any resource declares, so it moves whenever a catalog does and there
+             * is no second number to keep in step.
+             */
+            catalogVersion: { type: 'integer', description: 'Bumps whenever any resource catalog changes. Cache against this.' },
+            roles: {
+              type: 'array',
+              description: 'Each role with the full permission strings it grants, parents resolved.',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['name', 'permissions'],
+                properties: {
+                  name: { type: 'string' },
+                  permissions: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
             permissions: {
               type: 'array',
               items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['resource', 'action', 'resourceServer'],
+                required: ['permission', 'resource', 'action', 'resourceServer'],
                 properties: {
+                  permission: { type: 'string', description: 'The full string, `resource:action`. The one spelling a role, a policy and a token all use.' },
                   resource: { type: 'string' },
                   action: { type: 'string' },
                   description: { type: 'string' },
                   resourceServer: { type: 'string' },
-                  deprecated: { type: 'boolean', description: 'No longer declared, kept because grants reference it.' },
                 },
               },
             },
           },
-          examples: [{ permissions: [{ resource: 'roles', action: 'manage', description: 'manage on roles', resourceServer: 'authority', deprecated: false }] }],
+          // `catalogVersion` belongs to the RESPONSE, not to each role. The example carried it inside
+          // the role item too, where the item schema does not declare it and refuses extras.
+          examples: [{
+            permissions: [{
+              permission: 'roles:manage', resource: 'roles', action: 'manage',
+              description: 'the role catalogue', resourceServer: 'authority',
+            }],
+            roles: [{ name: 'realm_administrator', permissions: ['roles:manage'] }],
+            catalogVersion: 3,
+          }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
@@ -309,10 +400,22 @@ export async function roleController(fastify: FastifyInstance) {
     const realm = await realmOf((request.params as { realm: string }).realm);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const gate = await administers(realm.realmId, request.principal!.subjectId, 'permissions', 'view');
-    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
-
-    return reply.send({ permissions: await new RoleAdminService(fastify.db).catalog(realm.realmId) });
+    /**
+     * Readable by ANY authenticated principal, and deliberately not narrowed.
+     *
+     * Two wrong answers were tried first. Requiring `permissions:view` refused it to almost every
+     * caller, and a resource server must expand the roles in a presented token on every request, so
+     * an analyst or a card officer resolved nothing and was then refused every guarded route.
+     * Narrowing the response to the caller's own roles fixed that and broke something worse: this
+     * endpoint exists to be CACHED, which is why it carries a version, and a response that depends
+     * on who asked means the first caller's narrow view is served to everybody afterwards.
+     *
+     * So it is the whole catalog, to anybody holding a valid token for this realm. What it contains
+     * is role names and permission names: the authorization MODEL, with no personal data, no
+     * secret, and nothing about who holds what. That is the same category of thing as a discovery
+     * document, and it is what "published" was always meant to mean.
+     */
+    return reply.send(await new RoleAdminService(fastify.db).publishedCatalog(realm.realmId));
   });
 
   fastify.get(`${base}/:roleId`, {
@@ -396,7 +499,16 @@ export async function roleController(fastify: FastifyInstance) {
       .create(realm.realmId, realm.tenantId, request.body as { name: string });
     if (isRoleRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
 
-    audit(realm, 'authorization.role.created', caller.subjectId, { roleId: outcome.roleId, name: outcome.name });
+    await recordConfigurationChange(fastify.db, {
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      what: 'role',
+      ref: outcome.roleId,
+      operation: 'created',
+      actorSubjectId: caller.subjectId,
+      before: null,
+      after: outcome as unknown as Record<string, unknown>,
+    });
     return reply.status(201).send(outcome);
   });
 
@@ -421,6 +533,7 @@ export async function roleController(fastify: FastifyInstance) {
           displayName: { type: 'string' },
           description: { type: 'string' },
           scopeKind: { type: 'string', enum: ['self', 'all'] },
+          enabled: { type: 'boolean', description: 'Switched off, this role grants nothing anywhere it is held or inherited from. Assignments are untouched and restored the moment it is switched back on.' },
           permissions: permissionPairs,
           parentRoleIds: { type: 'array', items: { type: 'string' } },
           sodRationale: { type: 'string' },
@@ -444,11 +557,22 @@ export async function roleController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, caller.subjectId, 'roles', 'manage');
     if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.role.updated', caller.subjectId, gate.refused, { roleId }));
 
-    const outcome = await new RoleAdminService(fastify.db).update(realm.realmId, roleId, request.body as object);
+    const service = new RoleAdminService(fastify.db);
+    const before = await service.detail(realm.realmId, roleId);
+    const outcome = await service.update(realm.realmId, roleId, request.body as object);
     if (outcome === null) return reply.status(404).send(problem(404, 'No such role'));
     if (isRoleRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
 
-    audit(realm, 'authorization.role.updated', caller.subjectId, { roleId, fields: Object.keys(request.body ?? {}) });
+    await recordConfigurationChange(fastify.db, {
+      realmId: realm.realmId,
+      tenantId: realm.tenantId,
+      what: 'role',
+      ref: roleId,
+      operation: 'updated',
+      actorSubjectId: caller.subjectId,
+      before: before as unknown as Record<string, unknown>,
+      after: outcome as unknown as Record<string, unknown>,
+    });
     return reply.send(outcome);
   });
 
@@ -586,56 +710,100 @@ export async function roleController(fastify: FastifyInstance) {
     if (isRoleRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
 
     audit(realm, 'authorization.assignment.granted', caller.subjectId, {
-      roleId, holder: outcome.subjectId, assignmentId: outcome.assignmentId,
+      roleId, holder: outcome.subjectId,
     });
     return reply.status(201).send(outcome);
   });
 
-  fastify.delete('/realms/:realm/role-assignments/:assignmentId', {
+  fastify.get('/realms/:realm/principals/:subjectId/roles', {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'listPrincipalRoles',
+      tags: ['authorization'],
+      summary: 'The roles one principal holds',
+      description:
+        'No applicable standard. The reverse of "who holds this role": one principal\'s own '
+        + 'assignments, lapsed ones included, read from that principal\'s own record rather than by '
+        + 'scanning every role in the catalog for a match.',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['realm', 'subjectId'],
+        properties: { realm: { type: 'string' }, subjectId: { type: 'string' } },
+      },
+      response: {
+        200: {
+          description: 'Every role this principal holds or held.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['assignments'],
+          properties: { assignments: { type: 'array', items: assignmentView } },
+          examples: [{ assignments: [assignmentView.examples[0]] }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const { realm: realmName, subjectId } = request.params as { realm: string; subjectId: string };
+    const realm = await realmOf(realmName);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const gate = await administers(realm.realmId, request.principal!.subjectId, 'assignments', 'view');
+    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+
+    return reply.send({ assignments: await new RoleAdminService(fastify.db).rolesHeldBy(realm.realmId, subjectId) });
+  });
+
+  fastify.delete('/realms/:realm/principals/:subjectId/roles/:roleId', {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'revokeRoleAssignment',
       tags: ['authorization'],
       summary: 'Take a role back from a principal',
       description:
-        'No applicable standard. Removes one assignment and nothing else: the role, and everyone '
-        + 'else holding it, are untouched. It takes effect at the next token issued, which is why '
-        + 'access-token lifetimes are short and why the irreversible operations introspect.',
+        'No applicable standard. Removes one holding and nothing else: the role, and everyone '
+        + 'else holding it, are untouched. Addressed by the subject and the role, because a role a '
+        + 'subject holds lives on the subject and has no identifier of its own. It takes effect at '
+        + 'the next token issued, which is why access-token lifetimes are short and why the '
+        + 'irreversible operations introspect.',
       security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
-        required: ['realm', 'assignmentId'],
-        properties: { realm: { type: 'string' }, assignmentId: { type: 'string' } },
+        required: ['realm', 'subjectId', 'roleId'],
+        properties: { realm: { type: 'string' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
       },
       response: {
         200: {
           description: 'Revoked.',
           type: 'object',
           additionalProperties: false,
-          required: ['revoked', 'assignmentId'],
-          properties: { revoked: { type: 'boolean' }, assignmentId: { type: 'string' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
-          examples: [{ revoked: true, assignmentId: '0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05', subjectId: 'a1000070-0000-4000-8000-000000000070', roleId: 'a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4' }],
+          required: ['revoked', 'subjectId', 'roleId'],
+          properties: { revoked: { type: 'boolean' }, subjectId: { type: 'string' }, roleId: { type: 'string' } },
+          examples: [{ revoked: true, subjectId: 'a1000070-0000-4000-8000-000000000070', roleId: 'a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4' }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
-        404: { $ref: 'Problem#', description: 'No such assignment in this realm.' },
+        404: { $ref: 'Problem#', description: 'That principal does not hold that role in this realm.' },
       },
     },
   }, async (request, reply) => {
-    const { realm: realmName, assignmentId } = request.params as { realm: string; assignmentId: string };
+    const { realm: realmName, subjectId, roleId } = request.params as
+      { realm: string; subjectId: string; roleId: string };
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
     const caller = request.principal!;
     const gate = await administers(realm.realmId, caller.subjectId, 'assignments', 'manage');
-    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.assignment.revoked', caller.subjectId, gate.refused, { assignmentId }));
+    if ('refused' in gate) return reply.status(403).send(refused(realm, 'authorization.assignment.revoked', caller.subjectId, gate.refused, { subjectId, roleId }));
 
-    const revoked = await new RoleAdminService(fastify.db).revoke(realm.realmId, assignmentId);
-    if (!revoked) return reply.status(404).send(problem(404, 'No such assignment'));
+    const revoked = await new RoleAdminService(fastify.db).revoke(realm.realmId, subjectId, roleId);
+    if (!revoked) return reply.status(404).send(problem(404, 'No such holding'));
 
     audit(realm, 'authorization.assignment.revoked', caller.subjectId, {
-      assignmentId, holder: revoked.subjectId, roleId: revoked.roleId,
+      holder: revoked.subjectId, roleId: revoked.roleId,
     });
-    return reply.send({ revoked: true, assignmentId, subjectId: revoked.subjectId, roleId: revoked.roleId });
+    return reply.send({ revoked: true, subjectId: revoked.subjectId, roleId: revoked.roleId });
   });
 }

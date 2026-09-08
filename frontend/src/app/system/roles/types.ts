@@ -7,6 +7,8 @@ export interface RoleSummary {
   description: string;
   scopeKind: 'self' | 'all';
   builtin: boolean;
+  /** Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment. */
+  enabled: boolean;
   parentRoleIds: string[];
   /** Permissions written on the role itself, before composition. */
   ownPermissionCount: number;
@@ -37,6 +39,8 @@ export interface RoleDetail extends RoleSummary {
 }
 
 export interface Assignment {
+  /** The person behind the subject id. Absent when the record carries no name. */
+  userName?: string;
   assignmentId: string;
   subjectId: string;
   roleId: string;

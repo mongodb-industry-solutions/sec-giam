@@ -3,6 +3,8 @@ import { RealmService } from '../../realm/services/realm.service';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { oauthError } from '../../../shared/models/problem';
+import { listOAuthClients } from '../services/clientAuth.service';
+import { DEFAULT_AUTHORIZATION_DETAIL_TYPE } from '../services/authorizationDetails';
 
 /**
  * Discovery and the published key set.
@@ -44,10 +46,49 @@ export async function discoveryController(fastify: FastifyInstance) {
     }],
   } as const;
 
+  /**
+   * Every scope a client in this realm may ask for.
+   *
+   * RFC 8414 2 lists it as RECOMMENDED and it was declared in the response schema and never emitted,
+   * so a client had no way to discover what exists. Derived from the registrations rather than kept
+   * as a second list: a scope no client may ask for is not a scope this realm supports, and a list
+   * maintained beside the registrations is a list that drifts from them.
+   *
+   * P5 will attach a description and a required flag to each, once the resource catalog carries
+   * them. This is the set, which is what a client needs first.
+   */
+  async function scopesSupported(realmId: string): Promise<string[]> {
+    const clients = await listOAuthClients(fastify.db, realmId);
+    const scopes = new Set<string>(['openid']);
+    for (const client of clients) {
+      for (const scope of (client.scope ?? '').split(' ').filter(Boolean)) scopes.add(scope);
+    }
+    return [...scopes].sort();
+  }
+
+  /**
+   * What the realm can actually sign with, read from the published key set.
+   *
+   * It was the constant `['RS256']` while `key.model` declared `'RS256' | 'ES256'`, so the document
+   * and the model disagreed and neither was checked against what the signer implements. Reading the
+   * key set means the answer is what is true right now, and a realm that gains an ES256 key
+   * advertises it without anybody remembering to.
+   */
+  async function signingAlgorithms(realmId: string): Promise<string[]> {
+    const keySet = await keyRing().publishedKeySet(realmId);
+    const algorithms = new Set<string>();
+    for (const key of keySet.keys) if (key.alg) algorithms.add(key.alg);
+    return algorithms.size > 0 ? [...algorithms].sort() : ['RS256'];
+  }
+
   async function metadata(realmName: string) {
     const realm = await realmService().byName(realmName);
     if (!realm) return null;
     const base = `${realm.issuer}/protocol/openid-connect`;
+    const [scopes, algorithms] = await Promise.all([
+      scopesSupported(realm.realmId),
+      signingAlgorithms(realm.realmId),
+    ]);
     return {
       issuer: realm.issuer,
       authorization_endpoint: `${base}/auth`,
@@ -67,22 +108,73 @@ export async function discoveryController(fastify: FastifyInstance) {
         'urn:openid:params:grant-type:ciba',
       ],
       subject_types_supported: ['public'],
-      id_token_signing_alg_values_supported: ['RS256'],
+      scopes_supported: scopes,
+      id_token_signing_alg_values_supported: algorithms,
       token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
+      introspection_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+      revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+      // `query` is the default for the code flow and the only mode implemented. Advertising
+      // `fragment` would invite a request the authorization endpoint refuses.
+      response_modes_supported: ['query'],
+      /**
+       * The backchannel metadata, without which a CIBA client cannot discover whether poll, ping or
+       * push is available. The grant was advertised and none of this was, so a conforming client had
+       * to guess at the one thing it must not guess at.
+       */
+      backchannel_token_delivery_modes_supported: ['poll', 'ping', 'push'],
+      backchannel_user_code_parameter_supported: false,
+      /**
+       * RFC 8707. A client narrows its own audience with `resource`, and it can only discover that
+       * from here.
+       */
+      resource_indicators_supported: true,
+      // RFC 9396, and the type this authority projects a constrained grant under. Deployment types
+      // come from the resource catalog and are not advertised here, since they are its to declare.
+      authorization_details_types_supported: [DEFAULT_AUTHORIZATION_DETAIL_TYPE],
       // S256 only. `plain` is in the specification and offers no protection at all, so supporting it
       // would advertise a downgrade a client could then choose.
       code_challenge_methods_supported: ['S256'],
-      claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'name', 'email', 'preferred_username'],
+      /**
+       * Including the three PRIVATE claims, which is the whole reason to list them.
+       *
+       * `session_epoch`, `admin_realms` and `account_holder` have no specification behind them, so a
+       * consumer can only learn they exist by being told. Declaring them here is the mitigation for
+       * using short names rather than collision-resistant ones.
+       */
+      claims_supported: [
+        'sub', 'iss', 'aud', 'exp', 'iat', 'jti', 'scope', 'client_id',
+        'auth_time', 'acr', 'amr', 'sid', 'txn',
+        'roles', 'entitlements', 'act', 'grant_id', 'authorization_details',
+        'name', 'email', 'preferred_username',
+        'session_epoch', 'admin_realms', 'account_holder',
+      ],
     };
   }
 
+  /**
+   * Both well-known locations, because the two specifications place the segment differently.
+   *
+   * OIDC Discovery 1.0 appends `/.well-known/openid-configuration` to the issuer, which is what the
+   * first entry is. RFC 8414 3.1 says the opposite for an issuer that has path components: the
+   * segment goes BETWEEN the host and the path, so the correct location is
+   * `/.well-known/oauth-authorization-server/realms/{realm}`.
+   *
+   * Only the OIDC-shaped one was served, so a client following RFC 8414 to the letter got a 404 from
+   * a server that does publish the document. The third entry keeps the old location working, since
+   * it is what the consumers in this repository already fetch and it costs one route.
+   */
   for (const [path, spec] of [
     ['/realms/:realm/.well-known/openid-configuration', 'OpenID Connect Discovery 1.0'],
-    ['/realms/:realm/.well-known/oauth-authorization-server', 'RFC 8414'],
+    ['/.well-known/oauth-authorization-server/realms/:realm', 'RFC 8414 section 3.1'],
+    ['/realms/:realm/.well-known/oauth-authorization-server', 'RFC 8414, the OIDC-shaped location'],
   ] as const) {
     fastify.get(path, {
       schema: {
-        operationId: path.includes('openid') ? 'getOpenIdConfiguration' : 'getAuthorizationServerMetadata',
+        operationId: path.includes('openid-configuration')
+          ? 'getOpenIdConfiguration'
+          : (path.startsWith('/.well-known')
+            ? 'getAuthorizationServerMetadata'
+            : 'getAuthorizationServerMetadataAtIssuerPath'),
         tags: ['discovery'],
         summary: 'Authorization server metadata',
         description:
@@ -102,7 +194,7 @@ export async function discoveryController(fastify: FastifyInstance) {
     }, async (request, reply) => {
       const { realm } = request.params as { realm: string };
       const document = await metadata(realm);
-      if (!document) return reply.status(404).send(oauthError(404, 'unknown realm'));
+      if (!document) return reply.status(404).send(oauthError('invalid_request', 'unknown realm', 404));
       return reply.send(document);
     });
   }
@@ -139,7 +231,7 @@ export async function discoveryController(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { realm: realmName } = request.params as { realm: string };
     const realm = await realmService().byName(realmName);
-    if (!realm) return reply.status(404).send(oauthError(404, 'unknown realm'));
+    if (!realm) return reply.status(404).send(oauthError('invalid_request', 'unknown realm', 404));
     // Cacheable, because it changes only on rotation and a stale copy is safe: an old public key can
     // validate only signatures the authority itself produced.
     reply.header('Cache-Control', 'public, max-age=300');

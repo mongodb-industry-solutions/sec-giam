@@ -3,7 +3,7 @@
   "info": {
     "title": "GIAM (General Identity and Access Manager)",
     "version": "1.0.0",
-    "description": "\n## Overview\n\nGIAM is the identity authority for **people and systems equally**: employees, customers,\nmicroservices, applications, AI agents and workloads. It is industry neutral, so nothing in its\nmodel, its API or its policy vocabulary names a business concept belonging to the applications it\nprotects.\n\nIt is an identity **broker** as well as an authority: an application speaks one protocol (OIDC) to\none issuer, and GIAM federates behind that to an upstream provider, several at once if needed. Adding\none is a configuration record, not a change in any application.\n\n## How to read this document\n\nEvery operation declares its category:\n\n| Category | Meaning |\n|---|---|\n| **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |\n| **No applicable standard** | Plain REST: plural resources, correct verb semantics, `PATCH` for partial updates, RFC 9457 `application/problem+json` errors, `ETag` and `If-Match` on mutable resources, cursor pagination, `Idempotency-Key` on unsafe operations. |\n\nPublic protocol endpoints live under a realm's issuer path; administrative ones live under\n`/api/v1/admin/`, so a reader can tell them apart from the URL alone.\n\n## Realms\n\nA realm is a trust and key boundary: its own issuer, its own signing keys, its own JWKS. A token\nminted in one realm is refused by another, which is what makes an institutional boundary real rather\nthan declared. A tenant is a data boundary INSIDE a realm.\n\n## Token validation\n\nBoth models are supported and the choice belongs to the resource server, per operation:\n\n- **Decentralised.** Verification uses only the public keys GIAM publishes, downloaded and cached by\n  the client. No secret at the client, no network call per request, and a GIAM outage does not\n  invalidate an already-issued token.\n- **Centralised.** Introspection at GIAM, so revocation is immediate and the answer reflects current\n  account status rather than what was true at issuance.\n\nThe recommended default is to verify locally on every request and introspect only where the decision\nis expensive to get wrong.\n"
+    "description": "\n## Overview\n\nGIAM is the identity authority for **people and systems equally**: employees, customers,\nmicroservices, applications, AI agents and workloads. It is industry neutral, so nothing in its\nmodel, its API or its policy vocabulary names a business concept belonging to the applications it\nprotects.\n\nIt is an identity **broker** as well as an authority: an application speaks one protocol (OIDC) to\none issuer, and GIAM federates behind that to an upstream provider, several at once if needed. Adding\none is a configuration record, not a change in any application.\n\n## How to read this document\n\nEvery operation declares its category:\n\n| Category | Meaning |\n|---|---|\n| **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |\n| **No applicable standard** | Plain REST: plural resources, correct verb semantics, `PATCH` for partial updates, RFC 9457 `application/problem+json` errors, `ETag` and `If-Match` on mutable resources, cursor pagination. |\n\nPublic protocol endpoints live under a realm's issuer path; administrative ones live under\n`/api/v1/admin/`, so a reader can tell them apart from the URL alone.\n\n## Realms\n\nA realm is a trust and key boundary: its own issuer, its own signing keys, its own JWKS. A token\nminted in one realm is refused by another, which is what makes an institutional boundary real rather\nthan declared. A tenant is a data boundary INSIDE a realm.\n\n## Token validation\n\nBoth models are supported and the choice belongs to the resource server, per operation:\n\n- **Decentralised.** Verification uses only the public keys GIAM publishes, downloaded and cached by\n  the client. No secret at the client, no network call per request, and a GIAM outage does not\n  invalidate an already-issued token.\n- **Centralised.** Introspection at GIAM, so revocation is immediate and the answer reflects current\n  account status rather than what was true at issuance.\n\nThe recommended default is to verify locally on every request and introspect only where the decision\nis expensive to get wrong.\n"
   },
   "components": {
     "securitySchemes": {
@@ -281,14 +281,139 @@
         }
       }
     },
-    "/realms/{realm}/.well-known/oauth-authorization-server": {
+    "/.well-known/oauth-authorization-server/realms/{realm}": {
       "get": {
         "operationId": "getAuthorizationServerMetadata",
         "summary": "Authorization server metadata",
         "tags": [
           "discovery"
         ],
-        "description": "Standard-defined: RFC 8414. Path, document and member names follow the specification verbatim. Public by specification: it names endpoints, it discloses nothing.",
+        "description": "Standard-defined: RFC 8414 section 3.1. Path, document and member names follow the specification verbatim. Public by specification: it names endpoints, it discloses nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Authorization server metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Authorization server metadata.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "issuer",
+                    "jwks_uri"
+                  ],
+                  "properties": {
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "authorization_endpoint": {
+                      "type": "string"
+                    },
+                    "token_endpoint": {
+                      "type": "string"
+                    },
+                    "userinfo_endpoint": {
+                      "type": "string"
+                    },
+                    "jwks_uri": {
+                      "type": "string"
+                    },
+                    "introspection_endpoint": {
+                      "type": "string"
+                    },
+                    "revocation_endpoint": {
+                      "type": "string"
+                    },
+                    "end_session_endpoint": {
+                      "type": "string"
+                    },
+                    "backchannel_authentication_endpoint": {
+                      "type": "string"
+                    },
+                    "scopes_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "response_types_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "grant_types_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "subject_types_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "id_token_signing_alg_values_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "token_endpoint_auth_methods_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "code_challenge_methods_supported": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "issuer": "https://giam.example/realms/acme",
+                  "jwks_uri": "https://giam.example/realms/acme/protocol/openid-connect/certs"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/.well-known/oauth-authorization-server": {
+      "get": {
+        "operationId": "getAuthorizationServerMetadataAtIssuerPath",
+        "summary": "Authorization server metadata",
+        "tags": [
+          "discovery"
+        ],
+        "description": "Standard-defined: RFC 8414, the OIDC-shaped location. Path, document and member names follow the specification verbatim. Public by specification: it names endpoints, it discloses nothing.",
         "parameters": [
           {
             "schema": {
@@ -646,70 +771,130 @@
       }
     },
     "/realms/{realm}/protocol/openid-connect/auth": {
-      "post": {
+      "get": {
         "operationId": "authorize",
         "summary": "Authorization endpoint",
         "tags": [
           "oauth"
         ],
-        "description": "Standard-defined: RFC 6749 section 4.1 and RFC 7636 (PKCE). Exchanges an established session for a single-use authorization code bound to the client, the redirect URI and the PKCE challenge. It never accepts a credential: a request with no session is told one is required rather than being prompted here.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "client_id",
-                  "redirect_uri",
-                  "response_type",
-                  "session_id"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "client_id": {
-                    "type": "string",
-                    "example": "orders-web"
-                  },
-                  "redirect_uri": {
-                    "type": "string",
-                    "example": "https://app.example/callback"
-                  },
-                  "response_type": {
-                    "type": "string",
-                    "enum": [
-                      "code"
-                    ]
-                  },
-                  "scope": {
-                    "type": "string",
-                    "example": "openid profile"
-                  },
-                  "state": {
+        "description": "Standard-defined: RFC 6749 section 4.1 and RFC 7636 (PKCE). Send a browser here with the parameters in the query string; the answer is a 302 to your registered redirect URI carrying `code` and `state`. Errors are delivered by redirect once the client and the redirect URI are known to be registered, and directly when they are not. PKCE is REQUIRED of every client, public or confidential, per RFC 9700. The session comes from a cookie, and consent is recorded by this authority rather than asserted by a caller.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "orders-web",
+            "in": "query",
+            "name": "client_id",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "https://app.example/callback",
+            "in": "query",
+            "name": "redirect_uri",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "code",
+            "in": "query",
+            "name": "response_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "openid profile",
+            "in": "query",
+            "name": "scope",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "state",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "nonce",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "code_challenge",
+            "required": false,
+            "description": "REQUIRED. RFC 7636."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "S256",
+            "in": "query",
+            "name": "code_challenge_method",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "query",
+            "in": "query",
+            "name": "response_mode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "prompt",
+            "required": false,
+            "description": "OIDC: `consent` asks again even when a grant already covers the request."
+          },
+          {
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
                     "type": "string"
-                  },
-                  "nonce": {
-                    "type": "string"
-                  },
-                  "code_challenge": {
-                    "type": "string"
-                  },
-                  "code_challenge_method": {
-                    "type": "string",
-                    "enum": [
-                      "S256"
-                    ]
-                  },
-                  "session_id": {
-                    "type": "string",
-                    "description": "The session established at sign-in."
                   }
                 }
-              }
-            }
-          }
-        },
-        "parameters": [
+              ]
+            },
+            "in": "query",
+            "name": "resource",
+            "required": false,
+            "description": "RFC 8707 resource indicators. Narrows the audience within the registration."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "request_id",
+            "required": false,
+            "description": "Returning from the sign-in or consent page. The pending request is read back from this rather than from the query, so a detour cannot alter what was asked for."
+          },
           {
             "schema": {
               "type": "string"
@@ -722,40 +907,255 @@
         ],
         "security": [],
         "responses": {
-          "200": {
-            "description": "The authorization code, and the state to echo back.",
+          "302": {
+            "description": "The authorization code, or an error, delivered to the registered redirect URI. Also the redirect to this authority's sign-in or consent page when one is needed.",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The authorization code, and the state to echo back.",
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "code",
-                    "redirect_uri"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "state": {
-                      "type": "string"
-                    },
-                    "redirect_uri": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "example": {
-                  "code": "a1b2…",
-                  "state": "xyz",
-                  "redirect_uri": "https://app.example/callback"
+                  "description": "The authorization code, or an error, delivered to the registered redirect URI. Also the redirect to this authority's sign-in or consent page when one is needed."
                 }
               }
             }
           },
           "400": {
-            "description": "The request is invalid or the scope is not permitted.",
+            "description": "The client or the redirect URI is not registered, so nothing may be redirected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/def-1"
+                    }
+                  ],
+                  "description": "The client or the redirect URI is not registered, so nothing may be redirected."
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "error_description": "redirect_uri is not registered for this client"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/protocol/openid-connect/auth/consent": {
+      "get": {
+        "operationId": "readConsentPrompt",
+        "summary": "What a pending authorization is asking for",
+        "tags": [
+          "oauth"
+        ],
+        "description": "No applicable standard for this shape; what is standard-defined is that the decision belongs to the resource owner, so the screen must show what will actually be exercised. Reads back a pending authorization, assembled from the STORED request rather than from the URL, so nothing a caller writes decides what the person is shown. Requires the session cookie.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "request_id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The application, and what it is asking for.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The application, and what it is asking for.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "clientName",
+                    "scopes"
+                  ],
+                  "properties": {
+                    "clientName": {
+                      "type": "string"
+                    },
+                    "clientUri": {
+                      "type": "string"
+                    },
+                    "logoUri": {
+                      "type": "string"
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "description": "One entry per scope, with what it means to a person. The description comes from the resource server that accepts the scope, so this authority renders a the vocabulary of the deployment rather than carrying one of its own.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "required",
+                          "alreadyGranted"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "description": "Declining it ends the flow rather than narrowing it."
+                          },
+                          "alreadyGranted": {
+                            "type": "boolean",
+                            "description": "Held from an earlier authorisation."
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "clientName": "Acme Accounting",
+                  "scopes": [
+                    {
+                      "name": "openid",
+                      "description": "Confirm who you are",
+                      "required": true,
+                      "alreadyGranted": true
+                    },
+                    {
+                      "name": "profile",
+                      "description": "Read your name",
+                      "required": false,
+                      "alreadyGranted": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No such pending request, or it has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/def-1"
+                    }
+                  ],
+                  "description": "No such pending request, or it has expired."
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "error_description": "no such pending request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No live session, so there is nobody to ask.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/def-1"
+                    }
+                  ],
+                  "description": "No live session, so there is nobody to ask."
+                },
+                "example": {
+                  "error": "access_denied",
+                  "error_description": "no live session"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "recordConsent",
+        "summary": "Record the person's decision on a pending authorization",
+        "tags": [
+          "oauth"
+        ],
+        "description": "No applicable standard for the shape; what is standard-defined is that the decision belongs to the resource owner. Requires the session cookie, so the only party who can approve is the person the browser is signed in as. Answers with where to continue, which is the authorization endpoint carrying the same `request_id`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "request_id",
+                  "approved"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "request_id": {
+                    "type": "string"
+                  },
+                  "approved": {
+                    "type": "boolean",
+                    "description": "False sends `access_denied` back to the application."
+                  },
+                  "granted_scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "The scopes the person actually approved, which may be FEWER than were asked for. RFC 6749 3.3 permits granting a narrower scope than requested, and 5.1 requires the token response to say so. Omitted means all of them. Anything not asked for is ignored rather than granted: a decision can only narrow."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recorded. Send the browser to `continue`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Recorded. Send the browser to `continue`.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "continue"
+                  ],
+                  "properties": {
+                    "continue": {
+                      "type": "string",
+                      "description": "The authorization endpoint, carrying the request id."
+                    }
+                  }
+                },
+                "example": {
+                  "continue": "https://authority.example/realms/acme/protocol/openid-connect/auth?request_id=6f2c1a44"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No such pending request, or it has expired.",
             "content": {
               "application/json": {
                 "schema": {
@@ -765,7 +1165,7 @@
             }
           },
           "401": {
-            "description": "No live session.",
+            "description": "No live session, so there is nobody to consent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -834,6 +1234,25 @@
                   },
                   "scope": {
                     "type": "string"
+                  },
+                  "resource": {
+                    "description": "RFC 8707 resource indicators: which API this token is for. Repeatable. Narrows the audience within what the client registration allows; a resource outside it is refused with invalid_target rather than silently dropped.",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ],
+                    "example": "https://api.example"
+                  },
+                  "entitlements": {
+                    "type": "string",
+                    "description": "Space delimited resource:action strings, to obtain a NARROWER token than the roles alone would give. Intersected with what the roles grant, never unioned. Named for the claim it populates, RFC 9068 section 2.2.3.1."
                   },
                   "client_id": {
                     "type": "string"
@@ -1020,12 +1439,36 @@
                     "token_type": {
                       "type": "string"
                     },
-                    "permissions": {
+                    "aud": {
+                      "description": "What the token is addressed to. Compare it against your own."
+                    },
+                    "iss": {
+                      "type": "string"
+                    },
+                    "jti": {
+                      "type": "string",
+                      "description": "The identifier of this token, for one-time use or for naming it in an incident."
+                    },
+                    "nbf": {
+                      "type": "integer"
+                    },
+                    "username": {
+                      "type": "string",
+                      "description": "The login identifier, per SCIM. Not a display name."
+                    },
+                    "entitlements": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "type": "string"
                       }
+                    },
+                    "grant_id": {
+                      "type": "string",
+                      "description": "The consent this token was issued under."
+                    },
+                    "txn": {
+                      "type": "string",
+                      "description": "The flow it belongs to, RFC 8417."
                     }
                   }
                 },
@@ -2975,7 +3418,12 @@
                       "type": "string"
                     },
                     "userName": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The login identifier, per SCIM."
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "description": "The name to show. SCIM `name.formatted`."
                     },
                     "assuranceLevel": {
                       "type": "string"
@@ -2991,7 +3439,8 @@
                 "example": {
                   "subjectId": "ec06cbfa-96e2-4867-892b-b74987e78d7a",
                   "sessionId": "a3f1…",
-                  "userName": "Ada Lovelace",
+                  "userName": "ada.lovelace",
+                  "displayName": "Ada Lovelace",
                   "assuranceLevel": "aal1",
                   "method": "password",
                   "sessionEpoch": 0
@@ -3011,6 +3460,16 @@
           },
           "404": {
             "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The concurrent-session limit on this path refuses a further session.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3121,12 +3580,20 @@
                             "type": "string"
                           },
                           "userName": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The login identifier, per SCIM."
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "description": "The name to show. SCIM `name.formatted`."
                           },
                           "email": {
                             "type": "string"
                           },
                           "role": {
+                            "type": "string"
+                          },
+                          "demoNote": {
                             "type": "string"
                           }
                         }
@@ -3152,7 +3619,8 @@
                   "roster": [
                     {
                       "subjectId": "ada",
-                      "userName": "Ada Lovelace",
+                      "userName": "ada.lovelace",
+                      "displayName": "Ada Lovelace",
                       "role": "analyst"
                     }
                   ]
@@ -4553,6 +5021,9 @@
                           "subjectId": {
                             "type": "string"
                           },
+                          "userName": {
+                            "type": "string"
+                          },
                           "createdAt": {
                             "type": "string"
                           },
@@ -4879,6 +5350,7 @@
                           "clientId",
                           "clientName",
                           "scopes",
+                          "registeredScopes",
                           "status",
                           "grantedAt"
                         ],
@@ -4899,7 +5371,15 @@
                             "type": "array",
                             "items": {
                               "type": "string"
-                            }
+                            },
+                            "description": "What this application currently holds."
+                          },
+                          "registeredScopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Everything the client is registered for, which is the ceiling a scope change is bounded by. Both halves travel together so a caller can offer the choice, rather than only ever taking permissions away."
                           },
                           "status": {
                             "type": "string",
@@ -4926,6 +5406,11 @@
                             "openid",
                             "profile"
                           ],
+                          "registeredScopes": [
+                            "openid",
+                            "profile",
+                            "email"
+                          ],
                           "status": "active",
                           "grantedAt": "2026-08-01T10:22:00.000Z"
                         }
@@ -4942,6 +5427,11 @@
                       "scopes": [
                         "openid",
                         "profile"
+                      ],
+                      "registeredScopes": [
+                        "openid",
+                        "profile",
+                        "email"
                       ],
                       "status": "active",
                       "grantedAt": "2026-08-01T10:22:00.000Z"
@@ -5044,6 +5534,7 @@
                     "clientId",
                     "clientName",
                     "scopes",
+                    "registeredScopes",
                     "status",
                     "grantedAt"
                   ],
@@ -5064,7 +5555,15 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "What this application currently holds."
+                    },
+                    "registeredScopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Everything the client is registered for, which is the ceiling a scope change is bounded by. Both halves travel together so a caller can offer the choice, rather than only ever taking permissions away."
                     },
                     "status": {
                       "type": "string",
@@ -5092,6 +5591,11 @@
                   "scopes": [
                     "openid",
                     "profile"
+                  ],
+                  "registeredScopes": [
+                    "openid",
+                    "profile",
+                    "email"
                   ],
                   "status": "active",
                   "grantedAt": "2026-08-01T10:22:00.000Z"
@@ -5121,6 +5625,154 @@
           },
           "404": {
             "description": "No such grant for this principal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "changeGrantScope",
+        "summary": "Change what an application is allowed to do",
+        "tags": [
+          "consent"
+        ],
+        "description": "Standard-adjacent: the scope of an RFC 6749 authorisation, changed after the fact. Bounded by the registration of the client, because those scopes were deduced from what its owner registered and a registration that can be exceeded is not a limit. Narrowing takes effect on the grant at once and ends the sessions of that client so the next token is minted narrower; a token already issued keeps its scope until it expires, which is minutes, because it is verified without calling here. Every change is recorded with the scope set before and after and who made it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "scopes"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "The complete set this application should hold. Not a delta: a set is unambiguous."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "grantId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What changed, and what it means for tokens already issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "What changed, and what it means for tokens already issued.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "before",
+                    "after",
+                    "added",
+                    "removed"
+                  ],
+                  "properties": {
+                    "before": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "after": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "added": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "removed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sessionsEnded": {
+                      "type": "integer",
+                      "description": "Ended so the next token is narrower. Tokens already issued run to expiry."
+                    }
+                  }
+                },
+                "example": {
+                  "before": [
+                    "openid"
+                  ],
+                  "after": [
+                    "openid",
+                    "profile"
+                  ],
+                  "added": [
+                    "profile"
+                  ],
+                  "removed": [],
+                  "sessionsEnded": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A scope beyond what the client is registered for.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such active authorisation for this person.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5192,6 +5844,7 @@
                     "clientId",
                     "clientName",
                     "scopes",
+                    "registeredScopes",
                     "status",
                     "grantedAt"
                   ],
@@ -5212,7 +5865,15 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "What this application currently holds."
+                    },
+                    "registeredScopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Everything the client is registered for, which is the ceiling a scope change is bounded by. Both halves travel together so a caller can offer the choice, rather than only ever taking permissions away."
                     },
                     "status": {
                       "type": "string",
@@ -5240,6 +5901,11 @@
                   "scopes": [
                     "openid",
                     "profile"
+                  ],
+                  "registeredScopes": [
+                    "openid",
+                    "profile",
+                    "email"
                   ],
                   "status": "active",
                   "grantedAt": "2026-08-01T10:22:00.000Z"
@@ -5462,6 +6128,7 @@
                     "clientId",
                     "clientName",
                     "scopes",
+                    "registeredScopes",
                     "status",
                     "grantedAt"
                   ],
@@ -5482,7 +6149,15 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "What this application currently holds."
+                    },
+                    "registeredScopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Everything the client is registered for, which is the ceiling a scope change is bounded by. Both halves travel together so a caller can offer the choice, rather than only ever taking permissions away."
                     },
                     "status": {
                       "type": "string",
@@ -5510,6 +6185,11 @@
                   "scopes": [
                     "openid",
                     "profile"
+                  ],
+                  "registeredScopes": [
+                    "openid",
+                    "profile",
+                    "email"
                   ],
                   "status": "active",
                   "grantedAt": "2026-08-01T10:22:00.000Z"
@@ -6345,6 +7025,737 @@
           },
           "404": {
             "description": "No such realm or provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The concurrent-session limit on this path refuses a further session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/domains": {
+      "get": {
+        "operationId": "listDomains",
+        "summary": "Authentication paths of this realm",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** Every way a person can prove who they are in this realm. Provider settings are published through an allowlist, so no secret or secret reference appears here.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Matches the name or the display name."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The authentication paths of this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "items": [
+                      {
+                        "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                        "name": "atlas-id",
+                        "displayName": "Acme directory",
+                        "protocol": "internal",
+                        "adapter": "internal",
+                        "enabled": true,
+                        "config": {},
+                        "claimMappings": [],
+                        "registration": {
+                          "selfServiceEnabled": true,
+                          "autoApprove": false
+                        },
+                        "hasClientSecret": false
+                      }
+                    ],
+                    "total": 1,
+                    "page": 1,
+                    "limit": 50
+                  },
+                  "description": "The authentication paths of this realm."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held carries the provider permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createDomain",
+        "summary": "Add an authentication path",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** Created DISABLED, so it authenticates nobody before its settings have been checked.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Slug, unique inside the realm."
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "internal",
+                      "oidc",
+                      "saml",
+                      "ldap",
+                      "spiffe"
+                    ]
+                  },
+                  "adapter": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "notice": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "claimMappings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "claim",
+                        "value",
+                        "roleName"
+                      ],
+                      "properties": {
+                        "claim": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        },
+                        "roleName": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "registration": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "selfServiceEnabled",
+                      "autoApprove"
+                    ],
+                    "properties": {
+                      "selfServiceEnabled": {
+                        "type": "boolean"
+                      },
+                      "autoApprove": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "session": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "maxConcurrent",
+                      "onExceed"
+                    ],
+                    "properties": {
+                      "maxConcurrent": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 1
+                      },
+                      "onExceed": {
+                        "type": "string",
+                        "enum": [
+                          "evict-oldest",
+                          "refuse-new"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "displayName",
+                  "protocol"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The path as created, which is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                    "name": "atlas-id",
+                    "displayName": "Acme directory",
+                    "protocol": "internal",
+                    "adapter": "internal",
+                    "enabled": true,
+                    "config": {},
+                    "claimMappings": [],
+                    "registration": {
+                      "selfServiceEnabled": true,
+                      "autoApprove": false
+                    },
+                    "hasClientSecret": false
+                  },
+                  "description": "The path as created, which is disabled."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held carries the provider permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That name is already used in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/domains/{domainId}": {
+      "get": {
+        "operationId": "getDomain",
+        "summary": "One authentication path",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** One authentication path, with its settings allowlisted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One authentication path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                    "name": "atlas-id",
+                    "displayName": "Acme directory",
+                    "protocol": "internal",
+                    "adapter": "internal",
+                    "enabled": true,
+                    "config": {},
+                    "claimMappings": [],
+                    "registration": {
+                      "selfServiceEnabled": true,
+                      "autoApprove": false
+                    },
+                    "hasClientSecret": false
+                  },
+                  "description": "One authentication path."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held carries the provider permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm or domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateDomain",
+        "summary": "Change an authentication path",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** Only the named fields can be changed. `config` is MERGED rather than replaced, so a console that never received a secret reference cannot drop it by sending back what it saw.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Slug, unique inside the realm."
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "internal",
+                      "oidc",
+                      "saml",
+                      "ldap",
+                      "spiffe"
+                    ]
+                  },
+                  "adapter": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "notice": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "claimMappings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "claim",
+                        "value",
+                        "roleName"
+                      ],
+                      "properties": {
+                        "claim": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        },
+                        "roleName": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "registration": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "selfServiceEnabled",
+                      "autoApprove"
+                    ],
+                    "properties": {
+                      "selfServiceEnabled": {
+                        "type": "boolean"
+                      },
+                      "autoApprove": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "session": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "maxConcurrent",
+                      "onExceed"
+                    ],
+                    "properties": {
+                      "maxConcurrent": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 1
+                      },
+                      "onExceed": {
+                        "type": "string",
+                        "enum": [
+                          "evict-oldest",
+                          "refuse-new"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The path as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "domainId": "a4c610e1-65c0-5e4c-813c-4cb9712a8bcf",
+                    "name": "atlas-id",
+                    "displayName": "Acme directory",
+                    "protocol": "internal",
+                    "adapter": "internal",
+                    "enabled": true,
+                    "config": {},
+                    "claimMappings": [],
+                    "registration": {
+                      "selfServiceEnabled": true,
+                      "autoApprove": false
+                    },
+                    "hasClientSecret": false
+                  },
+                  "description": "The path as it now stands."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held carries the provider permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm or domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is taken, or this is the last enabled path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteDomain",
+        "summary": "Remove an authentication path",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** Refused when it is the last enabled path, which would leave the realm unreachable, including by whoever would undo it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The path is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "example": {
+                    "deleted": true
+                  },
+                  "description": "The path is gone."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held carries the provider permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm or domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This is the last enabled authentication path.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7324,9 +8735,9 @@
                     "type": "string",
                     "example": "orders-api"
                   },
-                  "permissionCatalogVersion": {
-                    "type": "string",
-                    "example": "3"
+                  "catalogVersion": {
+                    "type": "integer",
+                    "example": 3
                   },
                   "validationMode": {
                     "type": "string",
@@ -7389,12 +8800,12 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "resourceServerId",
+                    "resourceId",
                     "registered",
                     "deprecated"
                   ],
                   "properties": {
-                    "resourceServerId": {
+                    "resourceId": {
                       "type": "string"
                     },
                     "registered": {
@@ -7405,16 +8816,16 @@
                       "type": "integer",
                       "description": "Permissions no longer declared, kept for existing grants."
                     },
-                    "permissionCatalogVersion": {
-                      "type": "string"
+                    "catalogVersion": {
+                      "type": "integer"
                     }
                   }
                 },
                 "example": {
-                  "resourceServerId": "a1c4…",
+                  "resourceId": "a1c4…",
                   "registered": 27,
                   "deprecated": 0,
-                  "permissionCatalogVersion": "1"
+                  "catalogVersion": 1
                 }
               }
             }
@@ -7441,6 +8852,142 @@
           },
           "503": {
             "description": "No administrative credential is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/signals": {
+      "get": {
+        "operationId": "pollSecurityEventFeed",
+        "summary": "Security events since a moment, for a receiver that polls",
+        "tags": [
+          "authorization"
+        ],
+        "description": "Standard-defined: OpenID Shared Signals Framework, with CAEP event types. The signed fallback for a receiver that cannot host an SSF push endpoint. Returns the same events push delivers, newest last, so a caller can replay in order and record where it stopped. Each entry is a Security Event Token signed by the realm, verified against the same JWKS as an access token.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "description": "ISO instant. Events at or after it. Omitted means the last hour, not everything."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The events, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The events, oldest first.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "signals",
+                    "cursor"
+                  ],
+                  "properties": {
+                    "signals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "event",
+                          "subjectId",
+                          "issuedAt",
+                          "jwt"
+                        ],
+                        "properties": {
+                          "event": {
+                            "type": "string"
+                          },
+                          "subjectId": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "issuedAt": {
+                            "type": "string"
+                          },
+                          "jwt": {
+                            "type": "string",
+                            "description": "The signed Security Event Token."
+                          }
+                        }
+                      }
+                    },
+                    "cursor": {
+                      "type": "string",
+                      "description": "Pass as `since` next time. The instant of the last event, or the request time when empty."
+                    }
+                  }
+                },
+                "example": {
+                  "signals": [
+                    {
+                      "event": "session-revoked",
+                      "subjectId": "a1000070-0000-4000-8000-000000000070",
+                      "sessionId": "c4e2a8f1-9b3d-4c76-a5e8-2f7b1d6c9a34",
+                      "reason": "logout",
+                      "issuedAt": "2026-09-02T09:41:00.000Z",
+                      "jwt": "eyJ0eXAiOiJzZWNldmVudCtqd3Qi…"
+                    }
+                  ],
+                  "cursor": "2026-09-02T09:41:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token and no operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7917,14 +9464,14 @@
         }
       }
     },
-    "/realms/{realm}/realm-grants/{assignmentId}": {
+    "/realms/{realm}/realm-grants/{subjectId}/{targetRealmId}": {
       "delete": {
         "operationId": "revokeRealmGrant",
         "summary": "Take back administration of another realm",
         "tags": [
           "authorization"
         ],
-        "description": "No applicable standard; multi-realm administration. The grant is deleted rather than left to expire, and takes effect at once: permissions are resolved from the stored assignment on every request, so nothing survives in a token that was already issued beyond its own short life. Recorded naming both realms, like the grant was.",
+        "description": "No applicable standard; multi-realm administration. The grant is deleted rather than left to expire, and takes effect at once: permissions are resolved from the holding on every request, so nothing survives in a token that was already issued beyond its own short life. Addressed by the principal and the realm it administers, because the holding lives on the principal and has no identifier of its own. Recorded naming both realms, like the grant was.",
         "parameters": [
           {
             "schema": {
@@ -7939,7 +9486,15 @@
               "type": "string"
             },
             "in": "path",
-            "name": "assignmentId",
+            "name": "subjectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "targetRealmId",
             "required": true
           }
         ],
@@ -7959,20 +9514,25 @@
                   "additionalProperties": false,
                   "required": [
                     "revoked",
-                    "assignmentId"
+                    "subjectId",
+                    "targetRealmId"
                   ],
                   "properties": {
                     "revoked": {
                       "type": "boolean"
                     },
-                    "assignmentId": {
+                    "subjectId": {
+                      "type": "string"
+                    },
+                    "targetRealmId": {
                       "type": "string"
                     }
                   }
                 },
                 "example": {
                   "revoked": true,
-                  "assignmentId": "rgrant-9f21"
+                  "subjectId": "sub-4821",
+                  "targetRealmId": "realm-2"
                 }
               }
             }
@@ -8589,20 +10149,54 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "permissions"
+                    "permissions",
+                    "roles",
+                    "catalogVersion"
                   ],
                   "properties": {
+                    "catalogVersion": {
+                      "type": "integer",
+                      "description": "Bumps whenever any resource catalog changes. Cache against this."
+                    },
+                    "roles": {
+                      "type": "array",
+                      "description": "Each role with the full permission strings it grants, parents resolved.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "permissions"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
                     "permissions": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
                         "required": [
+                          "permission",
                           "resource",
                           "action",
                           "resourceServer"
                         ],
                         "properties": {
+                          "permission": {
+                            "type": "string",
+                            "description": "The full string, `resource:action`. The one spelling a role, a policy and a token all use."
+                          },
                           "resource": {
                             "type": "string"
                           },
@@ -8614,10 +10208,6 @@
                           },
                           "resourceServer": {
                             "type": "string"
-                          },
-                          "deprecated": {
-                            "type": "boolean",
-                            "description": "No longer declared, kept because grants reference it."
                           }
                         }
                       }
@@ -8627,13 +10217,22 @@
                 "example": {
                   "permissions": [
                     {
+                      "permission": "roles:manage",
                       "resource": "roles",
                       "action": "manage",
-                      "description": "manage on roles",
-                      "resourceServer": "authority",
-                      "deprecated": false
+                      "description": "the role catalogue",
+                      "resourceServer": "authority"
                     }
-                  ]
+                  ],
+                  "roles": [
+                    {
+                      "name": "realm_administrator",
+                      "permissions": [
+                        "roles:manage"
+                      ]
+                    }
+                  ],
+                  "catalogVersion": 3
                 }
               }
             }
@@ -9456,17 +11055,16 @@
                         "type": "object",
                         "additionalProperties": false,
                         "required": [
-                          "assignmentId",
                           "subjectId",
                           "roleId",
                           "grantedAt",
                           "live"
                         ],
                         "properties": {
-                          "assignmentId": {
+                          "subjectId": {
                             "type": "string"
                           },
-                          "subjectId": {
+                          "userName": {
                             "type": "string"
                           },
                           "roleId": {
@@ -9476,9 +11074,6 @@
                             "type": "string"
                           },
                           "grantedBy": {
-                            "type": "string"
-                          },
-                          "notBefore": {
                             "type": "string"
                           },
                           "expiresAt": {
@@ -9492,12 +11087,12 @@
                           },
                           "live": {
                             "type": "boolean",
-                            "description": "False once an expiry has passed or a start has not arrived."
+                            "description": "False once an expiry has passed."
                           }
                         },
                         "example": {
-                          "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
                           "subjectId": "a1000070-0000-4000-8000-000000000070",
+                          "userName": "Alex Rivera",
                           "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
                           "grantedAt": "2026-08-30T09:12:00.000Z",
                           "live": true
@@ -9509,8 +11104,8 @@
                 "example": {
                   "assignments": [
                     {
-                      "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
                       "subjectId": "a1000070-0000-4000-8000-000000000070",
+                      "userName": "Alex Rivera",
                       "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
                       "grantedAt": "2026-08-30T09:12:00.000Z",
                       "live": true
@@ -9619,17 +11214,16 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "assignmentId",
                     "subjectId",
                     "roleId",
                     "grantedAt",
                     "live"
                   ],
                   "properties": {
-                    "assignmentId": {
+                    "subjectId": {
                       "type": "string"
                     },
-                    "subjectId": {
+                    "userName": {
                       "type": "string"
                     },
                     "roleId": {
@@ -9639,9 +11233,6 @@
                       "type": "string"
                     },
                     "grantedBy": {
-                      "type": "string"
-                    },
-                    "notBefore": {
                       "type": "string"
                     },
                     "expiresAt": {
@@ -9655,14 +11246,14 @@
                     },
                     "live": {
                       "type": "boolean",
-                      "description": "False once an expiry has passed or a start has not arrived."
+                      "description": "False once an expiry has passed."
                     }
                   },
                   "description": "The assignment."
                 },
                 "example": {
-                  "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
                   "subjectId": "a1000070-0000-4000-8000-000000000070",
+                  "userName": "Alex Rivera",
                   "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
                   "grantedAt": "2026-08-30T09:12:00.000Z",
                   "live": true
@@ -9713,14 +11304,14 @@
         }
       }
     },
-    "/realms/{realm}/role-assignments/{assignmentId}": {
+    "/realms/{realm}/principals/{subjectId}/roles/{roleId}": {
       "delete": {
         "operationId": "revokeRoleAssignment",
         "summary": "Take a role back from a principal",
         "tags": [
           "authorization"
         ],
-        "description": "No applicable standard. Removes one assignment and nothing else: the role, and everyone else holding it, are untouched. It takes effect at the next token issued, which is why access-token lifetimes are short and why the irreversible operations introspect.",
+        "description": "No applicable standard. Removes one holding and nothing else: the role, and everyone else holding it, are untouched. Addressed by the subject and the role, because a role a subject holds lives on the subject and has no identifier of its own. It takes effect at the next token issued, which is why access-token lifetimes are short and why the irreversible operations introspect.",
         "parameters": [
           {
             "schema": {
@@ -9735,7 +11326,15 @@
               "type": "string"
             },
             "in": "path",
-            "name": "assignmentId",
+            "name": "subjectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
             "required": true
           }
         ],
@@ -9755,14 +11354,12 @@
                   "additionalProperties": false,
                   "required": [
                     "revoked",
-                    "assignmentId"
+                    "subjectId",
+                    "roleId"
                   ],
                   "properties": {
                     "revoked": {
                       "type": "boolean"
-                    },
-                    "assignmentId": {
-                      "type": "string"
                     },
                     "subjectId": {
                       "type": "string"
@@ -9774,7 +11371,6 @@
                 },
                 "example": {
                   "revoked": true,
-                  "assignmentId": "0f2b8f4a-2f19-4e2c-9a44-6f3d2b7c1e05",
                   "subjectId": "a1000070-0000-4000-8000-000000000070",
                   "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4"
                 }
@@ -9802,7 +11398,7 @@
             }
           },
           "404": {
-            "description": "No such assignment in this realm.",
+            "description": "That principal does not hold that role in this realm.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9889,10 +11485,11 @@
                           "policyId",
                           "name",
                           "version",
-                          "enabled",
-                          "statementCount",
-                          "denyCount",
+                          "status",
+                          "effect",
+                          "permissionCount",
                           "conditionCount",
+                          "inEffect",
                           "attachedTo"
                         ],
                         "properties": {
@@ -9905,18 +11502,31 @@
                           "version": {
                             "type": "string"
                           },
-                          "enabled": {
-                            "type": "boolean"
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "draft",
+                              "active",
+                              "retired"
+                            ]
                           },
-                          "statementCount": {
+                          "effect": {
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "deny"
+                            ],
+                            "description": "Whether this policy prohibits. The first thing a reviewer wants to know."
+                          },
+                          "permissionCount": {
                             "type": "integer"
-                          },
-                          "denyCount": {
-                            "type": "integer",
-                            "description": "How many statements prohibit. The first thing a reviewer wants to know."
                           },
                           "conditionCount": {
                             "type": "integer"
+                          },
+                          "inEffect": {
+                            "type": "boolean",
+                            "description": "False while drafted, retired, or dated ahead."
                           },
                           "attachedTo": {
                             "type": "array",
@@ -9935,10 +11545,11 @@
                           "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                           "name": "administration-requires-strong-authentication",
                           "version": "1",
-                          "enabled": true,
-                          "statementCount": 1,
-                          "denyCount": 1,
+                          "status": "active",
+                          "effect": "deny",
+                          "permissionCount": 1,
                           "conditionCount": 1,
+                          "inEffect": true,
                           "attachedTo": []
                         }
                       }
@@ -9954,10 +11565,11 @@
                       "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                       "name": "administration-requires-strong-authentication",
                       "version": "1",
-                      "enabled": true,
-                      "statementCount": 1,
-                      "denyCount": 1,
+                      "status": "active",
+                      "effect": "deny",
+                      "permissionCount": 1,
                       "conditionCount": 1,
+                      "inEffect": true,
                       "attachedTo": []
                     }
                   ],
@@ -10013,7 +11625,9 @@
                 "type": "object",
                 "required": [
                   "name",
-                  "statements"
+                  "effect",
+                  "permissions",
+                  "resource"
                 ],
                 "additionalProperties": false,
                 "properties": {
@@ -10022,107 +11636,139 @@
                     "minLength": 1,
                     "pattern": "^[a-zA-Z0-9._-]+$"
                   },
-                  "version": {
+                  "effect": {
                     "type": "string",
-                    "default": "1"
+                    "enum": [
+                      "allow",
+                      "deny"
+                    ],
+                    "description": "Deny wins over every allow, absolutely."
                   },
-                  "statements": {
+                  "permissions": {
                     "type": "array",
                     "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
+                  },
+                  "resource": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "pattern"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "pattern": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                      }
+                    }
+                  },
+                  "principals": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                  },
+                  "conditions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                      "properties": {
+                        "assuranceAtLeast": {
+                          "type": "string",
+                          "enum": [
+                            "aal1",
+                            "aal2",
+                            "aal3"
+                          ],
+                          "description": "The floor the authentication must have reached."
+                        },
+                        "ipInRange": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Address prefixes, matched literally rather than as an expression."
+                        },
+                        "timeOfDayUtc": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "from",
+                            "to"
+                          ],
+                          "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                          "properties": {
+                            "from": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
+                            },
+                            "to": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
+                            }
+                          }
+                        },
+                        "tenantIs": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "The data boundary the request must be acting inside."
+                        },
+                        "attestationRequired": {
+                          "type": "boolean",
+                          "description": "The caller must arrive already attested."
+                        }
+                      }
+                    },
+                    "description": "ALL must hold. Any-of would mean adding a condition could widen a policy."
+                  },
+                  "obligations": {
+                    "type": "array",
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "effect"
+                        "type"
                       ],
                       "properties": {
-                        "effect": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "severity": {
                           "type": "string",
                           "enum": [
-                            "allow",
-                            "deny"
-                          ],
-                          "description": "Deny wins over every allow, absolutely."
-                        },
-                        "principals": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          },
-                          "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
-                        },
-                        "actions": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "resources": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "condition": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
-                          "properties": {
-                            "assuranceAtLeast": {
-                              "type": "string",
-                              "enum": [
-                                "aal1",
-                                "aal2",
-                                "aal3"
-                              ],
-                              "description": "The floor the authentication must have reached."
-                            },
-                            "ipInRange": {
-                              "type": "array",
-                              "minItems": 1,
-                              "items": {
-                                "type": "string"
-                              },
-                              "description": "Address prefixes, matched literally rather than as an expression."
-                            },
-                            "timeOfDayUtc": {
-                              "type": "object",
-                              "additionalProperties": false,
-                              "required": [
-                                "from",
-                                "to"
-                              ],
-                              "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
-                              "properties": {
-                                "from": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                },
-                                "to": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                }
-                              }
-                            },
-                            "tenantIs": {
-                              "type": "string",
-                              "minLength": 1,
-                              "description": "The data boundary the request must be acting inside."
-                            },
-                            "attestationRequired": {
-                              "type": "boolean",
-                              "description": "The caller must arrive already attested."
-                            }
-                          }
-                        },
-                        "reason": {
-                          "type": "string",
-                          "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                            "low",
+                            "medium",
+                            "high"
+                          ]
                         }
                       }
                     }
+                  },
+                  "approvedBy": {
+                    "type": "string"
+                  },
+                  "effectiveFrom": {
+                    "type": "string",
+                    "description": "Written down and not yet in force until this moment passes."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Carried into the decision. A decision a log cannot explain is not auditable."
                   },
                   "attachedTo": {
                     "type": "array",
@@ -10130,9 +11776,19 @@
                       "type": "string"
                     }
                   },
-                  "enabled": {
-                    "type": "boolean",
-                    "default": true
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "active",
+                      "retired"
+                    ],
+                    "default": "active"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1
                   }
                 }
               }
@@ -10167,12 +11823,15 @@
                     "policyId",
                     "name",
                     "version",
-                    "enabled",
-                    "statementCount",
-                    "denyCount",
+                    "status",
+                    "effect",
+                    "permissionCount",
                     "conditionCount",
+                    "inEffect",
                     "attachedTo",
-                    "statements"
+                    "permissions",
+                    "resource",
+                    "conditions"
                   ],
                   "properties": {
                     "policyId": {
@@ -10184,18 +11843,31 @@
                     "version": {
                       "type": "string"
                     },
-                    "enabled": {
-                      "type": "boolean"
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "active",
+                        "retired"
+                      ]
                     },
-                    "statementCount": {
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "deny"
+                      ],
+                      "description": "Deny wins over every allow, absolutely."
+                    },
+                    "permissionCount": {
                       "type": "integer"
-                    },
-                    "denyCount": {
-                      "type": "integer",
-                      "description": "How many statements prohibit. The first thing a reviewer wants to know."
                     },
                     "conditionCount": {
                       "type": "integer"
+                    },
+                    "inEffect": {
+                      "type": "boolean",
+                      "description": "False while drafted, retired, or dated ahead."
                     },
                     "attachedTo": {
                       "type": "array",
@@ -10209,102 +11881,131 @@
                     "lastModified": {
                       "type": "string"
                     },
-                    "statements": {
+                    "permissions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
+                    },
+                    "resource": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "pattern"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                        }
+                      }
+                    },
+                    "principals": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                    },
+                    "conditions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                        "properties": {
+                          "assuranceAtLeast": {
+                            "type": "string",
+                            "enum": [
+                              "aal1",
+                              "aal2",
+                              "aal3"
+                            ],
+                            "description": "The floor the authentication must have reached."
+                          },
+                          "ipInRange": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Address prefixes, matched literally rather than as an expression."
+                          },
+                          "timeOfDayUtc": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                            "properties": {
+                              "from": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 23
+                              },
+                              "to": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 23
+                              }
+                            }
+                          },
+                          "tenantIs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The data boundary the request must be acting inside."
+                          },
+                          "attestationRequired": {
+                            "type": "boolean",
+                            "description": "The caller must arrive already attested."
+                          }
+                        }
+                      },
+                      "description": "ALL must hold. Any-of would mean adding a condition could widen a policy."
+                    },
+                    "obligations": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
                         "required": [
-                          "effect"
+                          "type"
                         ],
                         "properties": {
-                          "effect": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "severity": {
                             "type": "string",
                             "enum": [
-                              "allow",
-                              "deny"
-                            ],
-                            "description": "Deny wins over every allow, absolutely."
-                          },
-                          "principals": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            },
-                            "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
-                          },
-                          "actions": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "resources": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "condition": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
-                            "properties": {
-                              "assuranceAtLeast": {
-                                "type": "string",
-                                "enum": [
-                                  "aal1",
-                                  "aal2",
-                                  "aal3"
-                                ],
-                                "description": "The floor the authentication must have reached."
-                              },
-                              "ipInRange": {
-                                "type": "array",
-                                "minItems": 1,
-                                "items": {
-                                  "type": "string"
-                                },
-                                "description": "Address prefixes, matched literally rather than as an expression."
-                              },
-                              "timeOfDayUtc": {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": [
-                                  "from",
-                                  "to"
-                                ],
-                                "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
-                                "properties": {
-                                  "from": {
-                                    "type": "integer",
-                                    "minimum": 0,
-                                    "maximum": 23
-                                  },
-                                  "to": {
-                                    "type": "integer",
-                                    "minimum": 0,
-                                    "maximum": 23
-                                  }
-                                }
-                              },
-                              "tenantIs": {
-                                "type": "string",
-                                "minLength": 1,
-                                "description": "The data boundary the request must be acting inside."
-                              },
-                              "attestationRequired": {
-                                "type": "boolean",
-                                "description": "The caller must arrive already attested."
-                              }
-                            }
-                          },
-                          "reason": {
-                            "type": "string",
-                            "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                              "low",
+                              "medium",
+                              "high"
+                            ]
                           }
                         }
                       }
+                    },
+                    "approvedBy": {
+                      "type": "string"
+                    },
+                    "effectiveFrom": {
+                      "type": "string",
+                      "description": "Written down and not yet in force until this moment passes."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Carried into the decision. A decision a log cannot explain is not auditable."
                     }
                   },
                   "description": "The policy as stated."
@@ -10313,32 +12014,34 @@
                   "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                   "name": "administration-requires-strong-authentication",
                   "version": "1",
-                  "enabled": true,
-                  "statementCount": 1,
-                  "denyCount": 1,
+                  "status": "active",
+                  "effect": "deny",
+                  "permissionCount": 1,
                   "conditionCount": 1,
+                  "inEffect": true,
                   "attachedTo": [],
-                  "statements": [
+                  "permissions": [
+                    "roles:manage"
+                  ],
+                  "resource": {
+                    "type": "resource",
+                    "pattern": "roles"
+                  },
+                  "conditions": [
                     {
-                      "effect": "deny",
-                      "actions": [
-                        "manage"
-                      ],
-                      "resources": [
-                        "roles"
-                      ],
-                      "condition": {
-                        "assuranceAtLeast": "aal2"
-                      },
-                      "reason": "Changing what a role grants requires a second factor."
+                      "assuranceAtLeast": "aal2"
                     }
-                  ]
+                  ],
+                  "principals": [
+                    "*"
+                  ],
+                  "reason": "Changing what a role grants requires a second factor."
                 }
               }
             }
           },
           "400": {
-            "description": "A statement names a condition this authority cannot evaluate.",
+            "description": "The policy names a condition this authority cannot evaluate.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10433,12 +12136,15 @@
                     "policyId",
                     "name",
                     "version",
-                    "enabled",
-                    "statementCount",
-                    "denyCount",
+                    "status",
+                    "effect",
+                    "permissionCount",
                     "conditionCount",
+                    "inEffect",
                     "attachedTo",
-                    "statements"
+                    "permissions",
+                    "resource",
+                    "conditions"
                   ],
                   "properties": {
                     "policyId": {
@@ -10450,18 +12156,31 @@
                     "version": {
                       "type": "string"
                     },
-                    "enabled": {
-                      "type": "boolean"
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "active",
+                        "retired"
+                      ]
                     },
-                    "statementCount": {
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "deny"
+                      ],
+                      "description": "Deny wins over every allow, absolutely."
+                    },
+                    "permissionCount": {
                       "type": "integer"
-                    },
-                    "denyCount": {
-                      "type": "integer",
-                      "description": "How many statements prohibit. The first thing a reviewer wants to know."
                     },
                     "conditionCount": {
                       "type": "integer"
+                    },
+                    "inEffect": {
+                      "type": "boolean",
+                      "description": "False while drafted, retired, or dated ahead."
                     },
                     "attachedTo": {
                       "type": "array",
@@ -10475,102 +12194,131 @@
                     "lastModified": {
                       "type": "string"
                     },
-                    "statements": {
+                    "permissions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
+                    },
+                    "resource": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "pattern"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                        }
+                      }
+                    },
+                    "principals": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                    },
+                    "conditions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                        "properties": {
+                          "assuranceAtLeast": {
+                            "type": "string",
+                            "enum": [
+                              "aal1",
+                              "aal2",
+                              "aal3"
+                            ],
+                            "description": "The floor the authentication must have reached."
+                          },
+                          "ipInRange": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Address prefixes, matched literally rather than as an expression."
+                          },
+                          "timeOfDayUtc": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                            "properties": {
+                              "from": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 23
+                              },
+                              "to": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 23
+                              }
+                            }
+                          },
+                          "tenantIs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The data boundary the request must be acting inside."
+                          },
+                          "attestationRequired": {
+                            "type": "boolean",
+                            "description": "The caller must arrive already attested."
+                          }
+                        }
+                      },
+                      "description": "ALL must hold. Any-of would mean adding a condition could widen a policy."
+                    },
+                    "obligations": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
                         "required": [
-                          "effect"
+                          "type"
                         ],
                         "properties": {
-                          "effect": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "severity": {
                             "type": "string",
                             "enum": [
-                              "allow",
-                              "deny"
-                            ],
-                            "description": "Deny wins over every allow, absolutely."
-                          },
-                          "principals": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            },
-                            "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
-                          },
-                          "actions": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "resources": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "condition": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
-                            "properties": {
-                              "assuranceAtLeast": {
-                                "type": "string",
-                                "enum": [
-                                  "aal1",
-                                  "aal2",
-                                  "aal3"
-                                ],
-                                "description": "The floor the authentication must have reached."
-                              },
-                              "ipInRange": {
-                                "type": "array",
-                                "minItems": 1,
-                                "items": {
-                                  "type": "string"
-                                },
-                                "description": "Address prefixes, matched literally rather than as an expression."
-                              },
-                              "timeOfDayUtc": {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": [
-                                  "from",
-                                  "to"
-                                ],
-                                "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
-                                "properties": {
-                                  "from": {
-                                    "type": "integer",
-                                    "minimum": 0,
-                                    "maximum": 23
-                                  },
-                                  "to": {
-                                    "type": "integer",
-                                    "minimum": 0,
-                                    "maximum": 23
-                                  }
-                                }
-                              },
-                              "tenantIs": {
-                                "type": "string",
-                                "minLength": 1,
-                                "description": "The data boundary the request must be acting inside."
-                              },
-                              "attestationRequired": {
-                                "type": "boolean",
-                                "description": "The caller must arrive already attested."
-                              }
-                            }
-                          },
-                          "reason": {
-                            "type": "string",
-                            "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                              "low",
+                              "medium",
+                              "high"
+                            ]
                           }
                         }
                       }
+                    },
+                    "approvedBy": {
+                      "type": "string"
+                    },
+                    "effectiveFrom": {
+                      "type": "string",
+                      "description": "Written down and not yet in force until this moment passes."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Carried into the decision. A decision a log cannot explain is not auditable."
                     }
                   },
                   "description": "The policy."
@@ -10579,26 +12327,28 @@
                   "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                   "name": "administration-requires-strong-authentication",
                   "version": "1",
-                  "enabled": true,
-                  "statementCount": 1,
-                  "denyCount": 1,
+                  "status": "active",
+                  "effect": "deny",
+                  "permissionCount": 1,
                   "conditionCount": 1,
+                  "inEffect": true,
                   "attachedTo": [],
-                  "statements": [
+                  "permissions": [
+                    "roles:manage"
+                  ],
+                  "resource": {
+                    "type": "resource",
+                    "pattern": "roles"
+                  },
+                  "conditions": [
                     {
-                      "effect": "deny",
-                      "actions": [
-                        "manage"
-                      ],
-                      "resources": [
-                        "roles"
-                      ],
-                      "condition": {
-                        "assuranceAtLeast": "aal2"
-                      },
-                      "reason": "Changing what a role grants requires a second factor."
+                      "assuranceAtLeast": "aal2"
                     }
-                  ]
+                  ],
+                  "principals": [
+                    "*"
+                  ],
+                  "reason": "Changing what a role grants requires a second factor."
                 }
               }
             }
@@ -10650,106 +12400,139 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "version": {
-                    "type": "string"
+                  "effect": {
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "deny"
+                    ],
+                    "description": "Deny wins over every allow, absolutely."
                   },
-                  "statements": {
+                  "permissions": {
                     "type": "array",
                     "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
+                  },
+                  "resource": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "pattern"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "pattern": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                      }
+                    }
+                  },
+                  "principals": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                  },
+                  "conditions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                      "properties": {
+                        "assuranceAtLeast": {
+                          "type": "string",
+                          "enum": [
+                            "aal1",
+                            "aal2",
+                            "aal3"
+                          ],
+                          "description": "The floor the authentication must have reached."
+                        },
+                        "ipInRange": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Address prefixes, matched literally rather than as an expression."
+                        },
+                        "timeOfDayUtc": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "from",
+                            "to"
+                          ],
+                          "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                          "properties": {
+                            "from": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
+                            },
+                            "to": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
+                            }
+                          }
+                        },
+                        "tenantIs": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "The data boundary the request must be acting inside."
+                        },
+                        "attestationRequired": {
+                          "type": "boolean",
+                          "description": "The caller must arrive already attested."
+                        }
+                      }
+                    },
+                    "description": "ALL must hold. Any-of would mean adding a condition could widen a policy."
+                  },
+                  "obligations": {
+                    "type": "array",
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "effect"
+                        "type"
                       ],
                       "properties": {
-                        "effect": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "severity": {
                           "type": "string",
                           "enum": [
-                            "allow",
-                            "deny"
-                          ],
-                          "description": "Deny wins over every allow, absolutely."
-                        },
-                        "principals": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          },
-                          "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
-                        },
-                        "actions": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "resources": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "condition": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
-                          "properties": {
-                            "assuranceAtLeast": {
-                              "type": "string",
-                              "enum": [
-                                "aal1",
-                                "aal2",
-                                "aal3"
-                              ],
-                              "description": "The floor the authentication must have reached."
-                            },
-                            "ipInRange": {
-                              "type": "array",
-                              "minItems": 1,
-                              "items": {
-                                "type": "string"
-                              },
-                              "description": "Address prefixes, matched literally rather than as an expression."
-                            },
-                            "timeOfDayUtc": {
-                              "type": "object",
-                              "additionalProperties": false,
-                              "required": [
-                                "from",
-                                "to"
-                              ],
-                              "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
-                              "properties": {
-                                "from": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                },
-                                "to": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                }
-                              }
-                            },
-                            "tenantIs": {
-                              "type": "string",
-                              "minLength": 1,
-                              "description": "The data boundary the request must be acting inside."
-                            },
-                            "attestationRequired": {
-                              "type": "boolean",
-                              "description": "The caller must arrive already attested."
-                            }
-                          }
-                        },
-                        "reason": {
-                          "type": "string",
-                          "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                            "low",
+                            "medium",
+                            "high"
+                          ]
                         }
                       }
                     }
+                  },
+                  "approvedBy": {
+                    "type": "string"
+                  },
+                  "effectiveFrom": {
+                    "type": "string",
+                    "description": "Written down and not yet in force until this moment passes."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Carried into the decision. A decision a log cannot explain is not auditable."
                   },
                   "attachedTo": {
                     "type": "array",
@@ -10757,8 +12540,17 @@
                       "type": "string"
                     }
                   },
-                  "enabled": {
-                    "type": "boolean"
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "active",
+                      "retired"
+                    ]
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }
@@ -10800,12 +12592,15 @@
                     "policyId",
                     "name",
                     "version",
-                    "enabled",
-                    "statementCount",
-                    "denyCount",
+                    "status",
+                    "effect",
+                    "permissionCount",
                     "conditionCount",
+                    "inEffect",
                     "attachedTo",
-                    "statements"
+                    "permissions",
+                    "resource",
+                    "conditions"
                   ],
                   "properties": {
                     "policyId": {
@@ -10817,18 +12612,31 @@
                     "version": {
                       "type": "string"
                     },
-                    "enabled": {
-                      "type": "boolean"
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "active",
+                        "retired"
+                      ]
                     },
-                    "statementCount": {
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "deny"
+                      ],
+                      "description": "Deny wins over every allow, absolutely."
+                    },
+                    "permissionCount": {
                       "type": "integer"
-                    },
-                    "denyCount": {
-                      "type": "integer",
-                      "description": "How many statements prohibit. The first thing a reviewer wants to know."
                     },
                     "conditionCount": {
                       "type": "integer"
+                    },
+                    "inEffect": {
+                      "type": "boolean",
+                      "description": "False while drafted, retired, or dated ahead."
                     },
                     "attachedTo": {
                       "type": "array",
@@ -10842,102 +12650,131 @@
                     "lastModified": {
                       "type": "string"
                     },
-                    "statements": {
+                    "permissions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
+                    },
+                    "resource": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "pattern"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                        }
+                      }
+                    },
+                    "principals": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
+                    },
+                    "conditions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
+                        "properties": {
+                          "assuranceAtLeast": {
+                            "type": "string",
+                            "enum": [
+                              "aal1",
+                              "aal2",
+                              "aal3"
+                            ],
+                            "description": "The floor the authentication must have reached."
+                          },
+                          "ipInRange": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Address prefixes, matched literally rather than as an expression."
+                          },
+                          "timeOfDayUtc": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
+                            "properties": {
+                              "from": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 23
+                              },
+                              "to": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 23
+                              }
+                            }
+                          },
+                          "tenantIs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The data boundary the request must be acting inside."
+                          },
+                          "attestationRequired": {
+                            "type": "boolean",
+                            "description": "The caller must arrive already attested."
+                          }
+                        }
+                      },
+                      "description": "ALL must hold. Any-of would mean adding a condition could widen a policy."
+                    },
+                    "obligations": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
                         "required": [
-                          "effect"
+                          "type"
                         ],
                         "properties": {
-                          "effect": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "severity": {
                             "type": "string",
                             "enum": [
-                              "allow",
-                              "deny"
-                            ],
-                            "description": "Deny wins over every allow, absolutely."
-                          },
-                          "principals": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            },
-                            "description": "Subject patterns. `*` alone, or a trailing `*` for a prefix."
-                          },
-                          "actions": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "resources": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "condition": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "description": "Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.",
-                            "properties": {
-                              "assuranceAtLeast": {
-                                "type": "string",
-                                "enum": [
-                                  "aal1",
-                                  "aal2",
-                                  "aal3"
-                                ],
-                                "description": "The floor the authentication must have reached."
-                              },
-                              "ipInRange": {
-                                "type": "array",
-                                "minItems": 1,
-                                "items": {
-                                  "type": "string"
-                                },
-                                "description": "Address prefixes, matched literally rather than as an expression."
-                              },
-                              "timeOfDayUtc": {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": [
-                                  "from",
-                                  "to"
-                                ],
-                                "description": "UTC hours, half open. A `to` before `from` wraps midnight.",
-                                "properties": {
-                                  "from": {
-                                    "type": "integer",
-                                    "minimum": 0,
-                                    "maximum": 23
-                                  },
-                                  "to": {
-                                    "type": "integer",
-                                    "minimum": 0,
-                                    "maximum": 23
-                                  }
-                                }
-                              },
-                              "tenantIs": {
-                                "type": "string",
-                                "minLength": 1,
-                                "description": "The data boundary the request must be acting inside."
-                              },
-                              "attestationRequired": {
-                                "type": "boolean",
-                                "description": "The caller must arrive already attested."
-                              }
-                            }
-                          },
-                          "reason": {
-                            "type": "string",
-                            "description": "Carried into the decision. A decision a log cannot explain is not auditable."
+                              "low",
+                              "medium",
+                              "high"
+                            ]
                           }
                         }
                       }
+                    },
+                    "approvedBy": {
+                      "type": "string"
+                    },
+                    "effectiveFrom": {
+                      "type": "string",
+                      "description": "Written down and not yet in force until this moment passes."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Carried into the decision. A decision a log cannot explain is not auditable."
                     }
                   },
                   "description": "The policy, as it now stands."
@@ -10946,32 +12783,34 @@
                   "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                   "name": "administration-requires-strong-authentication",
                   "version": "1",
-                  "enabled": true,
-                  "statementCount": 1,
-                  "denyCount": 1,
+                  "status": "active",
+                  "effect": "deny",
+                  "permissionCount": 1,
                   "conditionCount": 1,
+                  "inEffect": true,
                   "attachedTo": [],
-                  "statements": [
+                  "permissions": [
+                    "roles:manage"
+                  ],
+                  "resource": {
+                    "type": "resource",
+                    "pattern": "roles"
+                  },
+                  "conditions": [
                     {
-                      "effect": "deny",
-                      "actions": [
-                        "manage"
-                      ],
-                      "resources": [
-                        "roles"
-                      ],
-                      "condition": {
-                        "assuranceAtLeast": "aal2"
-                      },
-                      "reason": "Changing what a role grants requires a second factor."
+                      "assuranceAtLeast": "aal2"
                     }
-                  ]
+                  ],
+                  "principals": [
+                    "*"
+                  ],
+                  "reason": "Changing what a role grants requires a second factor."
                 }
               }
             }
           },
           "400": {
-            "description": "A statement names a condition this authority cannot evaluate.",
+            "description": "The policy names a condition this authority cannot evaluate.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11289,7 +13128,6 @@
                             "policyId",
                             "name",
                             "version",
-                            "statementIndex",
                             "effect"
                           ],
                           "properties": {
@@ -11300,11 +13138,8 @@
                               "type": "string"
                             },
                             "version": {
-                              "type": "string"
-                            },
-                            "statementIndex": {
-                              "type": "integer",
-                              "description": "Position in that policy's statement list, from zero."
+                              "type": "string",
+                              "description": "Which revision of the policy decided."
                             },
                             "effect": {
                               "type": "string",
@@ -11370,7 +13205,6 @@
                       "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                       "name": "administration-requires-strong-authentication",
                       "version": "1",
-                      "statementIndex": 0,
                       "effect": "deny"
                     },
                     "evaluators": [
@@ -11519,15 +13353,14 @@
                   "type": "object",
                   "additionalProperties": true,
                   "required": [
-                    "assignmentId",
                     "subjectId",
                     "roleId"
                   ],
                   "properties": {
-                    "assignmentId": {
+                    "subjectId": {
                       "type": "string"
                     },
-                    "subjectId": {
+                    "userName": {
                       "type": "string"
                     },
                     "roleId": {
@@ -11549,9 +13382,9 @@
                     "grantedAt": {
                       "type": "string"
                     },
-                    "notBefore": {
-                      "type": "string",
-                      "description": "Present while awaiting approval, so the assignment grants nothing yet."
+                    "pendingApproval": {
+                      "type": "boolean",
+                      "description": "True while awaiting approval, so it grants nothing yet."
                     },
                     "expiresAt": {
                       "type": "string"
@@ -11563,7 +13396,6 @@
                   "description": "The elevation, pending or already in force."
                 },
                 "example": {
-                  "assignmentId": "elev-4c1f",
                   "subjectId": "sub-4821",
                   "roleId": "role-investigator-sensitive",
                   "scope": {
@@ -11667,15 +13499,14 @@
                         "type": "object",
                         "additionalProperties": true,
                         "required": [
-                          "assignmentId",
                           "subjectId",
                           "roleId"
                         ],
                         "properties": {
-                          "assignmentId": {
+                          "subjectId": {
                             "type": "string"
                           },
-                          "subjectId": {
+                          "userName": {
                             "type": "string"
                           },
                           "roleId": {
@@ -11697,9 +13528,9 @@
                           "grantedAt": {
                             "type": "string"
                           },
-                          "notBefore": {
-                            "type": "string",
-                            "description": "Present while awaiting approval, so the assignment grants nothing yet."
+                          "pendingApproval": {
+                            "type": "boolean",
+                            "description": "True while awaiting approval, so it grants nothing yet."
                           },
                           "expiresAt": {
                             "type": "string"
@@ -11709,7 +13540,6 @@
                           }
                         },
                         "example": {
-                          "assignmentId": "elev-4c1f",
                           "subjectId": "sub-4821",
                           "roleId": "role-investigator-sensitive",
                           "scope": {
@@ -11729,7 +13559,6 @@
                 "example": {
                   "elevations": [
                     {
-                      "assignmentId": "elev-4c1f",
                       "subjectId": "sub-4821",
                       "roleId": "role-investigator-sensitive",
                       "scope": {
@@ -11780,7 +13609,7 @@
         }
       }
     },
-    "/realms/{realm}/elevations/{assignmentId}/approve": {
+    "/realms/{realm}/elevations/{subjectId}/{roleId}/approve": {
       "post": {
         "operationId": "approveElevation",
         "summary": "Approve somebody else's request",
@@ -11802,7 +13631,15 @@
               "type": "string"
             },
             "in": "path",
-            "name": "assignmentId",
+            "name": "subjectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
             "required": true
           }
         ],
@@ -11820,15 +13657,14 @@
                   "type": "object",
                   "additionalProperties": true,
                   "required": [
-                    "assignmentId",
                     "subjectId",
                     "roleId"
                   ],
                   "properties": {
-                    "assignmentId": {
+                    "subjectId": {
                       "type": "string"
                     },
-                    "subjectId": {
+                    "userName": {
                       "type": "string"
                     },
                     "roleId": {
@@ -11850,9 +13686,9 @@
                     "grantedAt": {
                       "type": "string"
                     },
-                    "notBefore": {
-                      "type": "string",
-                      "description": "Present while awaiting approval, so the assignment grants nothing yet."
+                    "pendingApproval": {
+                      "type": "boolean",
+                      "description": "True while awaiting approval, so it grants nothing yet."
                     },
                     "expiresAt": {
                       "type": "string"
@@ -11864,7 +13700,6 @@
                   "description": "The elevation, now in force."
                 },
                 "example": {
-                  "assignmentId": "elev-4c1f",
                   "subjectId": "sub-4821",
                   "roleId": "role-investigator-sensitive",
                   "scope": {
@@ -11923,7 +13758,7 @@
         }
       }
     },
-    "/realms/{realm}/elevations/{assignmentId}": {
+    "/realms/{realm}/elevations/{subjectId}/{roleId}": {
       "delete": {
         "operationId": "revokeElevation",
         "summary": "End an elevation before it expires",
@@ -11961,7 +13796,15 @@
               "type": "string"
             },
             "in": "path",
-            "name": "assignmentId",
+            "name": "subjectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
             "required": true
           }
         ],
@@ -11986,14 +13829,18 @@
                     "revoked": {
                       "type": "boolean"
                     },
-                    "assignmentId": {
+                    "subjectId": {
+                      "type": "string"
+                    },
+                    "roleId": {
                       "type": "string"
                     }
                   }
                 },
                 "example": {
                   "revoked": true,
-                  "assignmentId": "elev-4c1f"
+                  "subjectId": "sub-4821",
+                  "roleId": "role-investigator-sensitive"
                 }
               }
             }
@@ -12082,9 +13929,45 @@
               "type": "string"
             },
             "in": "query",
+            "name": "txn",
+            "required": false,
+            "description": "The flow, which is what an access token carries as its `txn` claim. The name an auditor reads off a token, so it is the primary one here."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
             "name": "correlationId",
             "required": false,
-            "description": "Groups every step of one flow."
+            "description": "The same field under its internal name. Kept so nothing breaks."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "own",
+                "stakeholder",
+                "subject"
+              ]
+            },
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "description": "Whose events. `own` is what the caller caused, `stakeholder` is what they are entitled to see without having caused it, `subject` needs an oversight role. The console applied this in the BROWSER, which is a presentation choice rather than an access control and fails open the moment somebody calls the API directly."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "person",
+                "application"
+              ]
+            },
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "description": "Whether a person drove it or an application acted for them. Also browser-side until now."
           },
           {
             "schema": {
@@ -12107,11 +13990,34 @@
           {
             "schema": {
               "type": "integer",
+              "default": 0
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "description": "Paging past the first batch, which was impossible before. BOUND IT WITH `to` if you need stable pages: the trail is written to continuously, so on an unbounded query new events land at the top between requests and shift a page boundary under you. That is a property of offset paging rather than a defect, and the fix is to page a closed window."
+          },
+          {
+            "schema": {
+              "type": "integer",
               "default": 100
             },
             "in": "query",
             "name": "limit",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "csv"
+              ]
+            },
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "description": "An evidence export, produced HERE from the query rather than in a browser from a display page. The old export was bounded by whatever the screen had fetched, and no other caller could obtain one."
           },
           {
             "schema": {
@@ -12141,6 +14047,10 @@
                     "events"
                   ],
                   "properties": {
+                    "total": {
+                      "type": "integer",
+                      "description": "How many match the query, not how many were returned."
+                    },
                     "events": {
                       "type": "array",
                       "items": {
@@ -12232,6 +14142,380 @@
           },
           "403": {
             "description": "No role held grants sight of another principal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/audit/flows/{txn}": {
+      "get": {
+        "operationId": "auditFlow",
+        "summary": "Everything that happened in one authorization flow",
+        "tags": [
+          "audit"
+        ],
+        "description": "No applicable standard for the shape; the obligation is that identity evidence be readable after the fact. Assembled from the `txn` claim an access token carries: the events in order, the tokens the flow minted, the records that still exist, and the records that do not WITH THE REASON. The ticket is TTL bounded in minutes by design, so an audit after the fact always finds it gone, and saying so is different from omitting it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "txn",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The flow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The flow.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "txn",
+                    "events",
+                    "tokens",
+                    "gone"
+                  ],
+                  "properties": {
+                    "txn": {
+                      "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string"
+                    },
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "tokens": {
+                      "type": "array",
+                      "description": "Read from the trail, because nothing redeemable is kept at rest.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "session": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "grant": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "principal": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "gone": {
+                      "type": "array",
+                      "description": "What no longer exists, and why. Absence with a reason is evidence.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "what",
+                          "because"
+                        ],
+                        "properties": {
+                          "what": {
+                            "type": "string"
+                          },
+                          "because": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "txn": "f7c1a9e0-3b52-4d18-9a44-0e6b2c8d5511",
+                  "events": [
+                    {
+                      "ts": "2026-09-04T10:00:00.000Z",
+                      "action": "authorization.code_issued",
+                      "outcome": "success"
+                    }
+                  ],
+                  "tokens": [
+                    {
+                      "jti": "0f2c1a44",
+                      "at": "2026-09-04T10:00:01.000Z",
+                      "action": "token.issued"
+                    }
+                  ],
+                  "gone": [
+                    {
+                      "what": "authorization request",
+                      "because": "the ticket is TTL bounded in minutes by design"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such flow, or not one this caller may read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/audit/tokens/{jti}": {
+      "get": {
+        "operationId": "auditToken",
+        "summary": "Which flow a token belongs to",
+        "tags": [
+          "audit"
+        ],
+        "description": "No applicable standard. Resolves the `jti` of an access token to the `txn` of the flow that minted it, which is the entry point when an investigation starts from one token. It answers with the correlator and not with the flow, so reading the flow still goes through the permission check on the flow route.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "jti",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The flow this token was minted in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The flow this token was minted in.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "txn",
+                    "at"
+                  ],
+                  "properties": {
+                    "txn": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "txn": "f7c1a9e0-3b52-4d18-9a44-0e6b2c8d5511",
+                  "at": "2026-09-04T10:00:01.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No issuance recorded for that token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/audit/digest": {
+      "post": {
+        "operationId": "sealAuditWindow",
+        "summary": "Seal a window of the trail, or verify a seal",
+        "tags": [
+          "audit"
+        ],
+        "description": "No applicable standard for the shape; the obligation is PCI DSS 10.3.2 to 10.3.4, that evidence be protected from alteration and that alteration be detectable. Computes a signed digest over a closed window. Export it: a digest held on the same cluster as the events it protects proves nothing. Send `digest` and `events` back to verify a window against what it was when sealed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "to": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Exclusive. Seal only CLOSED windows: a window still being written to will not match later."
+                  },
+                  "digest": {
+                    "type": "string",
+                    "description": "Present to VERIFY rather than to seal."
+                  },
+                  "events": {
+                    "type": "integer",
+                    "description": "The count as it was when sealed. Required alongside `digest`."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The seal, or the verdict when verifying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The seal, or the verdict when verifying.",
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "events": {
+                      "type": "integer"
+                    },
+                    "digest": {
+                      "type": "string"
+                    },
+                    "jwt": {
+                      "type": "string",
+                      "description": "The same, signed by the realm key. Verified through the published key set."
+                    },
+                    "intact": {
+                      "type": "boolean",
+                      "description": "Present when verifying. False means the window is not what it was."
+                    },
+                    "eventsThen": {
+                      "type": "integer"
+                    },
+                    "eventsNow": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "from": "2026-09-04T00:00:00.000Z",
+                  "to": "2026-09-05T00:00:00.000Z",
+                  "events": 412,
+                  "digest": "a3f1..."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits reading the trail of this realm.",
             "content": {
               "application/json": {
                 "schema": {

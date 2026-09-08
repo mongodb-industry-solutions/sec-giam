@@ -85,11 +85,64 @@ users out for a reason nobody will connect to the deployment that caused it.
 
 ---
 
+## The data model: thirteen collections
+
+One collection per durable fact, per [ADR-001](../tmp/adr/ADR-001-data-model-consolidation.md). The
+line that decided every boundary: **a flow is transient and is discarded, a fact is durable and is
+kept.** Nothing is stored that can be derived, so there are no issued tokens, no revocation
+entries, no duplicated permissions and no second level of organisation.
+
+| Collection | Holds | Absorbed |
+|---|---|---|
+| `principal` | Every subject that acts: person, workload, agent, service. Roles embedded, with expiry. | `identity`, `agent`, `roleAssignment` |
+| `credential` | Everything that identifies a principal: password, MFA, API key, certificate, OAuth client. | `apiKey`, `client` |
+| `realm` | Issuance boundary: issuer, key references, token lifetimes, branding. | `tenant` |
+| `domain` | One authentication path into a realm, local or federated, with the rules that govern proving identity on it: password policy, lockout, session limit and self-registration. | `identityProvider` |
+| `key` | The published key set per realm. Public material and references only. | `signingKey` |
+| `role` | A named bundle of permissions, composable through parent roles. | |
+| `policy` | One effect over one resource pattern, under conditions. Deny by default. | `permission` |
+| `resource` | Every protected object and the action catalog it declares, including tools and servers. | `tool`, `mcpServer`, `resourceServer` |
+| `session` | The fact that access is still live, and the generation that detects a refresh replay. | `token` |
+| `authRequest` | A pending authorization awaiting a user action. Seconds to minutes, TTL bounded. | `authorizationRequest` |
+| `grant` | A subject consenting, optionally purpose bound. A delegation is a grant with a purpose. | `delegation` |
+| `audit` | Append-only evidence, long retention, time series. | `securityEvent` |
+| `eventbus` | The durable trail behind the event bus: fan out, deduplication, replay. | `domainEvent` |
+
+Removed outright, because nothing read or wrote them: `relationship`, `counters`, `idempotencyKey`.
+
+### The three things worth knowing before reading the code
+
+**No token is stored.** An access token and a refresh token are both JWTs, so a stored copy kept a
+redeemable artifact at rest and put the highest write rate in the system on data carrying nothing
+the token did not already carry. What is stored is that a session exists, and the ABSENCE of that
+document is the revocation signal: nothing has to be compared, and no entry has to be kept alive
+until the last affected token expires.
+
+**Reuse detection is one integer.** The refresh JWT carries `sid` and `gen`; the guard and the
+increment are a single atomic update, so two concurrent refreshes at the same generation cannot both
+win. A lower generation means a token already rotated has been presented again, which the legitimate
+holder cannot do, so theft is assumed and the whole session is deleted.
+
+**A permission is a string, `resource:action`.** The same spelling on a role, on a policy and in a
+token, so there is one form and nothing to convert between the three places it appears. A token
+carries ROLES by default and permissions only to narrow, because a JWT travels in an HTTP header and
+proxies commonly cut around 8 KB.
+
+### Accepted limits, stated rather than hidden
+
+An access token already issued stays valid until it expires, because it is verified without touching
+the database, which is the point of it. With a five minute lifetime that window is the maximum
+exposure and it is the stated revocation objective. `authRequest.loginHint` can carry an email
+address and that collection has no encryption; it is bounded by a TTL of minutes, which is the
+mitigation, and that TTL must not be extended without revisiting it.
+
+---
+
 ## How the extraction stays done
 
 `test/giam/backend/unit/extractionComplete.test.ts` asserts against the SOURCE of the consuming
 applications that none of them mints a token, stores principal credentials, seeds principals, creates
-an identity collection, publishes issuer metadata or holds a role table. A runtime test would prove
+a principal collection, publishes issuer metadata or holds a role table. A runtime test would prove
 the routes are gone; this proves the capability is gone, which is the thing that creeps back.
 
 Exceptions are named one by one, never pattern-matched, so a second offender cannot hide behind an

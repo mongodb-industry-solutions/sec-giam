@@ -26,31 +26,52 @@ export interface PolicyCondition {
   attestationRequired?: boolean;
 }
 
-export interface PolicyStatement {
-  effect: 'allow' | 'deny';
-  principals?: string[];
-  actions?: string[];
-  resources?: string[];
-  condition?: PolicyCondition;
-  reason?: string;
+export interface PolicyResource {
+  type: string;
+  /** `*` alone, or a trailing `*` for a prefix. Never a regular expression. */
+  pattern: string;
 }
 
+export interface PolicyObligation {
+  type: string;
+  severity?: 'low' | 'medium' | 'high';
+}
+
+/**
+ * One policy: one effect, over one resource pattern, under conditions.
+ *
+ * FLAT since v40 (ADR section 7): a policy used to hold a list of statements, and every one ever
+ * seeded carried exactly one, so the nesting bought nothing and cost the question of what it means
+ * for two statements in one policy to disagree. Two rules are two policies now.
+ */
 export interface PolicySummary {
   policyId: string;
   name: string;
-  version: string;
-  enabled: boolean;
-  statementCount: number;
-  /** How many statements prohibit. A policy that denies and one that only permits are different objects. */
-  denyCount: number;
+  version: number;
+  status: 'draft' | 'active' | 'retired';
+  /** Whether this policy prohibits. The first thing a reviewer wants to know. */
+  effect: 'allow' | 'deny';
+  permissionCount: number;
   conditionCount: number;
+  /** False while drafted, retired, or dated ahead, so a list shows what actually decides today. */
+  inEffect: boolean;
   attachedTo: string[];
   created?: string;
   lastModified?: string;
 }
 
 export interface PolicyDetail extends PolicySummary {
-  statements: PolicyStatement[];
+  /** Full permission strings, `resource:action`. The same spelling a role and a token use. */
+  permissions: string[];
+  resource: PolicyResource;
+  /** Subject patterns. `*` alone, or a trailing `*` for a prefix. Absent matches anyone. */
+  principals?: string[];
+  conditions: PolicyCondition[];
+  obligations?: PolicyObligation[];
+  approvedBy?: string;
+  /** Written down and not yet in force until this moment passes. */
+  effectiveFrom?: string;
+  reason?: string;
 }
 
 /** Which document, which version, and which line of it decided. */

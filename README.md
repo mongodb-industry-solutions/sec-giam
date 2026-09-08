@@ -243,6 +243,17 @@ Two things to get right in a real deployment:
 `npx tsx tools/kube.ts` is the operator helper: preflight checks, secret management and a
 per-environment readiness report.
 
+## References 
+- [Identity and Access Management for Electric Utilities](https://www.nccoe.nist.gov/publication/1800-2/VolB/index.html)
+- [IAM Reference Architecture (v2)](https://bok.idpro.org/article/id/76/)
+- [OAuth 2.0](https://oauth.net/2/)
+- [Pushed Authorization Requests (PAR)](https://oauth.net/2/pushed-authorization-requests/)
+- [RFC 6749: The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/info/rfc6749/)
+- [Policy as Code: OPA/Rego, Cedar & Casbin](https://identitysecurity.tech/paths/policy-as-code/)
+- [AWS/Cedar](https://docs.aws.amazon.com/prescriptive-guidance/latest/saas-multitenant-api-access-authorization/cedar.html)
+  - [Fast, scalable access control](https://cedarpolicy.com/en)
+- [OASIS eXtensible Access Control Markup Language: ACAL (XACML) TC](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=xacml)
+
 ## License
 
 Apache 2.0. See [LICENSE](LICENSE).

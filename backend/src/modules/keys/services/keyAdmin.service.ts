@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import type { KeyProvider } from '../../../shared/ports';
 import { keyProviders } from '../../../shared/ports';
-import { SigningKeyRecord } from '../models/signingKey.model';
+import { KeyRecord } from '../models/key.model';
 import { KeyRing } from './keyRing.service';
 import { MongoSigningKeyStore } from './signingKeyStore';
 import { config } from '../../../config';
@@ -22,11 +22,11 @@ export type KeyPhase = 'signing' | 'published' | 'retired' | 'revoked';
 export interface KeyView {
   kid: string;
   keyId: string;
-  algorithm: SigningKeyRecord['alg'];
-  use: SigningKeyRecord['use'];
+  algorithm: KeyRecord['alg'];
+  use: KeyRecord['use'];
   keySize?: number;
-  provider: SigningKeyRecord['provider'];
-  status: SigningKeyRecord['status'];
+  provider: KeyRecord['provider'];
+  status: KeyRecord['status'];
   phase: KeyPhase;
   /** What the phase means, in a sentence, so the screen does not have to encode the rules again. */
   phaseReason: string;
@@ -76,7 +76,7 @@ export class KeyAdminService {
     return new KeyRing(this.store, this.provider);
   }
 
-  private view(record: SigningKeyRecord, now: number): KeyView {
+  private view(record: KeyRecord, now: number): KeyView {
     const leaseLapsed = Boolean(record.leaseExpiresAt && Date.parse(record.leaseExpiresAt) <= now);
     const stillPublished = !record.notAfter || Date.parse(record.notAfter) > now;
 

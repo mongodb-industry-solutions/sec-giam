@@ -7,7 +7,7 @@
 import type {
   AuthenticationMethod, CredentialStore, IdentityProviderAdapter, KeyProvider,
   PolicyEvaluator, TokenFormat, ProofOfPossession, EventSink, ProvisioningTarget,
-  SecurityEventRecord, PortName,
+  AuditRecord, PortName,
 } from '../../../backend/src/shared/ports';
 import { PORT_REGISTRIES } from '../../../backend/src/shared/ports';
 
@@ -46,8 +46,8 @@ export const fakeCredentialStore: CredentialStore = {
 export const fakeIdentityProvider: IdentityProviderAdapter = {
   name: `${FAKE_PREFIX}identity-provider`,
   protocol: 'oidc',
-  async authorizationUrl(providerId, state) {
-    return `https://upstream.invalid/authorize?provider=${providerId}&state=${state}`;
+  async authorizationUrl(domainId, state) {
+    return `https://upstream.invalid/authorize?provider=${domainId}&state=${state}`;
   },
   async exchange(_providerId, payload) {
     return { sub: payload.code, email: 'someone@upstream.invalid' };
@@ -115,9 +115,9 @@ export const fakeProofOfPossession: ProofOfPossession = {
 export class FakeEventSink implements EventSink {
   readonly name = `${FAKE_PREFIX}event-sink`;
 
-  readonly received: SecurityEventRecord[] = [];
+  readonly received: AuditRecord[] = [];
 
-  async emit(event: SecurityEventRecord): Promise<void> {
+  async emit(event: AuditRecord): Promise<void> {
     this.received.push(event);
   }
 }

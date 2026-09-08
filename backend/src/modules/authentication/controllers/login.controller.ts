@@ -3,10 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { SessionService } from '../services/session.service';
+import { SessionService, isSessionLimitRefusal } from '../services/session.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { authenticationMethods } from '../../../shared/ports';
 import { bindAuthenticationMethods } from '../services/authenticationMethods';
+import { amrFor } from '../models/authenticationContext';
+import { setSessionCookie } from '../services/sessionCookie';
 import { bindCredentialStores } from '../../directory/services/credentialStores';
 import { SESSION_COLLECTION } from '../../../shared/models/collections';
 import { SessionRecord } from '../models/session.model';
@@ -64,7 +66,8 @@ export async function loginController(fastify: FastifyInstance) {
           properties: {
             subjectId: { type: 'string' },
             sessionId: { type: 'string' },
-            userName: { type: 'string' },
+            userName: { type: 'string', description: 'The login identifier, per SCIM.' },
+            displayName: { type: 'string', description: 'The name to show. SCIM `name.formatted`.' },
             assuranceLevel: { type: 'string' },
             method: { type: 'string' },
             sessionEpoch: { type: 'integer' },
@@ -72,13 +75,15 @@ export async function loginController(fastify: FastifyInstance) {
           examples: [{
             subjectId: 'ec06cbfa-96e2-4867-892b-b74987e78d7a',
             sessionId: 'a3f1…',
-            userName: 'Ada Lovelace',
+            userName: 'ada.lovelace',
+            displayName: 'Ada Lovelace',
             assuranceLevel: 'aal1',
             method: 'password',
             sessionEpoch: 0,
           }],
         },
         401: { $ref: 'Problem#', description: 'The attempt failed. Deliberately no further detail.' },
+        429: { $ref: 'Problem#', description: 'The concurrent-session limit on this path refuses a further session.' },
         404: { $ref: 'Problem#', description: 'No such realm.' },
       },
     },
@@ -124,13 +129,51 @@ export async function loginController(fastify: FastifyInstance) {
 
     // Built by the session service, so a password sign-in and a federated one produce exactly the
     // same session rather than two records that agree today and drift later.
-    const session = await new SessionService(fastify.db).start({
+    /**
+     * P8.3. A password sign-in resolves through the realm's LOCAL DOMAIN, like any other path.
+     *
+     * Naming the domain is what makes the concurrent-session limit and the password rules come from
+     * the path that did the authenticating, rather than from a branch that only the local case
+     * takes. Every realm has one, seeded, so this never resolves to nothing.
+     */
+    const localDomain = await new RealmService(fastify.db).localDomain(realm.realmId);
+
+    const started = await new SessionService(fastify.db).start({
       realm,
       subjectId: resolution.subjectId,
       epoch: identity?.sessionEpoch ?? 0,
+      ...(localDomain ? { domainId: localDomain.domainId } : {}),
+      ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
+      // The authentication context, so every token minted from this session can carry acr and amr
+      // without reading the credential as it stands later.
+      acr: resolution.assuranceLevel,
+      amr: amrFor(resolution.method),
       ...(request.headers['user-agent'] ? { userAgentHash: hashIp(String(request.headers['user-agent'])) as string } : {}),
       ...(request.ip ? { ipHash: hashIp(request.ip) as string } : {}),
     });
+
+    // The limit was already reached and this path refuses rather than evicting. Recorded as a
+    // refusal, because a sign-in that did not happen is exactly what a trail has to show.
+    if (isSessionLimitRefusal(started)) {
+      await audit.record({
+        realmId: realm.realmId,
+        tenantId: realm.tenantId,
+        category: 'authentication',
+        action: 'authentication.password',
+        outcome: 'failure',
+        cause: 'concurrent_session_limit',
+        subjectId: resolution.subjectId,
+        correlationId: request.correlationId,
+        ...(hashIp(request.ip) ? { ipHash: hashIp(request.ip) } : {}),
+        detail: { limit: started.limit, held: started.held },
+      });
+      return reply.status(429).send(problem(
+        429,
+        'Too many sessions',
+        `${started.reason}. Sign out elsewhere, then try again.`,
+      ));
+    }
+    const session = started;
 
     await audit.record({
       realmId: realm.realmId,
@@ -145,10 +188,26 @@ export async function loginController(fastify: FastifyInstance) {
       detail: { method: resolution.method, assuranceLevel: resolution.assuranceLevel },
     });
 
+    /**
+     * The session, as a cookie, so the authorization endpoint can read it from the browser.
+     *
+     * It is ALSO still in the response body, and both are needed for different reasons. The cookie
+     * is what a top-level redirect from a relying party carries, which is how the authorization
+     * endpoint learns who is signed in without a caller asserting it. The body is what a script
+     * needs when it drives the flow itself, and what the console uses to obtain its own token.
+     *
+     * Bounded by the session's own idle lifetime rather than by a longer figure of its own: a cookie
+     * outliving the session it names is a cookie that produces a confusing failure later.
+     */
+    setSessionCookie(request, reply, session.sessionId, realm.tokenPolicy.sessionIdleTtlSeconds);
+
     return reply.send({
       subjectId: resolution.subjectId,
       sessionId: session.sessionId,
       userName: identity?.userName,
+      // So the console can greet somebody by name without waiting for the profile read. The access
+      // token deliberately carries no profile claim, so without this every header rendered a login.
+      ...(identity?.name?.formatted ? { displayName: identity.name.formatted } : {}),
       assuranceLevel: resolution.assuranceLevel,
       method: resolution.method,
       sessionEpoch: session.epoch,

@@ -128,7 +128,7 @@ export default function AboutPage() {
         </ul>
 
         <p className="mt-12 text-center text-xs text-gray-400">
-          v{process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0'} · MongoDB Industry Solutions Team
+          v{process.env.NEXT_PUBLIC_GIAM_FRONTEND_VERSION ?? '0.0.0'} · MongoDB Industry Solutions Team
         </p>
       </div>
     </div>

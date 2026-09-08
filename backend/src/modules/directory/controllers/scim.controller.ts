@@ -3,8 +3,8 @@ import { randomUUID } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requireAuthority } from '../../../vendors/middleware/authorityAuth';
-import { IDENTITY_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord } from '../models/identity.model';
+import { PRINCIPAL_COLLECTION, ROLE_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord } from '../models/principal.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { provisioningTargets } from '../../../shared/ports';
 import {
@@ -80,7 +80,27 @@ export async function scimController(fastify: FastifyInstance) {
   }
 
   function identities() {
-    return fastify.db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+    return fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
+  }
+
+  /**
+   * roleId to role name, for the whole response.
+   *
+   * Read ONCE per request rather than per principal: a page of a hundred people holding the same
+   * handful of roles would otherwise be a hundred lookups of the same few documents. Empty on
+   * failure, which publishes the ids rather than dropping the roles: an opaque value a reader can
+   * still resolve is better than a person appearing to hold nothing.
+   */
+  async function roleNames(realmId: string): Promise<Map<string, string>> {
+    try {
+      const roles = await fastify.db
+        .collection<{ roleId: string; name: string }>(ROLE_COLLECTION)
+        .find({ realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
+        .toArray();
+      return new Map(roles.map((role) => [role.roleId, role.name]));
+    } catch {
+      return new Map();
+    }
   }
 
   fastify.get(`${base}/Users`, {
@@ -93,13 +113,17 @@ export async function scimController(fastify: FastifyInstance) {
         'Standard-defined: SCIM 2.0, RFC 7644 section 3.4.2. Only `eq` filters on userName, '
         + 'externalId and active are supported, and anything else is REFUSED rather than partially '
         + 'interpreted: a mistranslated filter returns the wrong principals instead of an error, '
-        + 'which is far worse than an honest refusal.',
+        + 'which is far worse than an honest refusal. `domainId` and `pending` are separate, '
+        + 'platform-specific parameters rather than folded into `filter`, so the standard grammar '
+        + 'stays exactly the standard grammar and neither narrowing is ever mistaken for part of it.',
       security: [{ bearerAuth: [] }],
       params: realmParam,
       querystring: {
         type: 'object',
         properties: {
           filter: { type: 'string', examples: ['userName eq "ada"'] },
+          domainId: { type: 'string', description: 'Principals provisioned through this authentication path.' },
+          pending: { type: 'boolean', description: 'Self-registered principals awaiting approval.' },
           startIndex: { type: 'integer', default: 1, description: 'One-based, per the specification.' },
           count: { type: 'integer', default: 100 },
         },
@@ -133,7 +157,9 @@ export async function scimController(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const { realm: realmName } = request.params as { realm: string };
-    const { filter, startIndex, count } = request.query as { filter?: string; startIndex?: number; count?: number };
+    const { filter, domainId, pending, startIndex, count } = request.query as {
+      filter?: string; domainId?: string; pending?: boolean; startIndex?: number; count?: number;
+    };
 
     const realm = await realmOf(realmName);
     if (!realm) return reply.status(404).send(scimError(404, 'No such realm'));
@@ -145,16 +171,22 @@ export async function scimController(fastify: FastifyInstance) {
 
     const from = Math.max(1, startIndex ?? 1);
     const limit = Math.min(count ?? 100, 200);
-    const query = { realmId: realm.realmId, ...parsed };
+    const query = {
+      realmId: realm.realmId,
+      ...parsed,
+      ...(domainId ? { domainId } : {}),
+      ...(pending ? { lifecycleState: 'pending' as const } : {}),
+    };
 
     const [records, total] = await Promise.all([
       identities().find(query, { projection: { _id: 0 } }).sort({ userName: 1 }).skip(from - 1).limit(limit).toArray(),
       identities().countDocuments(query),
     ]);
 
+    const names = await roleNames(realm.realmId);
     return reply
       .header('content-type', 'application/scim+json')
-      .send(toScimList(records.map((record) => toScimUser(record, location(realmName))), total, from));
+      .send(toScimList(records.map((record) => toScimUser(record, location(realmName), names)), total, from));
   });
 
   fastify.get(`${base}/Users/:id`, {
@@ -185,7 +217,7 @@ export async function scimController(fastify: FastifyInstance) {
     const record = await identities().findOne({ realmId: realm.realmId, subjectId: id }, { projection: { _id: 0 } });
     if (!record) return reply.status(404).send(scimError(404, 'No such principal'));
 
-    return reply.header('content-type', 'application/scim+json').send(toScimUser(record, location(realmName)));
+    return reply.header('content-type', 'application/scim+json').send(toScimUser(record, location(realmName), await roleNames(realm.realmId)));
   });
 
   fastify.post(`${base}/Users`, {
@@ -239,7 +271,20 @@ export async function scimController(fastify: FastifyInstance) {
 
     const primary = body.emails?.find((email) => email.primary) ?? body.emails?.[0];
     const now = new Date().toISOString();
-    const lifecycleState = provisionedLifecycleState(realm.registration.autoApprove);
+    // Provisioning lands in the internal directory, so it is that path's approval rule that
+    // decides whether the principal is usable at once (ADR-002), and that same path's `domainId`
+    // that says whose directory the principal is now in.
+    const realmService = new RealmService(fastify.db);
+    const { autoApprove } = await realmService.registration(realm.realmId);
+    const lifecycleState = provisionedLifecycleState(autoApprove);
+    const localDomain = await realmService.localDomain(realm.realmId);
+    // A principal that authenticates through no domain at all is not a lesser case: it is a state
+    // the model does not admit. `seedRealms` guarantees one internal domain per realm, so reaching
+    // this without one is a deployment defect, not a client error, and it must fail loudly rather
+    // than silently provision a principal nothing can attribute.
+    if (!localDomain) {
+      throw new Error(`realm "${realmName}" has no internal domain; every principal must belong to one`);
+    }
 
     const record = {
       realmId: realm.realmId,
@@ -247,6 +292,7 @@ export async function scimController(fastify: FastifyInstance) {
       subjectId: `sub-${randomUUID()}`,
       userName: body.userName,
       kind: 'human',
+      domainId: localDomain.domainId,
       ...(body.externalId ? { externalId: body.externalId } : {}),
       ...(body.name ? { name: body.name } : {}),
       ...(primary?.value ? { primaryEmail: String(primary.value).toLowerCase() } : {}),
@@ -256,7 +302,7 @@ export async function scimController(fastify: FastifyInstance) {
       lifecycleState,
       sessionEpoch: 0,
       meta: newMeta('Identity'),
-    } as unknown as IdentityRecord;
+    } as unknown as PrincipalRecord;
 
     await identities().insertOne(record);
 
@@ -283,7 +329,7 @@ export async function scimController(fastify: FastifyInstance) {
     return reply
       .status(201)
       .header('content-type', 'application/scim+json')
-      .send(toScimUser(record, location(realmName)));
+      .send(toScimUser(record, location(realmName), await roleNames(realm.realmId)));
   });
 
   fastify.patch(`${base}/Users/:id`, {
@@ -344,12 +390,23 @@ export async function scimController(fastify: FastifyInstance) {
     // Deactivating through provisioning must actually END access, not merely mark a flag. Raising the
     // epoch retires every token already issued, including any this authority never recorded.
     const deactivating = update.active === false;
+    /**
+     * The other half of that same symmetry, added in v43.
+     *
+     * Self-registration without auto-approve lands a principal in `pending` with `active: false`
+     * (`registration.controller.ts`). Before this, setting `active: true` on one left
+     * `lifecycleState: 'pending'` untouched: the record ended up `active: true` and
+     * `lifecycleState: 'pending'` AT ONCE, a state nothing else checked for, and there was no way
+     * to correctly approve a pending account through provisioning at all.
+     */
+    const approving = update.active === true && existing.lifecycleState === 'pending';
     await identities().updateOne(
       { subjectId: id },
       {
         $set: {
           ...update,
           ...(deactivating ? { lifecycleState: 'suspended' } : {}),
+          ...(approving ? { lifecycleState: 'active' } : {}),
           'meta.lastModified': new Date().toISOString(),
         },
         ...(deactivating ? { $inc: { sessionEpoch: 1 } } : {}),
@@ -360,7 +417,7 @@ export async function scimController(fastify: FastifyInstance) {
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       category: 'lifecycle',
-      action: deactivating ? 'identity.deactivated' : 'identity.updated',
+      action: deactivating ? 'identity.deactivated' : approving ? 'identity.approved' : 'identity.updated',
       outcome: 'success',
       subjectId: id,
       detail: { via: 'scim', changed: Object.keys(update) },
@@ -369,14 +426,14 @@ export async function scimController(fastify: FastifyInstance) {
     void notifyConsumers(deactivating ? 'deactivate' : 'update', id, {
       realmId: realm.realmId,
       active: update.active ?? existing.active,
-      lifecycleState: deactivating ? 'suspended' : existing.lifecycleState,
+      lifecycleState: deactivating ? 'suspended' : approving ? 'active' : existing.lifecycleState,
       version: (existing.meta?.version ?? 0) + 1,
     });
 
     const updated = await identities().findOne({ subjectId: id }, { projection: { _id: 0 } });
     return reply
       .header('content-type', 'application/scim+json')
-      .send(toScimUser(updated as IdentityRecord, location(realmName)));
+      .send(toScimUser(updated as PrincipalRecord, location(realmName), await roleNames(realm.realmId)));
   });
 
   fastify.delete(`${base}/Users/:id`, {

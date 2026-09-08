@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Bug, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { apiUrl } from '../lib/env';
-import { tokenFromSession } from '../lib/session';
+import { startConsoleAuthorization, rememberUserName } from '../lib/session';
 import { BRAND } from '../config/brand';
 import { Tooltip } from './Tooltip';
 
@@ -26,7 +26,10 @@ interface Provider {
 
 export interface RosterEntry {
   subjectId: string;
+  /** The login identifier, which is what gets typed into the field. */
   userName: string;
+  /** The name to show. SCIM `name.formatted`. */
+  displayName?: string;
   email?: string;
   role?: string;
   /** A fixture-written hint, so two personas holding the same role are distinguishable. */
@@ -44,7 +47,10 @@ export interface LoginContext {
 }
 
 export interface SignedIn {
+  /** The LOGIN identifier, per SCIM. An identifier, not a name. */
   userName?: string;
+  /** The name to show. SCIM `name.formatted`. */
+  displayName?: string;
   sessionId: string;
   realm: string;
 }
@@ -68,12 +74,15 @@ export function SignInPanel({
   defaultRealm = 'leafypay',
   heading,
   clientId,
+  requestId,
   onSignedIn,
 }: {
   defaultRealm?: string;
   heading?: string;
   /** Narrows the demo roster to the personas this application should offer. */
   clientId?: string;
+  /** The pending authorization, which names the asking application on a hosted sign-in. */
+  requestId?: string;
   onSignedIn?: (signedIn: SignedIn) => void;
 }) {
   const [context, setContext] = useState<LoginContext | null>(null);
@@ -92,7 +101,11 @@ export function SignInPanel({
     let cancelled = false;
     setContextState('loading');
     setContext(null);
-    fetch(apiUrl(`/realms/${realm}/login-context${clientId ? `?client_id=${encodeURIComponent(clientId)}` : ''}`))
+    const asking = new URLSearchParams();
+    if (requestId) asking.set('request_id', requestId);
+    else if (clientId) asking.set('client_id', clientId);
+    const query = asking.toString();
+    fetch(apiUrl(`/realms/${realm}/login-context${query ? `?${query}` : ''}`))
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return;
@@ -105,11 +118,12 @@ export function SignInPanel({
         setContextState('unavailable');
       });
     return () => { cancelled = true; };
-  }, [realm, clientId]);
+  }, [realm, clientId, requestId]);
 
   async function submit(credentials: { login: string; password: string }) {
     setBusy(true);
     setError(null);
+    let authenticated: SignedIn | null = null;
     try {
       const response = await fetch(apiUrl(`/realms/${realm}/login`), {
         method: 'POST',
@@ -123,14 +137,39 @@ export function SignInPanel({
         return;
       }
       const body = await response.json();
-      // A token for the console itself, obtained the ordinary way. Failing here does not undo the
-      // sign-in: the person IS signed in, and only the screens needing a token are affected.
-      await tokenFromSession(realm, body.sessionId);
-      onSignedIn?.({ userName: body.userName, sessionId: body.sessionId, realm });
+      // Kept before anything else can fail: the name is in hand HERE, and every screen that names
+      // this person otherwise has to fetch it back or show a subject id instead. The display name
+      // where there is one, and the login only as a fallback, since `userName` is an identifier.
+      rememberUserName(body.displayName ?? body.userName);
+      /**
+       * A token for the console itself, obtained THE ORDINARY WAY.
+       *
+       * `onSignedIn` runs first because it decides whether this page is finishing somebody else's
+       * authorization: when it is, that flow continues by navigation and the console's own token is
+       * not wanted yet. Only when nobody else is waiting does the console start its own flow, which
+       * also navigates, to `/auth/callback`.
+       */
+      authenticated = { userName: body.userName, displayName: body.displayName, sessionId: body.sessionId, realm };
     } catch {
       setError('The identity service could not be reached.');
+      return;
     } finally {
       setBusy(false);
+    }
+
+    /**
+     * The handoff, OUTSIDE the catch above.
+     *
+     * Both branches navigate, and a throw on the way to a navigation used to be caught as if the
+     * credential had failed: the screen was already showing "returning you to the application" and
+     * stayed on it, with the real cause reported nowhere.
+     */
+    try {
+      if (onSignedIn) onSignedIn(authenticated);
+      else await startConsoleAuthorization(realm, authenticated.sessionId);
+    } catch (cause) {
+      console.error('sign-in could not be continued', cause);
+      setError('You are signed in, but the application could not be returned to. Start again from it.');
     }
   }
 
@@ -243,7 +282,10 @@ export function SignInPanel({
                 <optgroup key={role} label={role}>
                   {entries.map((entry) => (
                     <option key={entry.subjectId} value={entry.userName}>
-                      {entry.demoNote ? `${entry.userName} (${entry.demoNote})` : entry.userName}
+                      {/* The name is what somebody recognises; the value is the login it fills in. */}
+                      {entry.demoNote
+                        ? `${entry.displayName ?? entry.userName} (${entry.demoNote})`
+                        : (entry.displayName ?? entry.userName)}
                     </option>
                   ))}
                 </optgroup>

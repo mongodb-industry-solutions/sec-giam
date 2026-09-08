@@ -2,14 +2,14 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { RealmService } from '../services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { SessionService } from '../../authentication/services/session.service';
+import { SessionService, isSessionLimitRefusal } from '../../authentication/services/session.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { identityProviders } from '../../../shared/ports';
 import { bindIdentityProviders } from '../services/oidcProvider';
-import { IDENTITY_COLLECTION, IDENTITY_PROVIDER_COLLECTION, ROLE_COLLECTION, ROLE_ASSIGNMENT_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord } from '../../directory/models/identity.model';
-import { IdentityProviderRecord } from '../models/identityProvider.model';
-import { RoleAssignmentRecord, RoleRecord } from '../../authorization/models/authorization.model';
+import { PRINCIPAL_COLLECTION, DOMAIN_COLLECTION, ROLE_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord, RoleHolding } from '../../directory/models/principal.model';
+import { DomainRecord } from '../models/domain.model';
+import { RoleRecord } from '../../authorization/models/authorization.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { problem } from '../../../shared/models/problem';
 
@@ -65,14 +65,14 @@ export async function federationController(fastify: FastifyInstance) {
     const realm = await realmService().byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const provider = await fastify.db.collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION)
+    const provider = await fastify.db.collection<DomainRecord>(DOMAIN_COLLECTION)
       .findOne({ realmId: realm.realmId, name: providerName, enabled: true }, { projection: { _id: 0 } });
     if (!provider) return reply.status(404).send(problem(404, 'Unknown provider'));
 
     try {
       const adapter = identityProviders.resolve(provider.adapter);
       const state = randomUUID();
-      const authorizationUrl = await adapter.authorizationUrl(provider.providerId, state);
+      const authorizationUrl = await adapter.authorizationUrl(provider.domainId, state);
       if (!authorizationUrl) return reply.status(404).send(problem(404, 'That provider has no redirect step'));
       return reply.send({ authorizationUrl, state });
     } catch (cause) {
@@ -121,6 +121,7 @@ export async function federationController(fastify: FastifyInstance) {
           examples: [{ subjectId: 'sub-9f21', sessionId: 'ses-4c1f', userName: 'ada', provisioned: false }],
         },
         401: { $ref: 'Problem#', description: 'The upstream response did not verify.' },
+        429: { $ref: 'Problem#', description: 'The concurrent-session limit on this path refuses a further session.' },
         404: { $ref: 'Problem#', description: 'No such realm or provider.' },
       },
     },
@@ -131,14 +132,14 @@ export async function federationController(fastify: FastifyInstance) {
     const realm = await realmService().byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const provider = await fastify.db.collection<IdentityProviderRecord>(IDENTITY_PROVIDER_COLLECTION)
+    const provider = await fastify.db.collection<DomainRecord>(DOMAIN_COLLECTION)
       .findOne({ realmId: realm.realmId, name: providerName, enabled: true }, { projection: { _id: 0 } });
     if (!provider) return reply.status(404).send(problem(404, 'Unknown provider'));
 
     const audit = new SecurityEventService(fastify.db);
     let claims: Record<string, unknown>;
     try {
-      claims = await identityProviders.resolve(provider.adapter).exchange(provider.providerId, { code, state });
+      claims = await identityProviders.resolve(provider.adapter).exchange(provider.domainId, { code, state });
     } catch (cause) {
       void audit.record({
         realmId: realm.realmId,
@@ -156,11 +157,11 @@ export async function federationController(fastify: FastifyInstance) {
     }
 
     const externalId = String(claims.sub ?? '');
-    const identities = fastify.db.collection<IdentityRecord>(IDENTITY_COLLECTION);
+    const identities = fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
     // Linked by upstream identifier, never by email: an address can be reassigned inside an
     // organisation, and matching on one is how a new joiner inherits somebody else's account.
-    let identity: IdentityRecord | null = await identities.findOne(
-      { realmId: realm.realmId, providerId: provider.providerId, externalId },
+    let identity: PrincipalRecord | null = await identities.findOne(
+      { realmId: realm.realmId, domainId: provider.domainId, externalId },
       { projection: { _id: 0 } },
     );
 
@@ -179,9 +180,9 @@ export async function federationController(fastify: FastifyInstance) {
         lifecycleState: 'active',
         sessionEpoch: 0,
         externalId,
-        providerId: provider.providerId,
+        domainId: provider.domainId,
         meta: newMeta('Identity'),
-      } as unknown as IdentityRecord;
+      } as unknown as PrincipalRecord;
       await identities.insertOne(record);
       identity = record;
     }
@@ -190,11 +191,22 @@ export async function federationController(fastify: FastifyInstance) {
     // would let whoever administers it grant themselves anything here.
     await applyRoleMapping(realm.realmId, realm.tenantId, identity.subjectId, provider, claims);
 
-    const session = await new SessionService(fastify.db).start({
+    const started = await new SessionService(fastify.db).start({
       realm,
       subjectId: identity.subjectId,
+      // The upstream that authenticated is the domain, so its own limit applies to its own
+      // sessions and not to the ones the local directory opened.
+      domainId: provider.domainId,
       // The assurance the upstream actually achieved, not the one we would like it to have.
     });
+    if (isSessionLimitRefusal(started)) {
+      return reply.status(429).send(problem(
+        429,
+        'Too many sessions',
+        `${started.reason}. Sign out elsewhere, then try again.`,
+      ));
+    }
+    const session = started;
 
     void audit.record({
       realmId: realm.realmId,
@@ -225,7 +237,7 @@ export async function federationController(fastify: FastifyInstance) {
     realmId: string,
     tenantId: string,
     subjectId: string,
-    provider: IdentityProviderRecord,
+    provider: DomainRecord,
     claims: Record<string, unknown>,
   ): Promise<void> {
     // The record's own shape: a list of (claim, value, roleName). Data rather than code, because
@@ -245,21 +257,24 @@ export async function federationController(fastify: FastifyInstance) {
       .find({ realmId, name: { $in: wanted } }, { projection: { _id: 0, roleId: 1, name: 1 } })
       .toArray() as unknown as Array<{ roleId: string; name: string }>;
 
-    const assignments = fastify.db.collection<RoleAssignmentRecord>(ROLE_ASSIGNMENT_COLLECTION);
-    await assignments.deleteMany({ realmId, subjectId, grantedBy: provider.providerId });
+    const principals = fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
+
+    // Only what THIS provider granted is replaced, so a role an administrator granted deliberately
+    // survives a federated sign-in. `grantedBy` carrying the provider id is what distinguishes them.
+    await principals.updateOne(
+      { realmId, subjectId },
+      { $pull: { roles: { grantedBy: provider.domainId } } },
+    );
     if (roles.length === 0) return;
 
-    await assignments.insertMany(roles.map((role) => ({
-      realmId,
-      tenantId,
-      assignmentId: `assign-${randomUUID()}`,
-      subjectId,
+    const granted: RoleHolding[] = roles.map((role) => ({
       roleId: role.roleId,
       grantedAt: new Date().toISOString(),
-      // Recorded so an assignment made by federation is distinguishable from one an administrator
-      // made deliberately, and so only the former is replaced at the next sign-in.
-      grantedBy: provider.providerId,
-      meta: newMeta('RoleAssignment'),
-    })) as unknown as RoleAssignmentRecord[]);
+      grantedBy: provider.domainId,
+    }));
+    await principals.updateOne(
+      { realmId, subjectId },
+      { $push: { roles: { $each: granted } } },
+    );
   }
 }

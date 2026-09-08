@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { requireAdmin } from '../../../vendors/middleware/adminAuth';
-import { IDENTITY_COLLECTION } from '../../../shared/models/collections';
-import { IdentityRecord } from '../../directory/models/identity.model';
+import { PRINCIPAL_COLLECTION } from '../../../shared/models/collections';
+import { PrincipalRecord } from '../../directory/models/principal.model';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -90,7 +90,7 @@ export async function reconcileController(fastify: FastifyInstance) {
     const realm = await new RealmService(fastify.db).byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const held = await fastify.db.collection<IdentityRecord>(IDENTITY_COLLECTION)
+    const held = await fastify.db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION)
       .find(
         { realmId: realm.realmId, subjectId: { $in: subjectIds } },
         { projection: { _id: 0, subjectId: 1, active: 1, lifecycleState: 1, meta: 1 } },

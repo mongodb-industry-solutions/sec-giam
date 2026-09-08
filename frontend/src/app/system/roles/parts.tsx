@@ -47,3 +47,14 @@ export function BuiltinBadge() {
     </Tooltip>
   );
 }
+
+/** Shown only when a role is switched off: grants nothing, everywhere it is held or inherited from. */
+export function DisabledBadge() {
+  return (
+    <Tooltip text="Switched off. Every assignment survives untouched, and grants nothing while it stays this way, including to anything that inherits from it.">
+      <span className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
+        disabled
+      </span>
+    </Tooltip>
+  );
+}

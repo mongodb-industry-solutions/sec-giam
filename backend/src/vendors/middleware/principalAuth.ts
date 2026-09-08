@@ -4,10 +4,11 @@ import { JwtTokenFormat } from '../../modules/oauth/services/jwtTokenFormat';
 import { KeyRing } from '../../modules/keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../modules/keys/services/signingKeyStore';
 import { RealmService } from '../../modules/realm/services/realm.service';
-import { CLIENT_COLLECTION } from '../../shared/models/collections';
-import { ClientRecord } from '../../modules/oauth/models/client.model';
+import { findOAuthClient } from '../../modules/oauth/services/clientAuth.service';
+import { OAuthClient } from '../../modules/oauth/models/client.model';
 import { DecisionService } from '../../modules/authorization/services/decision.service';
 import { SecurityEventService } from '../../modules/audit/services/securityEvent.service';
+import { problem } from '../../shared/models/problem';
 
 /**
  * Who is calling, on the routes the authority serves to a principal rather than to a client.
@@ -39,6 +40,15 @@ export interface CallingPrincipal {
 declare module 'fastify' {
   interface FastifyRequest {
     principal?: CallingPrincipal;
+    /**
+     * Set when a route expected a bearer token, whether or not one was accepted.
+     *
+     * This is what tells the `WWW-Authenticate` hook that the route is a PROTECTED RESOURCE. Routing
+     * on the URL would not do: `/protocol/openid-connect/userinfo` is a protected resource and needs
+     * the challenge, while `/protocol/openid-connect/token` authenticates a client and must not have
+     * one, and both live under the same path prefix.
+     */
+    bearerProtected?: boolean;
   }
 }
 
@@ -71,9 +81,8 @@ export async function resolvePrincipal(
   if (!claims || typeof claims.sub !== 'string') return null;
 
   const clientId = typeof claims.client_id === 'string' ? claims.client_id : audience;
-  const client = await db.collection<ClientRecord>(CLIENT_COLLECTION)
-    .findOne({ realmId: home.realmId, clientId, status: 'active' }, { projection: { _id: 0, clientId: 1 } });
-  if (!client) return null;
+  const client = await findOAuthClient(db, home.realmId, clientId);
+  if (!client || client.status !== 'active') return null;
 
   const crossRealm = home.realmId !== target.realmId;
   if (crossRealm) {
@@ -108,15 +117,27 @@ export async function resolvePrincipal(
   };
 }
 
-/** Refuses with the OAuth error object, because these routes sit on the specification's surface. */
+/**
+ * Refuses with problem details in the body and the RFC 6750 challenge in the header.
+ *
+ * Marks the request as bearer-protected first, so the challenge is added whether the refusal comes
+ * from here or from an authorization check further in.
+ */
 export async function requirePrincipal(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  request.bearerProtected = true;
   const { realm } = request.params as { realm?: string };
   const principal = realm ? await resolvePrincipal(request.server.db, realm, request.headers.authorization) : null;
   if (!principal) {
-    return reply.status(401).send({
-      error: 'invalid_token',
-      error_description: 'A valid access token for this realm is required.',
-    });
+    /**
+     * Problem details in the BODY, the OAuth code in the `WWW-Authenticate` header.
+     *
+     * It sent `{error, error_description}` here while every route declared `401: Problem#`, so the
+     * response did not match its own published schema. RFC 6750 3 puts the error code in the
+     * challenge header rather than the body, which resolves both: the body is the shape this
+     * surface promises, and the header is the shape the standard requires. The header itself is
+     * added by the `onSend` hook in `app.ts`, so no refusal can forget it.
+     */
+    return reply.status(401).send(problem(401, 'Unauthorized', 'A valid access token for this realm is required.'));
   }
   request.principal = principal;
 }
