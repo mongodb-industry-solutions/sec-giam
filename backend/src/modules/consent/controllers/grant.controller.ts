@@ -32,9 +32,16 @@ export async function grantController(fastify: FastifyInstance) {
   const grantView = {
     type: 'object',
     additionalProperties: false,
-    required: ['grantId', 'clientId', 'clientName', 'scopes', 'registeredScopes', 'status', 'grantedAt'],
+    required: ['grantId', 'subjectId', 'clientId', 'clientName', 'scopes', 'registeredScopes', 'status', 'grantedAt'],
     properties: {
       grantId: { type: 'string' },
+      subjectId: {
+        type: 'string',
+        description:
+          'The principal this grant belongs to. Redundant on a self-service read; the only way an '
+          + 'oversight caller reading every grant for one client can tell them apart.',
+      },
+      subjectName: { type: 'string', description: 'The principal\'s own user name, resolved once for the whole response.' },
       clientId: { type: 'string' },
       clientName: { type: 'string' },
       logoUri: { type: 'string' },
@@ -54,6 +61,8 @@ export async function grantController(fastify: FastifyInstance) {
     },
     examples: [{
       grantId: 'g-4c1f',
+      subjectId: 'a1000070-0000-4000-8000-000000000070',
+      subjectName: 'alex.rivera',
       clientId: 'acme-portal',
       clientName: 'Acme Portal',
       scopes: ['openid', 'profile'],

@@ -83,6 +83,20 @@ export class DirectoryService {
     );
   }
 
+  /**
+   * Every credential this principal holds, of any type and any status.
+   *
+   * Unlike `credentialsFor`, nothing is filtered out: a revoked authenticator and a suspended one are
+   * exactly what an oversight review needs to see, not just what would currently authenticate. Sorted
+   * newest first, so the credential somebody is asking about is usually near the top.
+   */
+  async allCredentialsFor(realmId: string, subjectId: string): Promise<CredentialRecord[]> {
+    return this.credentials
+      .find({ realmId, subjectId }, { projection: { _id: 0 } })
+      .sort({ createdAt: -1 })
+      .toArray();
+  }
+
   async credentialsFor(subjectId: string, type: CredentialType): Promise<CredentialRecord[]> {
     const held = await this.credentials
       .find({ subjectId, type, status: 'active' }, { projection: { _id: 0 } })

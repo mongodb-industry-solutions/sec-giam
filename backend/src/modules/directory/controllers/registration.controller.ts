@@ -151,6 +151,7 @@ export async function registrationController(fastify: FastifyInstance) {
       hash: issued?.hash as string,
       status: 'active',
       assurance: { level: 'aal1', method: 'password', verifiedAt: now },
+      createdAt: now,
       meta: newMeta('Credential'),
     } as CredentialRecord);
 

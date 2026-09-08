@@ -3,18 +3,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppWindow, Plus, Search } from 'lucide-react';
-import { SectionHeader } from '../../../components/SectionHeader';
-import { Tooltip } from '../../../components/Tooltip';
-import { Pagination } from '../../../components/Pagination';
-import { FilterChips } from '../../../components/FilterChips';
-import { SecretOnce } from '../../../components/SecretOnce';
-import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
-import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
+import { SectionHeader } from '../../../../components/SectionHeader';
+import { Tooltip } from '../../../../components/Tooltip';
+import { Pagination } from '../../../../components/Pagination';
+import { FilterChips } from '../../../../components/FilterChips';
+import { SecretOnce } from '../../../../components/SecretOnce';
+import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
+import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/console';
 import {
   ClientPage, PRIVILEGED_GRANTS, RegisteredClient, SELF_SERVICE_GRANTS, SELF_SERVICE_SCOPES,
   firstRedirectProblem, linesToUris, ownersLabel,
-} from '../../../lib/clients';
-import { usePermissions } from '../../../lib/profile';
+} from '../../../../lib/clients';
+import { usePermissions } from '../../../../lib/profile';
 
 /**
  * The applications registered against this authority.
@@ -197,7 +197,7 @@ export default function ClientsPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <Link
-                            href={`/system/clients/${encodeURIComponent(client.client_id)}`}
+                            href={`/system/credentials/applications/${encodeURIComponent(client.client_id)}`}
                             className="font-semibold text-[#001E2B] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
                           >
                             {client.client_name || client.client_id}
@@ -234,7 +234,7 @@ export default function ClientsPage() {
                         </div>
                       </div>
                       <Link
-                        href={`/system/clients/${encodeURIComponent(client.client_id)}`}
+                        href={`/system/credentials/applications/${encodeURIComponent(client.client_id)}`}
                         className="shrink-0 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
                       >
                         Open

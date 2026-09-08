@@ -63,6 +63,9 @@ export function ConsoleSidebar({ claims }: { claims: Claims | null }) {
       </nav>
 
       <div aria-label="Your account" className="border-t border-white/10 py-1">
+        {!collapsed && (
+          <p className="px-4 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Your account</p>
+        )}
         {inGroup(sections, 'account').map((section) => (
           <SidebarLink key={section.key} section={section} active={isActive(section)} collapsed={collapsed} />
         ))}
