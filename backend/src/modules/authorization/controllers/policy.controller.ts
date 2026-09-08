@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { PolicyAdminService, isPolicyRefusal } from '../services/policyAdmin.service';
 import { PolicyDecisionService } from '../services/policyDecision.service';
+import { RoleAdminService } from '../services/roleAdmin.service';
 import { authorityAccess, refusal } from '../services/authorityAccess';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
@@ -826,5 +827,85 @@ export async function policyController(fastify: FastifyInstance) {
     }
 
     return reply.send({ evaluations: outcomes });
+  });
+
+  /**
+   * AuthZEN 1.0's `/access/v1/search/action` extension: not "may X do Y", but "which Y may X do".
+   *
+   * Answerable honestly here in a way the other two search extensions in the specification are not.
+   * The action dimension is a closed, declared catalog (`resource.actions[]`, the same one a role can
+   * only ever be granted from), so enumerating it costs one read; searching over every SUBJECT or
+   * every RESOURCE INSTANCE this authority knows about would not stay one read, and worse, a context-
+   * dependent condition (an assurance floor, a time window) can only be evaluated for a request that
+   * actually carries a context, which a reverse search over subjects or resources has none of. This
+   * endpoint keeps the real context the caller supplied and asks the ordinary decision engine once
+   * per declared action, so its answer is exactly as correct as the single endpoint's, never a
+   * cheaper approximation that ignores a condition to make the search possible.
+   */
+  fastify.post('/realms/:realm/decision/search/action', {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'searchActions',
+      tags: ['authorization'],
+      summary: 'Which actions a subject may take on a resource',
+      description:
+        'AuthZEN 1.0\'s `/access/v1/search/action` extension. Only the resource\'s DECLARED actions '
+        + 'are considered, the same catalog a role can only ever be granted from, and each is asked '
+        + 'through the identical decision path the single and batch endpoints use, with the SAME '
+        + 'context: nothing here is answered by a cheaper approximation that drops a condition to '
+        + 'make a reverse search possible.',
+      security: [{ bearerAuth: [] }],
+      params: realmParam,
+      body: {
+        type: 'object',
+        required: ['resource'],
+        additionalProperties: false,
+        properties: {
+          subject: decisionSubjectSchema,
+          resource: decisionResourceSchema,
+          context: decisionContextSchema,
+        },
+        examples: [{
+          subject: { type: 'identity', id: 'a1000070-0000-4000-8000-000000000070' },
+          resource: { type: 'roles' },
+        }],
+      },
+      response: {
+        200: {
+          description: 'The actions this resource declares that the subject may currently take.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['actions'],
+          properties: {
+            actions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string' } } } },
+          },
+          examples: [{ actions: [{ name: 'view' }] }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        403: { $ref: 'Problem#', description: 'Asking about another subject without the tier that reads policies.' },
+        404: { $ref: 'Problem#', description: 'No such realm, or no such resource type declared.' },
+      },
+    },
+  }, async (request, reply) => {
+    const realm = await realmOf((request.params as { realm: string }).realm);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const body = request.body as { subject?: DecisionSpec['subject']; resource: DecisionSpec['resource']; context?: DecisionSpec['context'] };
+    const caller = request.principal!;
+
+    const catalog = await new RoleAdminService(fastify.db).catalog(realm.realmId);
+    const declared = catalog.filter((entry) => entry.resource === body.resource.type).map((entry) => entry.action);
+    if (declared.length === 0) return reply.status(404).send(problem(404, 'No such resource type declared'));
+
+    const allowed: string[] = [];
+    // Sequential for the same reason the batch endpoint is: the oversight gate for a named subject
+    // must run at most once conceptually, not race across N concurrent calls for one request.
+    for (const action of [...new Set(declared)].sort()) {
+      const outcome = await evaluateOne(realm, caller, { subject: body.subject, resource: body.resource, action: { name: action }, context: body.context });
+      if (isDecisionRefusal(outcome)) return reply.status(outcome.status as 403).send(problem(outcome.status, outcome.title, outcome.detail));
+      if (outcome.decision) allowed.push(action);
+    }
+
+    return reply.send({ actions: allowed.map((name) => ({ name })) });
   });
 }
