@@ -253,6 +253,7 @@ per-environment readiness report.
 - [AWS/Cedar](https://docs.aws.amazon.com/prescriptive-guidance/latest/saas-multitenant-api-access-authorization/cedar.html)
   - [Fast, scalable access control](https://cedarpolicy.com/en)
 - [OASIS eXtensible Access Control Markup Language: ACAL (XACML) TC](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=xacml)
+- [Agentic AI in Treasury Operations: Autonomous Cash Management, FX Hedging](https://www.youtube.com/watch?v=BoozoRKmpJs)
 
 ## License
 

@@ -129,7 +129,7 @@ export function UserMenu({ claims, onSignOut }: { claims: Claims; onSignOut: () 
 
           <div className="py-1.5">
             <MenuLink href="/system/profile" icon={UserRound} label="Your profile" onClick={() => setOpen(false)} />
-            <MenuLink href="/system/credentials" icon={KeyRound} label="Your authenticators" onClick={() => setOpen(false)} />
+            <MenuLink href="/system/credentials/authenticators" icon={KeyRound} label="Your authenticators" onClick={() => setOpen(false)} />
             <MenuLink href="/system/applications" icon={Layers} label="Authorized applications" onClick={() => setOpen(false)} />
             <MenuLink href="/system/activity" icon={ShieldCheck} label="Your activity" onClick={() => setOpen(false)} />
             <MenuLink href="/system/realm-grants" icon={Globe} label="Cross-realm administration" onClick={() => setOpen(false)} />

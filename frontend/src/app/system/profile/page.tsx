@@ -168,7 +168,7 @@ export default function ProfilePage() {
 
       <section className="grid gap-4 sm:grid-cols-2" aria-label="Things you own">
         <OwnedLink
-          href="/system/credentials"
+          href="/system/credentials/authenticators"
           icon={KeyRound}
           title="Your authenticators"
           description="Devices registered to approve a sign-in for you."

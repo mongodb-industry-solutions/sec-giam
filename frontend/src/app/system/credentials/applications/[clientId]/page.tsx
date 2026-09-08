@@ -3,18 +3,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Activity, AppWindow, ArrowLeft, Pencil, RefreshCw, ShieldOff, UserMinus, UserPlus } from 'lucide-react';
-import { SectionHeader } from '../../../../components/SectionHeader';
-import { Tooltip } from '../../../../components/Tooltip';
-import { Fact } from '../../../../components/Fact';
-import { SecretOnce } from '../../../../components/SecretOnce';
-import { Pagination } from '../../../../components/Pagination';
-import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
-import { ApiError, callApi, when } from '../../../../lib/console';
-import { useConsoleResource } from '../../../../lib/useConsoleResource';
+import {
+  Activity, AppWindow, ArrowLeft, Pencil, RefreshCw, ShieldOff, UserMinus, UserPlus, UsersRound,
+} from 'lucide-react';
+import { SectionHeader } from '../../../../../components/SectionHeader';
+import { Tooltip } from '../../../../../components/Tooltip';
+import { Fact } from '../../../../../components/Fact';
+import { SecretOnce } from '../../../../../components/SecretOnce';
+import { Pagination } from '../../../../../components/Pagination';
+import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../../components/ResultState';
+import { ApiError, callApi, when } from '../../../../../lib/console';
+import { useConsoleResource } from '../../../../../lib/useConsoleResource';
 import {
   ClientOwner, RegisteredClient, SELF_SERVICE_SCOPES, firstRedirectProblem, linesToUris,
-} from '../../../../lib/clients';
+} from '../../../../../lib/clients';
 
 /**
  * One registered application: what it is, what it may return to, and its credential.
@@ -103,7 +105,7 @@ export default function ClientDetailPage() {
         { method: 'DELETE', subject: 'that owner' },
       );
       // Giving up your own ownership may well have given up your sight of this screen.
-      if (self && !answer.owned_by_caller) return router.push('/system/clients');
+      if (self && !answer.owned_by_caller) return router.push('/system/credentials/applications');
       setClient(answer);
       setError(null);
     } catch (failure) {
@@ -123,7 +125,7 @@ export default function ClientDetailPage() {
         method: 'DELETE',
         subject: 'that application',
       });
-      router.push('/system/clients');
+      router.push('/system/credentials/applications');
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'That application could not be withdrawn.');
       setBusy(false);
@@ -133,7 +135,7 @@ export default function ClientDetailPage() {
   return (
     <main className="space-y-5">
       <Link
-        href="/system/clients"
+        href="/system/credentials/applications"
         className="inline-flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-[#001E2B] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
       >
         <ArrowLeft size={13} aria-hidden />
@@ -257,6 +259,7 @@ export default function ClientDetailPage() {
               </div>
             )}
 
+          <AuthorizedPrincipals clientId={clientId} />
           <ActivityPanel clientId={clientId} />
         </>
       )}
@@ -544,6 +547,108 @@ function EditForm({ client, onCancel, onSaved }: {
         </button>
       </div>
     </form>
+  );
+}
+
+interface ApplicationGrant {
+  grantId: string;
+  subjectId: string;
+  subjectName?: string;
+  status: 'active' | 'revoked';
+  grantedAt: string;
+  revokedAt?: string;
+  lastUsedAt?: string;
+}
+
+/**
+ * Everyone who has authorised this application, the reverse of the account owner's own
+ * `/system/applications`: not "what did I allow", but "who allowed this".
+ *
+ * An oversight query the API itself gates on `grants:view`, same as the activity panel below it. The
+ * grant is withdrawn the same way an owner withdraws their own, `DELETE /grants/:grantId`, naming
+ * `subjectId` so the authority resolves it as somebody else's rather than the caller's.
+ */
+function AuthorizedPrincipals({ clientId }: { clientId: string }) {
+  const read = useCallback(
+    () => callApi<{ grants: ApplicationGrant[] }>('/grants', {
+      query: { clientId, status: 'all' },
+      subject: 'who has authorized this application',
+    }),
+    [clientId],
+  );
+  const grants = useConsoleResource(read, 'Who has authorized this application could not be read.');
+  const rows = grants.data?.grants ?? [];
+
+  async function withdraw(grant: ApplicationGrant) {
+    if (!window.confirm(`Withdraw ${grant.subjectName ?? grant.subjectId}'s authorization of this application?`)) return;
+    await grants.run(grant.grantId, () => callApi(`/grants/${encodeURIComponent(grant.grantId)}`, {
+      method: 'DELETE',
+      query: { subjectId: grant.subjectId },
+      subject: 'that authorization',
+    }), 'That authorization could not be withdrawn.');
+  }
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
+        <UsersRound size={14} className="text-gray-400" aria-hidden />
+        Who has authorized this application
+      </h2>
+      <p className="mt-1 text-sm text-gray-500">
+        Every principal who has allowed this application to act on their behalf, and when.
+      </p>
+
+      {grants.error && <div className="mt-3"><ErrorState message={grants.error} onRetry={() => void grants.reload()} /></div>}
+
+      {grants.loading
+        ? <div className="mt-3"><LoadingState label="Reading who authorized this application…" /></div>
+        : rows.length === 0
+          ? (
+            <div className="mt-3">
+              <EmptyState icon={UsersRound} title="Nobody yet" description="No principal has authorized this application yet." />
+            </div>
+          )
+          : (
+            <ul className="mt-3 space-y-2">
+              {rows.map((grant) => (
+                <li
+                  key={grant.grantId}
+                  className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${
+                    grant.status === 'active' ? 'border-gray-200' : 'border-gray-100 bg-gray-50 text-gray-400'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/system/identities/${encodeURIComponent(grant.subjectId)}`}
+                        className="font-medium text-[#001E2B] hover:underline"
+                      >
+                        {grant.subjectName ?? grant.subjectId}
+                      </Link>
+                      <StatusBadge status={grant.status} />
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      Authorized {when(grant.grantedAt)}
+                      {grant.revokedAt && ` · withdrawn ${when(grant.revokedAt)}`}
+                      {grant.lastUsedAt && ` · last used ${when(grant.lastUsedAt)}`}
+                    </p>
+                  </div>
+                  {grant.status === 'active' && (
+                    <button
+                      type="button"
+                      disabled={grants.busy === grant.grantId}
+                      onClick={() => void withdraw(grant)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <ShieldOff size={12} aria-hidden />
+                      Withdraw
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+    </section>
   );
 }
 

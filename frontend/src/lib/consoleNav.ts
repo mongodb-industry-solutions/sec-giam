@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, AppWindow, Building2, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, Building2, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
 import { can, type Claims } from './console';
 
 /**
@@ -63,13 +63,26 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     visible: () => true,
   },
   {
-    key: 'clients',
-    label: 'Applications',
-    path: '/system/clients',
-    icon: AppWindow,
-    description: 'Applications you registered for sign-in, their redirect addresses and their secrets.',
-    // Registering an application is self-service, so this is never hidden. What the permission changes
-    // is how much of the realm it lists, and the authority narrows the query either way.
+    key: 'credentials',
+    label: 'Credentials',
+    path: '/system/credentials',
+    icon: KeyRound,
+    description:
+      'Every way a principal can be authenticated: passwords, sign-in authenticators and the '
+      + 'applications registered to act with a credential of their own, in one place.',
+    // Self-service is never hidden: registering an application or your own authenticator is open to
+    // everybody, and the authority narrows the query to your own unless a role administers the realm.
+    visible: () => true,
+  },
+  {
+    key: 'applications',
+    // Named for what it holds: consents this person granted, not the credential registry above. An
+    // OAuth application IS a credential (ADR-001), but WHO has authorized ONE to act for them is a
+    // different question, asked and answered here.
+    label: 'Authorized apps',
+    path: '/system/applications',
+    icon: Layers,
+    description: 'Applications allowed to act on a principal\'s behalf, what each may do, and when it was granted.',
     visible: () => true,
   },
   {
@@ -147,26 +160,6 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     description: 'Who the authority says you are, and what your current token allows.',
     group: 'account',
     // Everybody can read their own profile, so this one is never hidden.
-    visible: () => true,
-  },
-  {
-    key: 'applications',
-    // Named for what it holds: consents this person granted, not the registry of registered clients.
-    // "Applications" alone reads as the registry, which is an operator surface and a different thing.
-    label: 'Authorized apps',
-    path: '/system/applications',
-    icon: Layers,
-    description: 'Applications you allowed to act on your behalf, what each may do, and when you granted it.',
-    group: 'account',
-    visible: () => true,
-  },
-  {
-    key: 'credentials',
-    label: 'Authenticators',
-    path: '/system/credentials',
-    icon: KeyRound,
-    description: 'Devices registered to approve a sign-in for you. Retire one you no longer hold.',
-    group: 'account',
     visible: () => true,
   },
   {

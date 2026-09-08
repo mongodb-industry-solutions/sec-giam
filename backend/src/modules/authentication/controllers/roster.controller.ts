@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { toScimEmails } from '../../directory/models/principal.model';
+import { activeHoldings, toScimEmails } from '../../directory/models/principal.model';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -112,21 +112,49 @@ export async function rosterController(fastify: FastifyInstance) {
     const realm = await realmService.byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
-    const providers = await realmService.providersFor(realm.realmId);
-    const roster = await new DirectoryService(fastify.db).demoRoster(realm.realmId);
+    const { client_id: clientId, request_id: requestId } = request.query as {
+      client_id?: string; request_id?: string;
+    };
+    const { ROLE_COLLECTION, TICKET_COLLECTION } = await import('../../../shared/models/collections');
 
-    // The role a persona holds, resolved so the screen can offer one ready-made user per role. This
-    // is the "one click per role" affordance the demonstration is built around.
-    const { PRINCIPAL_COLLECTION, ROLE_COLLECTION } = await import('../../../shared/models/collections');
-    const holders = await fastify.db.collection(PRINCIPAL_COLLECTION)
-      .find({ realmId: realm.realmId }, { projection: { _id: 0, subjectId: 1, roles: 1 } })
-      .toArray() as unknown as Array<{ subjectId: string; roles?: Array<{ roleId: string }> }>;
-    const assignments = holders.flatMap(
-      (holder) => (holder.roles ?? []).map((holding) => ({ subjectId: holder.subjectId, roleId: holding.roleId })),
+    /**
+     * Everything below is independent of everything else here, so it is read at once rather than
+     * as a waterfall: this endpoint is hit by an unauthenticated visitor on every load of the
+     * sign-in screen, and a chain of round trips that were never sequenced ON PURPOSE is exactly
+     * what turns a small answer into a slow one.
+     */
+    const [providers, roster, joining, parked, roles] = await Promise.all([
+      realmService.providersFor(realm.realmId),
+      new DirectoryService(fastify.db).demoRoster(realm.realmId),
+      // Which path accepts joiners, resolved once for the response.
+      realmService.registration(realm.realmId),
+      // The hosted screen is given a request_id, not a client id, so the asking client is resolved
+      // from the parked request rather than from a parameter that screen would have to carry.
+      requestId
+        ? fastify.db.collection(TICKET_COLLECTION).findOne(
+          { realmId: realm.realmId, requestId },
+          { projection: { _id: 0, clientId: 1 } },
+        ) as Promise<{ clientId?: string } | null>
+        : Promise.resolve(null),
+      fastify.db.collection(ROLE_COLLECTION)
+        .find({ realmId: realm.realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
+        .toArray() as unknown as Promise<Array<{ roleId: string; name: string }>>,
+    ]);
+
+    /**
+     * The role a persona holds, resolved so the screen can offer one ready-made user per role. This
+     * is the "one click per role" affordance the demonstration is built around.
+     *
+     * Read straight off `roster`, not a second principal query: `demoRoster()` already returns
+     * whole principal documents, `roles` embedded and all, so re-querying the SAME collection for
+     * the SAME subjects for the SAME field was a round trip this endpoint never needed, on a screen
+     * an unauthenticated visitor loads before doing anything else. `activeHoldings` is the one place
+     * expiry and a pending approval are already handled, so a lapsed or unapproved holding is
+     * excluded here exactly as it would be anywhere else that asks "what does this subject hold now".
+     */
+    const assignments = roster.flatMap(
+      (identity) => activeHoldings(identity).map((holding) => ({ subjectId: identity.subjectId, roleId: holding.roleId })),
     );
-    const roles = await fastify.db.collection(ROLE_COLLECTION)
-      .find({ realmId: realm.realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
-      .toArray() as unknown as Array<{ roleId: string; name: string }>;
 
     const roleNameById = new Map(roles.map((role) => [role.roleId, role.name]));
 
@@ -145,18 +173,6 @@ export async function rosterController(fastify: FastifyInstance) {
 
     // The roles this client's screen offers. Read from the client record rather than passed in, so a
     // caller cannot widen its own roster by asking for more.
-    // The hosted screen is given a request_id, not a client id, so the asking client is resolved from
-    // the parked request rather than from a parameter that screen would have to carry.
-    const { client_id: clientId, request_id: requestId } = request.query as {
-      client_id?: string; request_id?: string;
-    };
-    const { TICKET_COLLECTION } = await import('../../../shared/models/collections');
-    const parked = requestId
-      ? await fastify.db.collection(TICKET_COLLECTION).findOne(
-        { realmId: realm.realmId, requestId },
-        { projection: { _id: 0, clientId: 1 } },
-      ) as { clientId?: string } | null
-      : null;
     const askingClient = parked?.clientId ?? clientId;
     const { findOAuthClient } = await import('../../oauth/services/clientAuth.service');
     const client = askingClient ? await findOAuthClient(fastify.db, realm.realmId, askingClient) : null;
@@ -167,9 +183,6 @@ export async function rosterController(fastify: FastifyInstance) {
       const held = rolesBySubject.get(subjectId) ?? [];
       return (offered && held.find((role) => offered.includes(role))) ?? held[0];
     };
-
-    // Which path accepts joiners, resolved once for the response.
-    const joining = await realmService.registration(realm.realmId);
 
     return reply.send({
       realm: realm.name,

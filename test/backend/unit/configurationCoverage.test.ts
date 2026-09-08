@@ -60,6 +60,10 @@ const NOT_YET_RECORDING: Record<string, string> = {
   'modules/provisioning/services/webhookTarget.ts': 'DEBT: receiver registration, not diffed',
   'modules/authorization/services/signals.service.ts': 'DEBT: receiver subscriptions, not diffed',
   'modules/consent/services/grant.service.ts': 'records before and after on a scope change; withdrawal records the scope',
+  // The realm write is diffed by its caller (`realmAdmin.controller.ts`, `recordConfigurationChange`
+  // on both create and update). DEBT: the local domain created alongside a new realm is a second,
+  // separate write in this same method, and that one is not diffed by anybody yet.
+  'modules/realm/services/realm.service.ts': 'realm write recorded by its caller; DEBT: the local domain created alongside it is not',
 };
 
 /** Every `.ts` under `backend/src`, excluding setup and seed, which build rather than change. */

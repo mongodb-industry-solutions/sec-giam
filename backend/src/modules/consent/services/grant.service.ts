@@ -8,6 +8,7 @@ import { SecurityEventService } from '../../audit/services/securityEvent.service
 import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
+import { DirectoryService } from '../../directory/services/directory.service';
 
 /**
  * What a principal has authorised a client to do, and the ability to take it back.
@@ -19,6 +20,17 @@ import { newMeta } from '../../../shared/models/base.model';
 
 export interface GrantView {
   grantId: string;
+  /**
+   * Who holds this grant.
+   *
+   * Redundant for the self-service read (a caller already knows it is their own), and the only way
+   * an oversight caller reading `listForClient` can tell one grant from another: that route names
+   * "everyone who has authorised one client", and a list of grants with no principal attached cannot
+   * answer that question.
+   */
+  subjectId: string;
+  /** The principal's own user name, resolved once per response rather than left for a second read. */
+  subjectName?: string;
   clientId: string;
   clientName: string;
   logoUri?: string;
@@ -112,17 +124,25 @@ export class GrantService {
     return grant ? missingFrom(grant, requested) : [...requested];
   }
 
-  /** The client's display name and logo travel with the grant, so a caller needs no second read. */
+  /**
+   * The client's display name and logo travel with the grant, so a caller needs no second read.
+   * The principal's name does too, one batch lookup rather than one per row, the same pattern
+   * sessions, assignments and elevations already use (`DirectoryService.namesFor`).
+   */
   private async decorate(realmId: string, records: GrantRecord[]): Promise<GrantView[]> {
     const clientIds = [...new Set(records.map((grant) => grant.clientId))];
     const clients = (await listOAuthClients(this.db, realmId))
       .filter((client) => clientIds.includes(client.clientId));
     const byId = new Map(clients.map((client) => [client.clientId, client]));
+    const names = await new DirectoryService(this.db).namesFor(realmId, records.map((grant) => grant.subjectId));
 
     return records.map((grant) => {
       const client = byId.get(grant.clientId);
+      const subjectName = names.get(grant.subjectId);
       return {
         grantId: grant.grantId,
+        subjectId: grant.subjectId,
+        ...(subjectName ? { subjectName } : {}),
         clientId: grant.clientId,
         clientName: client?.clientName ?? grant.clientId,
         ...(client?.logoUri ? { logoUri: client.logoUri } : {}),

@@ -39,8 +39,13 @@ function contextName(apiUrl: string): string {
 }
 
 const DEMO_NAME = process.env.KUBE_DEMO_NAME ?? "sec-giam";
-const RELEASE_BACKEND = process.env.KUBE_RELEASE_BACKEND ?? `${DEMO_NAME}-backend`;
-const RELEASE_FRONTEND = process.env.KUBE_RELEASE_FRONTEND ?? `${DEMO_NAME}-frontend`;
+// Matches .drone.yml's own `release:` values, which also double as the public ingress hostname
+// (`<release>.industrysolutions.<env>.corp.mongodb.com`, the issuer embedded in every token) and the
+// in-cluster service name (`<release>-web-app`). Distinct from the `-backend`/`-frontend` suffix the
+// ECR image names and the ksec secrets use below: `sec-giam-frontend` is a DIFFERENT relying party's
+// own host (see GIAM_CORS_ORIGIN in environments/*.yaml), not this console.
+const RELEASE_BACKEND = process.env.KUBE_RELEASE_BACKEND ?? `${DEMO_NAME}-api`;
+const RELEASE_FRONTEND = process.env.KUBE_RELEASE_FRONTEND ?? `${DEMO_NAME}-ui`;
 const RELEASE_MERCHANT = process.env.KUBE_RELEASE_MERCHANT ?? `${DEMO_NAME}-merchant`;
 // The bank (v37). Deployed with ingress.enabled=false, so it has a release and pods but no host: every
 // menu below that asks for a URL deliberately leaves it out.
@@ -94,10 +99,34 @@ function run(cmd: string, opts?: { silent?: boolean }): string {
   }
 }
 
-function runCapture(cmd: string): { stdout: string; status: number } {
+// stdout and stderr are kept SEPARATE, never merged: a caller decoding stdout as base64 (a secret
+// value) must never be handed kubectl's error text instead, which base64-decodes into garbage
+// rather than failing loudly (an expired OIDC session is a `status !== 0`, not a `stdout` a reader
+// can tell apart from a real value by eye).
+function runCapture(cmd: string): { stdout: string; stderr: string; status: number } {
   console.log(`${DIM}[cmd]    ${cmd}${NC}`);
   const result = spawnSync(cmd, { shell: true, encoding: "utf-8" });
-  return { stdout: (result.stdout || "") + (result.stderr || ""), status: result.status || 0 };
+  // null (killed by signal, or spawn itself failed) is a failure, not the success `|| 0` used to
+  // default it to.
+  return { stdout: result.stdout || "", stderr: result.stderr || "", status: result.status ?? 1 };
+}
+
+/**
+ * One secret key from one cluster, decoded and validated against kubectl's own exit status.
+ *
+ * Every extraction path (view-only and push) shares this rather than trusting `stdout` truthiness
+ * alone: a failed `kubectl get secret` (an expired Kanopy OIDC session, chief among causes) still
+ * writes non-empty text to stderr, and decoding THAT as base64 silently produces a garbled but
+ * non-empty string instead of the loud failure this is supposed to be.
+ */
+function readClusterSecret(kubeconfig: string, secret: string, jsonKey: string, label: string): string | null {
+  const result = runCapture(`kubectl get secret ${secret} -o jsonpath="{.data.${jsonKey}}" --kubeconfig="${kubeconfig}"`);
+  if (result.status !== 0 || !result.stdout.trim()) {
+    const reason = (result.stderr || "no output").trim().split(/\r?\n/).pop();
+    warn(`Could not extract ${label}: ${reason}`);
+    return null;
+  }
+  return decodeB64(result.stdout);
 }
 
 function hasCommand(name: string): boolean {
@@ -629,40 +658,31 @@ function decodeB64(raw: string): string {
 
 async function extractDroneSecrets() {
   console.log(`\n${CYAN}=== Extract Drone secrets (view only) ===${NC}\n`);
-  // Drone reads the infra tokens from staging, whatever the current target.
-  action("Using staging for the cluster tokens...");
+  action("Using staging for the cluster token...");
   if (!pinContext("staging")) return;
-  const env = kubeEnv("staging");
 
   console.log("\n--- staging_kubernetes_token ---");
-  const stagingToken = runCapture(`kubectl get secret ${CICD_TOKEN_SECRET} -o jsonpath="{.data.token}" --kubeconfig="${join(KUBE_DIR, "config.staging")}"`);
-  if (stagingToken.stdout) {
-    const decoded = decodeB64(stagingToken.stdout);
-    console.log(`  Value: ${DIM}${decoded.substring(0, 20)}...${NC}`);
-  } else { warn("Could not extract staging token."); }
+  const stagingToken = readClusterSecret(join(KUBE_DIR, "config.staging"), CICD_TOKEN_SECRET, "token", "staging_kubernetes_token");
+  if (stagingToken) console.log(`  Value: ${DIM}${stagingToken.substring(0, 20)}...${NC}`);
+
+  // The prod cluster token AND the ECR push credentials both live in the prod cluster/namespace, not
+  // staging, so switch once and read all three from there.
+  action("Switching to prod for the cluster token and the ECR credentials...");
+  if (!pinContext("prod")) return;
+
+  console.log("\n--- prod_kubernetes_token ---");
+  const prodToken = readClusterSecret(join(KUBE_DIR, "config.prod"), CICD_TOKEN_SECRET, "token", "prod_kubernetes_token");
+  if (prodToken) console.log(`  Value: ${DIM}${prodToken.substring(0, 20)}...${NC}`);
 
   console.log("\n--- ecr_access_key ---");
-  const ecrAccess = runCapture(`kubectl get secret ${ECR_SECRET_NAME} -o jsonpath="{.data.ecr_access_key}" --kubeconfig="${join(KUBE_DIR, "config.staging")}"`);
-  if (ecrAccess.stdout) {
-    console.log(`  Value: ${decodeB64(ecrAccess.stdout)}`);
-  } else { warn("Could not extract ECR access key."); }
+  const ecrAccess = readClusterSecret(join(KUBE_DIR, "config.prod"), ECR_SECRET_NAME, "ecr_access_key", "ecr_access_key");
+  if (ecrAccess) console.log(`  Value: ${ecrAccess}`);
 
   console.log("\n--- ecr_secret_key ---");
-  const ecrSecret = runCapture(`kubectl get secret ${ECR_SECRET_NAME} -o jsonpath="{.data.ecr_secret_key}" --kubeconfig="${join(KUBE_DIR, "config.staging")}"`);
-  if (ecrSecret.stdout) {
-    const decoded = decodeB64(ecrSecret.stdout);
-    console.log(`  Value: ${DIM}${decoded.substring(0, 10)}...${NC}`);
-  } else { warn("Could not extract ECR secret key."); }
+  const ecrSecret = readClusterSecret(join(KUBE_DIR, "config.prod"), ECR_SECRET_NAME, "ecr_secret_key", "ecr_secret_key");
+  if (ecrSecret) console.log(`  Value: ${DIM}${ecrSecret.substring(0, 10)}...${NC}`);
 
-  action("Switching to prod context...");
-  console.log("\n--- prod_kubernetes_token ---");
-  const prodToken = runCapture(`kubectl get secret ${CICD_TOKEN_SECRET} -o jsonpath="{.data.token}" --kubeconfig="${join(KUBE_DIR, "config.prod")}"`);
-  if (prodToken.stdout) {
-    const decoded = decodeB64(prodToken.stdout);
-    console.log(`  Value: ${DIM}${decoded.substring(0, 20)}...${NC}`);
-  } else { warn("Could not extract prod token."); }
-
-  console.log(`\n${CYAN}To push these automatically, use option 20 (Configure Drone secrets).${NC}`);
+  console.log(`\n${CYAN}To push these automatically, use option 21 (Configure Drone secrets).${NC}`);
 }
 
 async function configureDroneSecrets() {
@@ -682,26 +702,25 @@ async function configureDroneSecrets() {
 
   // ── 1. Cluster secrets (4 infra tokens) ──────────────────────
   action("Extracting cluster secrets...\n");
-  // Same as the extract flow: the cluster tokens live in staging.
+  // The staging cluster token lives in staging.
   if (!pinContext("staging")) return;
-  const env = kubeEnv("staging");
   const clusterSecrets: Array<{ name: string; value: string }> = [];
 
-  const stagingToken = decodeB64(runCapture(`kubectl get secret ${CICD_TOKEN_SECRET} -o jsonpath="{.data.token}" --kubeconfig="${join(KUBE_DIR, "config.staging")}"`).stdout);
+  const stagingToken = readClusterSecret(join(KUBE_DIR, "config.staging"), CICD_TOKEN_SECRET, "token", "staging_kubernetes_token");
   if (stagingToken) clusterSecrets.push({ name: "staging_kubernetes_token", value: stagingToken });
-  else warn("Could not extract staging_kubernetes_token");
 
-  const ecrAccess = decodeB64(runCapture(`kubectl get secret ${ECR_SECRET_NAME} -o jsonpath="{.data.ecr_access_key}" --kubeconfig="${join(KUBE_DIR, "config.staging")}"`).stdout);
-  if (ecrAccess) clusterSecrets.push({ name: "ecr_access_key", value: ecrAccess });
-  else warn("Could not extract ecr_access_key");
+  // The prod cluster token AND the ECR push credentials both live in the prod cluster/namespace, not
+  // staging: switch once and read all three from there.
+  if (!pinContext("prod")) return;
 
-  const ecrSecret = decodeB64(runCapture(`kubectl get secret ${ECR_SECRET_NAME} -o jsonpath="{.data.ecr_secret_key}" --kubeconfig="${join(KUBE_DIR, "config.staging")}"`).stdout);
-  if (ecrSecret) clusterSecrets.push({ name: "ecr_secret_key", value: ecrSecret });
-  else warn("Could not extract ecr_secret_key");
-
-  const prodToken = decodeB64(runCapture(`kubectl get secret ${CICD_TOKEN_SECRET} -o jsonpath="{.data.token}" --kubeconfig="${join(KUBE_DIR, "config.prod")}"`).stdout);
+  const prodToken = readClusterSecret(join(KUBE_DIR, "config.prod"), CICD_TOKEN_SECRET, "token", "prod_kubernetes_token");
   if (prodToken) clusterSecrets.push({ name: "prod_kubernetes_token", value: prodToken });
-  else warn("Could not extract prod_kubernetes_token");
+
+  const ecrAccess = readClusterSecret(join(KUBE_DIR, "config.prod"), ECR_SECRET_NAME, "ecr_access_key", "ecr_access_key");
+  if (ecrAccess) clusterSecrets.push({ name: "ecr_access_key", value: ecrAccess });
+
+  const ecrSecret = readClusterSecret(join(KUBE_DIR, "config.prod"), ECR_SECRET_NAME, "ecr_secret_key", "ecr_secret_key");
+  if (ecrSecret) clusterSecrets.push({ name: "ecr_secret_key", value: ecrSecret });
 
   // ── Summary before push ──────────────────────────────────────
   // Only CI/CD infra secrets belong in Drone. App secrets reach the pod via ksec
@@ -1044,13 +1063,16 @@ async function deployEnvSetup() {
   // ── Phase 6: Drone CI secrets ─────────────────────────────
   console.log(`\n${CYAN}── 6. Drone CI secrets ──${NC}\n`);
 
+  // The ECR push credentials live in the PROD cluster/namespace regardless of which environment is
+  // being deployed here (same fact option 20/21 read from): checking them against staging is
+  // checking the wrong cluster.
   const droneTokens = [
-    { name: "staging_kubernetes_token", cfg: "config.staging", secret: CICD_TOKEN_SECRET },
-    { name: "ecr_access_key", cfg: "config.staging", secret: ECR_SECRET_NAME, key: "ecr_access_key" },
-    { name: "ecr_secret_key", cfg: "config.staging", secret: ECR_SECRET_NAME, key: "ecr_secret_key" },
+    { name: "staging_kubernetes_token", cfg: "config.staging", secret: CICD_TOKEN_SECRET, key: "token" },
+    { name: "ecr_access_key", cfg: "config.prod", secret: ECR_SECRET_NAME, key: "ecr_access_key" },
+    { name: "ecr_secret_key", cfg: "config.prod", secret: ECR_SECRET_NAME, key: "ecr_secret_key" },
   ];
   if (isProd) {
-    droneTokens.push({ name: "prod_kubernetes_token", cfg: "config.prod", secret: CICD_TOKEN_SECRET });
+    droneTokens.push({ name: "prod_kubernetes_token", cfg: "config.prod", secret: CICD_TOKEN_SECRET, key: "token" });
   }
 
   for (const t of droneTokens) {
@@ -1059,10 +1081,7 @@ async function deployEnvSetup() {
       step(`${t.name} extractable`, false);
       continue;
     }
-    const jsonpath = t.key ? `{.data.${t.key}}` : "{.data.token}";
-    const raw = runCapture(`kubectl get secret ${t.secret} -o jsonpath="${jsonpath}" --kubeconfig="${cfgPath}"`).stdout;
-    const decoded = decodeB64(raw);
-    step(`${t.name} extractable`, !!decoded);
+    step(`${t.name} extractable`, readClusterSecret(cfgPath, t.secret, t.key, t.name) !== null);
   }
 
   // ── Phase 7: Files ────────────────────────────────────────

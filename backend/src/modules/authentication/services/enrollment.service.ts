@@ -104,14 +104,15 @@ export class EnrollmentService {
     return this.db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
   }
 
-  private audit(realm: RealmRecord, subjectId: string, action: string, outcome: 'success' | 'failure', detail: Record<string, unknown>, cause?: string): void {
+  private audit(realm: RealmRecord, subjectId: string | undefined, action: string, outcome: 'success' | 'failure', detail: Record<string, unknown>, cause?: string): void {
     void new SecurityEventService(this.db).record({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       category: 'credential',
       action,
       outcome,
-      subjectId,
+      // Absent for the break-glass operator credential, which is nobody in particular.
+      ...(subjectId ? { subjectId } : {}),
       ...(cause ? { cause } : {}),
       detail,
     });
@@ -202,8 +203,22 @@ export class EnrollmentService {
     return rows.map(view);
   }
 
-  /** Owner scoped, so a credential id belonging to somebody else is simply not found. */
-  async revoke(realm: RealmRecord, subjectId: string, credentialId: string): Promise<true | EnrollmentFailure> {
+  /**
+   * Owner scoped, so a credential id belonging to somebody else is simply not found, UNLESS `actor`
+   * names an administrator revoking it on the owner's behalf (a lost device, during an incident).
+   *
+   * `actor` is who the audit trail credits: absent, this is the owner acting on their own credential
+   * as before; present, the acting administrator is the accountable party and the owner is recorded
+   * as the target, exactly the actor/target split every other administrative act in this authority
+   * already keeps.
+   */
+  async revoke(
+    realm: RealmRecord, subjectId: string, credentialId: string, actor?: { subjectId?: string },
+  ): Promise<true | EnrollmentFailure> {
+    // `actor` being PASSED marks this as administrator mediated, even when its own `subjectId` is
+    // absent (the break-glass operator credential, accountable to nobody in particular). Falling
+    // back to the owner in that case would misattribute the act to the very person it was done to.
+    const attributedTo = actor ? actor.subjectId : subjectId;
     const result = await this.credentials.updateOne(
       { credentialId, subjectId, status: 'active' },
       { $set: { status: 'revoked', 'meta.lastModified': new Date().toISOString() } },
@@ -211,10 +226,16 @@ export class EnrollmentService {
     if (result.matchedCount === 0) {
       // Owner scoped, so this is either a credential that is gone or one that belongs to somebody
       // else. Both are worth a line against the caller who asked.
-      this.audit(realm, subjectId, 'credential.revoked', 'failure', { credentialId }, 'no_such_credential');
+      this.audit(
+        realm, attributedTo, 'credential.revoked', 'failure',
+        { credentialId, ...(actor ? { ownerSubjectId: subjectId } : {}) }, 'no_such_credential',
+      );
       return refuse(404, 'invalid_request', 'no such credential');
     }
-    this.audit(realm, subjectId, 'credential.revoked', 'success', { credentialId });
+    this.audit(
+      realm, attributedTo, 'credential.revoked', 'success',
+      { credentialId, ...(actor ? { ownerSubjectId: subjectId } : {}) },
+    );
 
     /**
      * A receiver subscribed to `credential-change` is told, rather than left to poll.
@@ -231,7 +252,7 @@ export class EnrollmentService {
       tenantId: realm.tenantId,
       event: 'credential-change',
       subjectId,
-      reason: 'the credential was revoked by its owner',
+      reason: actor ? 'the credential was revoked by an administrator' : 'the credential was revoked by its owner',
       category: 'credential',
       target: { type: 'credential', ref: credentialId },
     });

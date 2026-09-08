@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, KeyRound, Pencil, ShieldHalf, Trash2, UserCheck, UserMinus, UserRound } from 'lucide-react';
+import {
+  ArrowLeft, KeyRound, Layers, Pencil, ShieldHalf, ShieldOff, Trash2, UserCheck, UserMinus, UserRound,
+} from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { Fact } from '../../../../components/Fact';
@@ -323,6 +325,8 @@ export default function IdentityDetailPage() {
           </section>
 
           {!retired && <PasswordReset id={id} />}
+          <CredentialsHeld id={id} />
+          <AuthorizedApplications id={id} />
 
           {editing
             ? (
@@ -622,6 +626,250 @@ function PasswordReset({ id }: { id: string }) {
           </div>
         </form>
       )}
+    </section>
+  );
+}
+
+interface HeldCredential {
+  credentialId: string;
+  type: string;
+  label?: string;
+  clientId?: string;
+  clientName?: string;
+  status: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+const CREDENTIAL_TYPE_LABEL: Record<string, string> = {
+  password: 'Password',
+  public_key: 'Authenticator',
+  oauth_client: 'Application',
+  client_secret: 'Client secret',
+  totp: 'One-time code',
+  recovery_code: 'Recovery code',
+  api_key: 'API key',
+};
+
+/**
+ * Every credential this principal holds, one type discriminated collection read whole (ADR-001: an
+ * OAuth application is a `credential` too, not a separate registry).
+ *
+ * Retiring is offered only for an authenticator. An application is withdrawn from its own
+ * registration screen, which already does the extra work a withdrawal needs; a password is replaced
+ * by a reset, not revoked. Both are linked to rather than reimplemented here.
+ */
+function CredentialsHeld({ id }: { id: string }) {
+  const [credentials, setCredentials] = useState<HeldCredential[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const body = await callApi<{ credentials: HeldCredential[] }>(
+        `/identities/${encodeURIComponent(id)}/credentials`,
+        { subject: 'this principal\'s credentials' },
+      );
+      setCredentials(body.credentials);
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'This principal\'s credentials could not be read.');
+    }
+  }, [id]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function retire(credential: HeldCredential) {
+    if (!window.confirm(`Retire "${credential.label ?? credential.credentialId}"? It stops working immediately.`)) return;
+    setBusy(credential.credentialId);
+    try {
+      await callApi(`/identities/${encodeURIComponent(id)}/credentials/${encodeURIComponent(credential.credentialId)}`, {
+        method: 'DELETE',
+        subject: 'that authenticator',
+      });
+      await load();
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'That authenticator could not be retired.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
+        <KeyRound size={14} className="text-gray-400" aria-hidden />
+        Credentials held
+      </h2>
+      <p className="mt-1 text-sm text-gray-500">
+        Every way this principal can be authenticated, passwords, authenticators and registered
+        applications alike, in one place.
+      </p>
+
+      {error && <p className="mt-3 text-xs text-red-700">{error}</p>}
+
+      {!credentials
+        ? <p className="mt-3 text-sm text-gray-400">Reading…</p>
+        : credentials.length === 0
+          ? <p className="mt-3 text-sm text-gray-400">No credential recorded for this principal.</p>
+          : (
+            <ul className="mt-3 space-y-2">
+              {credentials.map((credential) => (
+                <li
+                  key={credential.credentialId}
+                  className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${
+                    credential.status === 'active' ? 'border-gray-200' : 'border-gray-100 bg-gray-50 text-gray-400'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">
+                        {credential.clientName || credential.label || CREDENTIAL_TYPE_LABEL[credential.type] || credential.type}
+                      </span>
+                      <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+                        {CREDENTIAL_TYPE_LABEL[credential.type] ?? credential.type}
+                      </span>
+                      <StatusBadge status={credential.status} />
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      {credential.type === 'oauth_client' && credential.clientId
+                        ? (
+                          <Link href={`/system/credentials/applications/${encodeURIComponent(credential.clientId)}`} className="hover:underline">
+                            open the registration
+                          </Link>
+                        )
+                        : `since ${when(credential.createdAt)}`}
+                      {credential.lastUsedAt && ` · last used ${when(credential.lastUsedAt)}`}
+                    </p>
+                  </div>
+                  {credential.type === 'public_key' && credential.status === 'active' && (
+                    <button
+                      type="button"
+                      disabled={busy === credential.credentialId}
+                      onClick={() => void retire(credential)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 size={12} aria-hidden />
+                      Retire
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+    </section>
+  );
+}
+
+interface OversightGrant {
+  grantId: string;
+  clientId: string;
+  clientName: string;
+  status: 'active' | 'revoked';
+  grantedAt: string;
+  revokedAt?: string;
+}
+
+/**
+ * Applications this principal has authorized, the oversight side of the self-service view at
+ * `/system/applications`.
+ *
+ * Withdrawing is offered; restoring one is not, because giving access back without the person
+ * approving it again is theirs alone to do, the same asymmetry the API itself enforces.
+ */
+function AuthorizedApplications({ id }: { id: string }) {
+  const [grants, setGrants] = useState<OversightGrant[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const body = await callApi<{ grants: OversightGrant[] }>('/grants', {
+        query: { subjectId: id, status: 'all' },
+        subject: 'what this principal has authorized',
+      });
+      setGrants(body.grants);
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'What this principal has authorized could not be read.');
+    }
+  }, [id]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function revoke(grant: OversightGrant) {
+    if (!window.confirm(`Withdraw ${grant.clientName || grant.clientId}'s authorization? It stops acting for this principal immediately.`)) return;
+    setBusy(grant.grantId);
+    try {
+      await callApi(`/grants/${encodeURIComponent(grant.grantId)}`, {
+        method: 'DELETE',
+        query: { subjectId: id },
+        subject: 'that authorization',
+      });
+      await load();
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'That authorization could not be withdrawn.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
+        <Layers size={14} className="text-gray-400" aria-hidden />
+        Authorized applications
+      </h2>
+      <p className="mt-1 text-sm text-gray-500">
+        What this principal has allowed to act on their behalf. Restoring a withdrawn one is not
+        offered here: giving access back without the person approving it again is theirs alone to do.
+      </p>
+
+      {error && <p className="mt-3 text-xs text-red-700">{error}</p>}
+
+      {!grants
+        ? <p className="mt-3 text-sm text-gray-400">Reading…</p>
+        : grants.length === 0
+          ? <p className="mt-3 text-sm text-gray-400">This principal has authorized nothing yet.</p>
+          : (
+            <ul className="mt-3 space-y-2">
+              {grants.map((grant) => (
+                <li
+                  key={grant.grantId}
+                  className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${
+                    grant.status === 'active' ? 'border-gray-200' : 'border-gray-100 bg-gray-50 text-gray-400'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/system/credentials/applications/${encodeURIComponent(grant.clientId)}`}
+                        className="font-medium text-[#001E2B] hover:underline"
+                      >
+                        {grant.clientName || grant.clientId}
+                      </Link>
+                      <StatusBadge status={grant.status} />
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      Authorized {when(grant.grantedAt)}
+                      {grant.revokedAt && ` · withdrawn ${when(grant.revokedAt)}`}
+                    </p>
+                  </div>
+                  {grant.status === 'active' && (
+                    <button
+                      type="button"
+                      disabled={busy === grant.grantId}
+                      onClick={() => void revoke(grant)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <ShieldOff size={12} aria-hidden />
+                      Withdraw
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
     </section>
   );
 }
