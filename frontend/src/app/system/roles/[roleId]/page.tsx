@@ -521,8 +521,10 @@ function Assignments({ roleId, mayManage, onChanged }: {
   async function revoke(assignment: Assignment) {
     if (!window.confirm('Take this role back? The holder loses it at their next token.')) return;
     const done = await assignments.run(
-      assignment.assignmentId,
-      () => callApi(`/role-assignments/${encodeURIComponent(assignment.assignmentId)}`, {
+      assignment.subjectId,
+      // A holding lives on the subject and has no identifier of its own (role.controller.ts's own
+      // words for it): addressed by subject and role, never by a standalone assignment id.
+      () => callApi(`/principals/${encodeURIComponent(assignment.subjectId)}/roles/${encodeURIComponent(assignment.roleId)}`, {
         method: 'DELETE',
         subject: 'that assignment',
       }),
@@ -588,9 +590,9 @@ function Assignments({ roleId, mayManage, onChanged }: {
             <ul className="space-y-3">
               {rows.map((assignment) => (
                 <RecordCard
-                  key={assignment.assignmentId}
+                  key={assignment.subjectId}
                   title={assignment.userName ?? assignment.subjectId}
-                  subtitle={assignment.userName ? `${assignment.subjectId} · ${assignment.assignmentId}` : assignment.assignmentId}
+                  subtitle={assignment.subjectId}
                   badges={
                     <>
                       {!assignment.live && (
@@ -620,7 +622,7 @@ function Assignments({ roleId, mayManage, onChanged }: {
                         icon={UserMinus}
                         label="Revoke"
                         tone="danger"
-                        busy={assignments.busy === assignment.assignmentId}
+                        busy={assignments.busy === assignment.subjectId}
                         onClick={() => void revoke(assignment)}
                       />
                     )

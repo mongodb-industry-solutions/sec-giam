@@ -38,15 +38,19 @@ export interface RoleDetail extends RoleSummary {
   lastModified?: string;
 }
 
+/**
+ * One holding: a subject and a role, nothing more. Matches AssignmentView on the backend exactly,
+ * which the DELETE route's own words explain: "a role a subject holds lives on the subject and has
+ * no identifier of its own" (role.controller.ts). Addressed by `(subjectId, roleId)`, never by an
+ * assignment id, because there isn't one.
+ */
 export interface Assignment {
   /** The person behind the subject id. Absent when the record carries no name. */
   userName?: string;
-  assignmentId: string;
   subjectId: string;
   roleId: string;
   grantedAt: string;
   grantedBy?: string;
-  notBefore?: string;
   expiresAt?: string;
   ephemeral?: boolean;
   justification?: string;
