@@ -12,25 +12,10 @@ const nextConfig = {
     NEXT_PUBLIC_GIAM_API_URL: process.env.NEXT_PUBLIC_GIAM_API_URL || '',
   },
   allowedDevOrigins: ['127.0.0.1', 'localhost'],
-  async rewrites() {
-    // Same-origin proxy: the browser never makes a cross-origin call to the identity API, so there is
-    // no CORS dependency and no need to publish the API separately from the console.
-    const apiUrl = (
-      process.env.GIAM_API_PRIVATE_URL
-      || process.env.NEXT_PUBLIC_GIAM_API_URL
-      || 'http://localhost:8085'
-    ).replace(/\/+$/, '');
-    return [
-      { source: '/api/:path*', destination: `${apiUrl}/api/:path*` },
-      // The protocol surfaces, reachable through the console origin so a relying party configured
-      // against the console keeps working without a second published host.
-      { source: '/.well-known/:path*', destination: `${apiUrl}/.well-known/:path*` },
-      { source: '/realms/:path*', destination: `${apiUrl}/realms/:path*` },
-      { source: '/health', destination: `${apiUrl}/health` },
-      { source: '/doc', destination: `${apiUrl}/doc` },
-      { source: '/doc/:path*', destination: `${apiUrl}/doc/:path*` },
-    ];
-  },
+  // The same-origin proxy (API, well-known, realms, health, doc) lives in `src/middleware.ts`, not
+  // here: `rewrites()` is evaluated once at `next build` and frozen into `routes-manifest.json`,
+  // which is exactly wrong for a value (`GIAM_API_PRIVATE_URL`) that is only ever set at container
+  // runtime. Middleware re-reads the environment on every request instead.
 };
 
 module.exports = nextConfig;

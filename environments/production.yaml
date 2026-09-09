@@ -62,8 +62,11 @@ envSecrets:
   GIAM_KMS_LOCAL_MASTER_KEY: sec-giam-secrets-prod
   # GIAM_ADMIN_TOKEN is deliberately NOT wired here: the operator surface it gates (/posture, the
   # ops console, delivery inspection) is a devops tool, not part of the identity API, and is meant
-  # to stay CLOSED (503) in this environment rather than carry a credential nothing here uses. Wire
-  # GIAM_ADM_USER/GIAM_ADM_PASS instead if that surface is ever needed here.
+  # to stay CLOSED (503) in this environment rather than carry a credential nothing here uses.
+  # GIAM_ADM_USER/GIAM_ADM_PASS is that surface's other, interactive credential: an operator name
+  # and the SHA-256 of a password, never the password itself.
+  GIAM_ADM_USER: sec-giam-secrets-prod
+  GIAM_ADM_PASS: sec-giam-secrets-prod
 
 resources:
   requests:

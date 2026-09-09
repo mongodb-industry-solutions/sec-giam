@@ -20,8 +20,8 @@ export const BACKEND_PUBLIC_URL =
  */
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_GIAM_API_URL !== undefined && process.env.NEXT_PUBLIC_GIAM_API_URL !== ''
-    ? ''
-    : BACKEND_PUBLIC_URL;
+    ? BACKEND_PUBLIC_URL
+    : '';
 
 /**
  * A registered relying party the simulator can send somebody to, so the authorization code flow is
