@@ -9941,6 +9941,389 @@
         }
       }
     },
+    "/admin/resource-servers": {
+      "get": {
+        "operationId": "listResourceServersAdmin",
+        "summary": "Every resource server registered in one realm, for the ops panel",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Same read as GET /realms/:realm/resource-servers, admin-token gated.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "query",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every resource server this realm has registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Every resource server this realm has registered.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resourceServers"
+                  ],
+                  "properties": {
+                    "resourceServers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resourceId",
+                          "name",
+                          "kind",
+                          "catalogVersion",
+                          "status",
+                          "resources"
+                        ],
+                        "properties": {
+                          "resourceId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "api",
+                              "tool",
+                              "mcp_server",
+                              "object"
+                            ]
+                          },
+                          "audience": {
+                            "type": "string"
+                          },
+                          "catalogVersion": {
+                            "type": "integer"
+                          },
+                          "validationMode": {
+                            "type": "string",
+                            "enum": [
+                              "local-jwks",
+                              "introspection",
+                              "hybrid"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "deprecated",
+                              "withdrawn"
+                            ]
+                          },
+                          "registeredAt": {
+                            "type": "string"
+                          },
+                          "resources": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "resourceId",
+                                "name",
+                                "actions",
+                                "status",
+                                "catalogVersion"
+                              ],
+                              "properties": {
+                                "resourceId": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "active",
+                                    "deprecated",
+                                    "withdrawn"
+                                  ]
+                                },
+                                "catalogVersion": {
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "resourceServers": [
+                    {
+                      "resourceId": "a1c4…",
+                      "name": "orders-api",
+                      "kind": "api",
+                      "audience": "orders-api",
+                      "catalogVersion": 2,
+                      "validationMode": "hybrid",
+                      "status": "active",
+                      "resources": [
+                        {
+                          "resourceId": "b2d5…",
+                          "name": "orders",
+                          "actions": [
+                            "view",
+                            "manage"
+                          ],
+                          "status": "active",
+                          "catalogVersion": 1
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid administrative token was presented.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No administrative credential is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/resource-servers": {
+      "get": {
+        "operationId": "listResourceServers",
+        "summary": "Every resource server registered in this realm",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. What `PUT /admin/resource-servers/:name/permissions` has registered: each application, tool or MCP server that declared enforcement points, and the resources and actions each one currently offers. Readable by any authenticated principal, the same reasoning `/permissions` already applies: this is the authorization MODEL, not personal data or a secret, and it exists to be looked up rather than guarded.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every resource server this realm has registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Every resource server this realm has registered.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resourceServers"
+                  ],
+                  "properties": {
+                    "resourceServers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resourceId",
+                          "name",
+                          "kind",
+                          "catalogVersion",
+                          "status",
+                          "resources"
+                        ],
+                        "properties": {
+                          "resourceId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "api",
+                              "tool",
+                              "mcp_server",
+                              "object"
+                            ]
+                          },
+                          "audience": {
+                            "type": "string"
+                          },
+                          "catalogVersion": {
+                            "type": "integer"
+                          },
+                          "validationMode": {
+                            "type": "string",
+                            "enum": [
+                              "local-jwks",
+                              "introspection",
+                              "hybrid"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "deprecated",
+                              "withdrawn"
+                            ]
+                          },
+                          "registeredAt": {
+                            "type": "string"
+                          },
+                          "resources": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "resourceId",
+                                "name",
+                                "actions",
+                                "status",
+                                "catalogVersion"
+                              ],
+                              "properties": {
+                                "resourceId": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "active",
+                                    "deprecated",
+                                    "withdrawn"
+                                  ]
+                                },
+                                "catalogVersion": {
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "resourceServers": [
+                    {
+                      "resourceId": "a1c4…",
+                      "name": "orders-api",
+                      "kind": "api",
+                      "audience": "orders-api",
+                      "catalogVersion": 3,
+                      "validationMode": "hybrid",
+                      "status": "active",
+                      "registeredAt": "2026-01-01T00:00:00.000Z",
+                      "resources": [
+                        {
+                          "resourceId": "b2d5…",
+                          "name": "orders",
+                          "actions": [
+                            "view",
+                            "manage"
+                          ],
+                          "status": "active",
+                          "catalogVersion": 1
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/signals": {
       "get": {
         "operationId": "pollSecurityEventFeed",

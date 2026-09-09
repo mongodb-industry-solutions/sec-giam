@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Building2, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, Boxes, Building2, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
 import { can, type Claims } from './console';
 
 /**
@@ -143,6 +143,17 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     // Administrative, like roles. Absent rather than refused for anyone else, because a link that
     // answers 403 teaches the reader only that the console does not know what it is showing them.
     visible: (claims) => can(claims, 'policies', 'view'),
+  },
+  {
+    key: 'resources',
+    label: 'Resources',
+    path: '/system/resources',
+    icon: Boxes,
+    description: 'What each resource server declares it enforces, read only: it registers itself through its own deployment, never from here.',
+    // The API itself is open to any authenticated principal (same reasoning /permissions already
+    // documents: this is the authorization MODEL, not personal data). Placed next to Roles and
+    // Policies for the humans who administer those, not shown to everyone who merely signed in.
+    visible: (claims) => can(claims, 'roles', 'view'),
   },
   {
     key: 'keys',

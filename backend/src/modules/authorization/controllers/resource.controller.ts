@@ -5,6 +5,8 @@ import { newMeta, touchMeta, DEFAULT_TENANT_ID } from '../../../shared/models/ba
 import { requireAdmin } from '../../../vendors/middleware/adminAuth';
 import { problem } from '../../../shared/models/problem';
 import { ResourceRecord } from '../models/resource.model';
+import { ResourceAdminService } from '../services/resourceAdmin.service';
+import { resourceServerView } from './resourceCatalog.controller';
 
 // The same namespace the seeders use, so a catalog registered at boot and one seeded resolve to one
 // record rather than two that look alike.
@@ -214,5 +216,54 @@ export async function resourceController(fastify: FastifyInstance) {
       deprecated: withdrawn,
       catalogVersion: version,
     });
+  });
+
+  /**
+   * The same read `resourceCatalog.controller.ts` exposes to a signed-in principal, admin-token
+   * gated instead: the ops panel has no realm session to resolve a catalog from otherwise, and its
+   * own management screen needs to see what is registered before resending a changed one through
+   * the PUT above.
+   */
+  fastify.get('/admin/resource-servers', {
+    preHandler: requireAdmin,
+    schema: {
+      operationId: 'listResourceServersAdmin',
+      tags: ['authorization'],
+      summary: 'Every resource server registered in one realm, for the ops panel',
+      description: 'No applicable standard. Same read as GET /realms/:realm/resource-servers, admin-token gated.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        required: ['realm'],
+        properties: { realm: { type: 'string', examples: ['acme'] } },
+      },
+      response: {
+        200: {
+          description: 'Every resource server this realm has registered.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['resourceServers'],
+          properties: { resourceServers: { type: 'array', items: resourceServerView } },
+          examples: [{
+            resourceServers: [{
+              resourceId: 'a1c4…', name: 'orders-api', kind: 'api', audience: 'orders-api',
+              catalogVersion: 2, validationMode: 'hybrid', status: 'active',
+              resources: [{ resourceId: 'b2d5…', name: 'orders', actions: ['view', 'manage'], status: 'active', catalogVersion: 1 }],
+            }],
+          }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid administrative token was presented.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+        503: { $ref: 'Problem#', description: 'No administrative credential is configured.' },
+      },
+    },
+  }, async (request, reply) => {
+    const { realm: realmName } = request.query as { realm: string };
+    const realm = await fastify.db
+      .collection(REALM_COLLECTION)
+      .findOne({ name: realmName }, { projection: { _id: 0, realmId: 1 } }) as { realmId: string } | null;
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm', realmName));
+
+    return reply.send({ resourceServers: await new ResourceAdminService(fastify.db).list(realm.realmId) });
   });
 }
