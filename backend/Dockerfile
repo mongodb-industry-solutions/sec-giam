@@ -32,9 +32,25 @@ ENV PORT=8080
 ENV GIAM_PORT=8080
 
 # ── Dependencies ──────────────────────────────────────────────────
-# Shared workspace packages first: the backend installs them through file:, and their prepare script
+# The root checkout first, for the ops panel's own commands (setup:check, test:unit,
+# test:integration, openapi): those run `npm run <script>` from the repo root the same way an
+# operator at a terminal would, and the root scripts, vitest.config.ts and test/ sources are what
+# makes that a real command rather than an error the ops panel has to word-smith around.
+# `type-check`'s frontend leg is the one exception: it needs frontend/'s own toolchain, deliberately
+# not bundled here. Installed BEFORE packages/: npm's dependency-tree walk from the root trips over
+# already-populated node_modules nested under it (a known npm arborist bug), so root install has to
+# happen while there is nothing nested yet to trip over.
+COPY tsconfig.base.json package.json vitest.config.ts ./
+COPY test/ test/
+COPY docs/ docs/
+# --legacy-peer-deps: npm 10's arborist crashes ("Cannot read properties of null (reading
+# 'edgesOut')") walking vitest 4's peer set (the @vitejs/devtools* family) on a clean install with
+# no lockfile to shortcut it. The simpler peer resolution this flag falls back to sidesteps that
+# arborist bug rather than working around it with a newer npm.
+RUN npm install --legacy-peer-deps
+
+# Shared workspace packages: the backend installs them through file:, and their prepare script
 # builds dist/ during the install.
-COPY tsconfig.base.json ./
 COPY packages/ packages/
 RUN cd packages/eventbus && npm install
 RUN cd packages/platform-links && npm install
