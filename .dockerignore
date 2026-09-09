@@ -35,12 +35,12 @@ tmp/
 # CI/CD config (not needed at runtime)
 .drone.yml
 
-# Documentation and K8s values
-docs/
+# K8s values (docs/ ships now: test/backend/unit/posture.test.ts reads docs/runbook.md as part of
+# the ops panel's real test:unit run)
 environments/
 
-# Test sources and artifacts (the API image runs neither)
-test/
+# Test SOURCES now ship (the ops panel's setup:check/test:unit/test:integration run them for real
+# against a live deployment); only the artifacts they produce stay excluded.
 test-results/
 coverage/
 
