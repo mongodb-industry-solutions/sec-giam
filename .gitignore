@@ -5,8 +5,10 @@ backend/keys/
 frontend/keys/
 *.pem
 
-# Logs
-logs
+# Logs. Anchored to the repo root and to directories only: a bare `logs` matched ANY file or folder
+# named `logs` anywhere in the tree, which silently swallowed frontend/src/app/admin/panel/logs/ (a
+# console route, not a log directory) out of every commit since it was written.
+/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*

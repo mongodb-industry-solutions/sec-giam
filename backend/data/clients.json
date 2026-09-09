@@ -395,11 +395,15 @@
     "clientType": "public",
     "redirectUris": [
       "http://localhost:8086/auth/callback",
-      "http://127.0.0.1:8086/auth/callback"
+      "http://127.0.0.1:8086/auth/callback",
+      "https://sec-giam-ui.industrysolutions.staging.corp.mongodb.com/auth/callback",
+      "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com/auth/callback"
     ],
     "postLogoutRedirectUris": [
       "http://localhost:8086",
-      "http://127.0.0.1:8086"
+      "http://127.0.0.1:8086",
+      "https://sec-giam-ui.industrysolutions.staging.corp.mongodb.com",
+      "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com"
     ],
     "grantTypes": [
       "authorization_code",

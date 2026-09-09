@@ -335,7 +335,7 @@ export default function InfoPage() {
               />
               <InfoRow
                 label="frontend version"
-                value={`v${process.env.NEXT_PUBLIC_FRONTEND_VERSION ?? '?'}`}
+                value={`v${process.env.NEXT_PUBLIC_GIAM_FRONTEND_VERSION ?? '?'}`}
               />
             </InfoCard>
 
