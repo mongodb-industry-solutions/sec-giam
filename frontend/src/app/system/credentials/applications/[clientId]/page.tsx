@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Activity, AppWindow, ArrowLeft, Pencil, RefreshCw, ShieldOff, UserMinus, UserPlus, UsersRound,
+  Activity, AppWindow, ArrowLeft, RefreshCw, Save, ShieldOff, UserMinus, UserPlus, UsersRound,
 } from 'lucide-react';
 import { SectionHeader } from '../../../../../components/SectionHeader';
 import { Tooltip } from '../../../../../components/Tooltip';
@@ -18,12 +18,21 @@ import {
   ClientOwner, RegisteredClient, SELF_SERVICE_SCOPES, firstRedirectProblem, linesToUris,
 } from '../../../../../lib/clients';
 
+const FIELD_LABEL = 'text-[10px] uppercase tracking-wider text-gray-400';
+const FIELD_INPUT = 'mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10';
+const FIELD_INPUT_MONO = `${FIELD_INPUT} font-mono text-xs`;
+
 /**
  * One registered application: what it is, what it may return to, and its credential.
  *
  * A registration outside the reader's reach is NOT FOUND rather than refused, so this screen shows
  * the same thing for "no such application" and "not yours". That is the authority's answer and it is
  * deliberate: confirming an identifier exists is itself an answer.
+ *
+ * View and edit are one screen: the fields below start equal to the loaded registration and stay
+ * that way until something is actually typed, `dirty` is what enables Save, and there is no separate
+ * mode to enter first. Navigating away with something unsaved asks first, in the browser (a refresh
+ * or a closed tab) and on the one in-app link this page itself offers.
  */
 export default function ClientDetailPage() {
   const params = useParams<{ clientId: string }>();
@@ -35,7 +44,16 @@ export default function ClientDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rotated, setRotated] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
+
+  // Draft fields, reset to the server's own values whenever `client` changes: once on the first
+  // read, and again the moment a save reloads it, so a saved change can never look undone.
+  const [name, setName] = useState('');
+  const [redirects, setRedirects] = useState('');
+  const [postLogout, setPostLogout] = useState('');
+  const [scope, setScope] = useState('');
+  const [logoUri, setLogoUri] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveFailure, setSaveFailure] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clientId) return;
@@ -53,6 +71,73 @@ export default function ClientDetailPage() {
   }, [clientId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!client) return;
+    setName(client.client_name ?? '');
+    setRedirects((client.redirect_uris ?? []).join('\n'));
+    setPostLogout((client.post_logout_redirect_uris ?? []).join('\n'));
+    setScope(client.scope ?? '');
+    setLogoUri(client.logo_uri ?? '');
+    setSaveFailure(null);
+  }, [client]);
+
+  const dirty = useMemo(() => {
+    if (!client) return false;
+    return name !== (client.client_name ?? '')
+      || redirects !== (client.redirect_uris ?? []).join('\n')
+      || postLogout !== (client.post_logout_redirect_uris ?? []).join('\n')
+      || scope !== (client.scope ?? '')
+      || logoUri !== (client.logo_uri ?? '');
+  }, [client, name, redirects, postLogout, scope, logoUri]);
+
+  // Browser-level navigation away: a refresh, a closed tab, a typed URL. `beforeunload` is the only
+  // hook for any of the three; the confirmation text itself is no longer shown by any browser still
+  // supported here, only the fact that one fires.
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  /** In-app navigation away, for the one link this page itself offers. */
+  function confirmLeave(): boolean {
+    return !dirty || window.confirm('Leave without saving? Your changes to this application will be lost.');
+  }
+
+  async function save() {
+    const redirectUris = linesToUris(redirects);
+    const problem = firstRedirectProblem(redirectUris);
+    if (problem) { setSaveFailure(problem); return; }
+    const logoutUris = linesToUris(postLogout);
+    const logoutProblem = firstRedirectProblem(logoutUris);
+    if (logoutProblem) { setSaveFailure(logoutProblem); return; }
+
+    setSaving(true);
+    try {
+      const updated = await callApi<RegisteredClient>(`/clients/${encodeURIComponent(clientId)}`, {
+        method: 'PATCH',
+        subject: 'that application',
+        body: {
+          client_name: name.trim(),
+          redirect_uris: redirectUris,
+          post_logout_redirect_uris: logoutUris,
+          scope: scope.trim(),
+          ...(logoUri.trim() ? { logo_uri: logoUri.trim() } : {}),
+        },
+      });
+      setClient(updated);
+      setSaveFailure(null);
+    } catch (failure) {
+      setSaveFailure(failure instanceof ApiError ? failure.message : 'That change could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function rotate() {
     if (!window.confirm(
@@ -136,6 +221,7 @@ export default function ClientDetailPage() {
     <main className="space-y-5">
       <Link
         href="/system/credentials/applications"
+        onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}
         className="inline-flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-[#001E2B] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
       >
         <ArrowLeft size={13} aria-hidden />
@@ -144,7 +230,7 @@ export default function ClientDetailPage() {
 
       <SectionHeader
         icon={AppWindow}
-        title={client?.client_name || clientId || 'Application'}
+        title={client ? (name || client.client_name) : clientId || 'Application'}
         description={client ? `Registered ${when(client.created_at)}` : 'One registered application.'}
         actions={client ? <StatusBadge status={client.status ?? 'unknown'} /> : undefined}
       />
@@ -169,29 +255,53 @@ export default function ClientDetailPage() {
               <Fact label="Owners" value={String((client.owners ?? []).length)} />
               <Fact label="Yours" value={client.owned_by_caller ? 'yes' : 'no'} />
               <Fact label="Last changed" value={when(client.last_modified_at)} />
-              {client.logo_uri && <Fact label="Logo" value={client.logo_uri} mono />}
             </dl>
 
+            {saveFailure && <div className="mt-3"><ErrorState message={saveFailure} /></div>}
+
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Chips
-                label="Scopes"
-                hint="What this application may ask a person to approve. It can do nothing outside them."
-                values={(client.scope ?? '').split(' ').filter(Boolean)}
-              />
+              <label className="block">
+                <span className={FIELD_LABEL}>Name</span>
+                <input required value={name} onChange={(event) => setName(event.target.value)} className={FIELD_INPUT} />
+              </label>
+              <label className="block">
+                <span className={FIELD_LABEL}>Logo URI</span>
+                <input value={logoUri} onChange={(event) => setLogoUri(event.target.value)} className={FIELD_INPUT_MONO} />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+                  Redirect URIs
+                  <Tooltip text="Compared exactly, never by prefix. One address per line, written in full. A wildcard is refused, and plain HTTP is accepted only on a loopback address." />
+                </span>
+                <textarea rows={3} value={redirects} onChange={(event) => setRedirects(event.target.value)} className={FIELD_INPUT_MONO} />
+              </label>
+              <label className="block">
+                <span className={FIELD_LABEL}>Post sign-out redirect URIs</span>
+                <textarea rows={3} value={postLogout} onChange={(event) => setPostLogout(event.target.value)} className={FIELD_INPUT_MONO} />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className={FIELD_LABEL}>Scopes</span>
+                <input
+                  value={scope}
+                  onChange={(event) => setScope(event.target.value)}
+                  placeholder={SELF_SERVICE_SCOPES.join(' ')}
+                  className={FIELD_INPUT_MONO}
+                />
+                <span className="mt-1 block text-xs text-gray-500">
+                  Space separated. What this application may ask a person to approve; it can do
+                  nothing outside them.
+                </span>
+              </label>
               <Chips
                 label="Grant types"
                 hint="The ways this application may obtain a token."
                 values={client.grant_types ?? []}
-              />
-              <Chips
-                label="Redirect URIs"
-                hint="Compared exactly by the authority, never by prefix. An address not written here is refused."
-                values={client.redirect_uris ?? []}
-              />
-              <Chips
-                label="Post sign-out redirect URIs"
-                hint="Where a person may be returned after signing out. Compared exactly, like the redirects."
-                values={client.post_logout_redirect_uris ?? []}
               />
             </div>
           </section>
@@ -225,39 +335,30 @@ export default function ClientDetailPage() {
             </div>
           </section>
 
-          {editing
-            ? (
-              <EditForm
-                client={client}
-                onCancel={() => setEditing(false)}
-                onSaved={() => { setEditing(false); void load(); }}
-              />
-            )
-            : (
-              <div className="flex flex-wrap items-center gap-2">
-                <Tooltip text="Change the name, redirects, scopes and grant types. Never the credential: rotate it separately.">
-                  <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
-                  >
-                    <Pencil size={12} aria-hidden />
-                    Edit application
-                  </button>
-                </Tooltip>
-                <Tooltip text="Revokes and drops the credential immediately. The record is kept, marked withdrawn, and there is no reactivate: this cannot be undone.">
-                  <button
-                    type="button"
-                    disabled={busy || client.status === 'revoked'}
-                    onClick={() => void withdraw()}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
-                  >
-                    <ShieldOff size={12} aria-hidden />
-                    Withdraw
-                  </button>
-                </Tooltip>
-              </div>
-            )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Tooltip text="Change the name, redirects, scopes and grant types. Never the credential: rotate it separately.">
+              <button
+                type="button"
+                disabled={!dirty || saving}
+                onClick={() => void save()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
+              >
+                <Save size={12} aria-hidden />
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </Tooltip>
+            <Tooltip text="Revokes and drops the credential immediately. The record is kept, marked withdrawn, and there is no reactivate: this cannot be undone.">
+              <button
+                type="button"
+                disabled={busy || client.status === 'revoked'}
+                onClick={() => void withdraw()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
+              >
+                <ShieldOff size={12} aria-hidden />
+                Withdraw
+              </button>
+            </Tooltip>
+          </div>
 
           <AuthorizedPrincipals clientId={clientId} />
           <ActivityPanel clientId={clientId} />
@@ -424,129 +525,6 @@ function Chips({ label, hint, values }: { label: string; hint: string; values: s
             ))}
       </div>
     </div>
-  );
-}
-
-/** Only what the authority lets a registration change. The secret has its own route on purpose. */
-function EditForm({ client, onCancel, onSaved }: {
-  client: RegisteredClient;
-  onCancel: () => void;
-  onSaved: () => void;
-}) {
-  const [name, setName] = useState(client.client_name ?? '');
-  const [redirects, setRedirects] = useState((client.redirect_uris ?? []).join('\n'));
-  const [postLogout, setPostLogout] = useState((client.post_logout_redirect_uris ?? []).join('\n'));
-  const [scope, setScope] = useState(client.scope ?? '');
-  const [logoUri, setLogoUri] = useState(client.logo_uri ?? '');
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const redirectUris = linesToUris(redirects);
-    const problem = firstRedirectProblem(redirectUris);
-    if (problem) return setFailure(problem);
-    const logoutUris = linesToUris(postLogout);
-    const logoutProblem = firstRedirectProblem(logoutUris);
-    if (logoutProblem) return setFailure(logoutProblem);
-
-    setBusy(true);
-    try {
-      await callApi(`/clients/${encodeURIComponent(client.client_id)}`, {
-        method: 'PATCH',
-        subject: 'that application',
-        body: {
-          client_name: name.trim(),
-          redirect_uris: redirectUris,
-          post_logout_redirect_uris: logoutUris,
-          scope: scope.trim(),
-          ...(logoUri.trim() ? { logo_uri: logoUri.trim() } : {}),
-        },
-      });
-      onSaved();
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : 'That change could not be saved.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 className="text-sm font-semibold text-[#001E2B]">Change registration</h2>
-
-      {failure && <ErrorState message={failure} />}
-
-      <label className="block">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400">Name</span>
-        <input
-          required
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-      </label>
-
-      <label className="block">
-        <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
-          Redirect URIs
-          <Tooltip text="Compared exactly, never by prefix. One address per line, written in full. A wildcard is refused, and plain HTTP is accepted only on a loopback address." />
-        </span>
-        <textarea
-          rows={3}
-          value={redirects}
-          onChange={(event) => setRedirects(event.target.value)}
-          className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-      </label>
-
-      <label className="block">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400">Post sign-out redirect URIs</span>
-        <textarea
-          rows={2}
-          value={postLogout}
-          onChange={(event) => setPostLogout(event.target.value)}
-          className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-      </label>
-
-      <label className="block">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400">Scopes</span>
-        <input
-          value={scope}
-          onChange={(event) => setScope(event.target.value)}
-          placeholder={SELF_SERVICE_SCOPES.join(' ')}
-          className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-        <span className="mt-1 block text-xs text-gray-500">Space separated.</span>
-      </label>
-
-      <label className="block">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400">Logo URI</span>
-        <input
-          value={logoUri}
-          onChange={(event) => setLogoUri(event.target.value)}
-          className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-      </label>
-
-      <div className="flex items-center gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#023430] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
-        >
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
   );
 }
 
