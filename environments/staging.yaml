@@ -61,9 +61,10 @@ envSecrets:
   # 96 random bytes, base64. NOT rotatable in place: everything under queryable encryption is written
   # under this key, so replacing it needs --reset plus a reseed.
   GIAM_KMS_LOCAL_MASTER_KEY: sec-giam-secrets-staging
-  # The credential for /admin/*, which includes SCIM provisioning and client registration. Unset
-  # means CLOSED: the surface answers 503 rather than opening because nobody set a variable.
-  GIAM_ADMIN_TOKEN: sec-giam-secrets-staging
+  # GIAM_ADMIN_TOKEN is deliberately NOT wired here: the operator surface it gates (/posture, the
+  # ops console, delivery inspection) is a devops tool, not part of the identity API, and is meant
+  # to stay CLOSED (503) in this environment rather than carry a credential nothing here uses. Wire
+  # GIAM_ADM_USER/GIAM_ADM_PASS instead if that surface is ever needed here.
 
 resources:
   requests:
