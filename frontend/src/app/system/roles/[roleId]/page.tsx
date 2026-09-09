@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, Minus, Plus, Power, Save, ShieldHalf, Trash2, UserMinus, UserPlus } from 'lucide-react';
@@ -20,6 +20,10 @@ import type { Assignment, CatalogPermission, ResolvedPermission, RoleDetail, Rol
  * `resource:action` strings is a wall nobody checks; read as a grid of resources against actions it
  * is something a reviewer can scan and notice a gap in. Inherited cells are marked rather than
  * merged away, because "this role grants it" and "a parent grants it" are different findings.
+ *
+ * View and edit are ONE screen, not two. The draft fields below start equal to the server's own
+ * values and stay that way until something is actually typed or a cell is actually clicked; Save
+ * reflects that with `dirty`, rather than existing as a mode a manager has to remember to enter.
  */
 
 export default function RoleDetailPage() {
@@ -38,8 +42,84 @@ export default function RoleDetailPage() {
     [roleId],
   );
   const role = useConsoleResource(read, 'That role could not be read.');
+  const detail = role.data;
 
-  const [editing, setEditing] = useState(false);
+  // Draft state. Reset from the server's own values whenever `detail` changes: once on the first
+  // read, and again the moment a save reloads it, so a saved change can never look undone and a
+  // failed one is never left half-applied.
+  const [displayName, setDisplayName] = useState('');
+  const [description, setDescription] = useState('');
+  const [scopeKind, setScopeKind] = useState<'self' | 'all'>('self');
+  const [parents, setParents] = useState<string[]>([]);
+  const [held, setHeld] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!detail) return;
+    setDisplayName(detail.displayName);
+    setDescription(detail.description);
+    setScopeKind(detail.scopeKind);
+    setParents(detail.parentRoleIds);
+    setHeld(new Set(detail.ownPermissions.map((permission) => `${permission.resource}:${permission.action}`)));
+  }, [detail]);
+
+  const readCatalog = useCallback(
+    () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
+    [],
+  );
+  const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
+
+  const readRoles = useCallback(
+    () => callApi<{ roles: RoleSummary[] }>('/roles', { query: { limit: 200 }, subject: 'the roles in this realm' }),
+    [],
+  );
+  const allRoles = useConsoleResource(readRoles, 'The roles could not be read.');
+
+  useEffect(() => {
+    // Fetched once management is possible, not once "editing" is entered: there is no such mode
+    // any more for a manager to have to remember to switch to.
+    if (mayManageRoles) { void catalog.reload(); void allRoles.reload(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mayManageRoles]);
+
+  const dirty = useMemo(() => {
+    if (!detail) return false;
+    const heldBefore = new Set(detail.ownPermissions.map((permission) => `${permission.resource}:${permission.action}`));
+    if (held.size !== heldBefore.size || [...held].some((key) => !heldBefore.has(key))) return true;
+    return displayName !== detail.displayName
+      || description !== detail.description
+      || scopeKind !== detail.scopeKind
+      || parents.length !== detail.parentRoleIds.length
+      || parents.some((roleId2) => !detail.parentRoleIds.includes(roleId2));
+  }, [detail, displayName, description, scopeKind, parents, held]);
+
+  function toggle(key: string) {
+    setHeld((was) => {
+      const next = new Set(was);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function save() {
+    await role.run(
+      'save',
+      () => callApi(`/roles/${encodeURIComponent(roleId)}`, {
+        method: 'PATCH',
+        body: {
+          displayName,
+          description,
+          scopeKind,
+          parentRoleIds: parents,
+          permissions: [...held].map((key) => {
+            const [resource, action] = key.split(':');
+            return { resource, action };
+          }),
+        },
+        subject: 'that role',
+      }),
+      'That role could not be changed.',
+    );
+  }
 
   async function remove() {
     if (!window.confirm('Remove this role? It is refused while anything still depends on it.')) return;
@@ -51,17 +131,6 @@ export default function RoleDetailPage() {
     if (done) router.push('/system/roles');
   }
 
-  async function save(patch: Record<string, unknown>) {
-    const done = await role.run(
-      'save',
-      () => callApi(`/roles/${encodeURIComponent(roleId)}`, { method: 'PATCH', body: patch, subject: 'that role' }),
-      'That role could not be changed.',
-    );
-    if (done) setEditing(false);
-  }
-
-  const detail = role.data;
-
   return (
     <main className="space-y-5">
       <Link href="/system/roles" className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#001E2B]">
@@ -71,15 +140,16 @@ export default function RoleDetailPage() {
 
       <SectionHeader
         icon={ShieldHalf}
-        title={detail?.displayName ?? 'Role'}
-        description={detail?.description || 'What this role grants, and who holds it.'}
+        title={detail ? displayName : 'Role'}
+        description={(detail ? description : '') || 'What this role grants, and who holds it.'}
         actions={detail && mayManageRoles
           ? (
             <div className="flex gap-2">
               <ActionButton
                 icon={Save}
-                label={editing ? 'Stop editing' : 'Edit'}
-                onClick={() => setEditing((was) => !was)}
+                label={role.busy === 'save' ? 'Saving…' : 'Save'}
+                disabled={!dirty || role.busy === 'save'}
+                onClick={() => void save()}
               />
               <Tooltip text={(detail.enabled ?? true)
                 ? 'Switches it off. Every assignment survives; it grants nothing, anywhere it is held or inherited from, while it stays this way.'
@@ -127,27 +197,65 @@ export default function RoleDetailPage() {
                   {detail.builtin && <BuiltinBadge />}
                   {!(detail.enabled ?? true) && <DisabledBadge />}
                 </div>
+
+                {mayManageRoles ? (
+                  <>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <Field label="Display name">
+                        <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={INPUT} />
+                      </Field>
+                      <Field label="Scope" hint="Realm wide is what makes a role administrative.">
+                        <select value={scopeKind} onChange={(e) => setScopeKind(e.target.value as 'self' | 'all')} className={INPUT}>
+                          <option value="self">Own records only</option>
+                          <option value="all">Realm wide</option>
+                        </select>
+                      </Field>
+                    </div>
+                    <div className="mt-3">
+                      <Field label="Description">
+                        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={INPUT} />
+                      </Field>
+                    </div>
+                    <div className="mt-3">
+                      <Field label="Inherits from" hint="A composition that would loop is refused rather than truncated.">
+                        <select
+                          multiple
+                          value={parents}
+                          onChange={(e) => setParents([...e.target.selectedOptions].map((option) => option.value))}
+                          className={`${INPUT} h-24`}
+                        >
+                          {(allRoles.data?.roles ?? [])
+                            .filter((candidate) => candidate.roleId !== detail.roleId)
+                            .map((candidate) => (
+                              <option key={candidate.roleId} value={candidate.roleId}>{candidate.displayName}</option>
+                            ))}
+                        </select>
+                      </Field>
+                    </div>
+                  </>
+                ) : (
+                  detail.parents.length > 0 && (
+                    <p className="mt-3 text-sm text-gray-600">
+                      Inherits from{' '}
+                      {detail.parents.map((parent, index) => (
+                        <span key={parent.roleId}>
+                          {index > 0 && ', '}
+                          <Link href={`/system/roles/${encodeURIComponent(parent.roleId)}`} className="font-medium text-[#001E2B] hover:underline">
+                            {parent.displayName}
+                          </Link>
+                        </span>
+                      ))}
+                      .
+                    </p>
+                  )
+                )}
+
                 <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
                   <Fact label="States" value={`${detail.ownPermissionCount} permissions`} />
                   <Fact label="Grants in total" value={`${detail.effectivePermissionCount} permissions`} />
                   <Fact label="Held by" value={`${detail.assignmentCount} principal${detail.assignmentCount === 1 ? '' : 's'}`} />
                   <Fact label="Last changed" value={when(detail.lastModified)} />
                 </dl>
-
-                {detail.parents.length > 0 && (
-                  <p className="mt-3 text-sm text-gray-600">
-                    Inherits from{' '}
-                    {detail.parents.map((parent, index) => (
-                      <span key={parent.roleId}>
-                        {index > 0 && ', '}
-                        <Link href={`/system/roles/${encodeURIComponent(parent.roleId)}`} className="font-medium text-[#001E2B] hover:underline">
-                          {parent.displayName}
-                        </Link>
-                      </span>
-                    ))}
-                    .
-                  </p>
-                )}
 
                 {detail.sodRationale && (
                   <p className="mt-3 border-l-2 border-gray-200 pl-2.5 text-sm italic text-gray-600">
@@ -156,11 +264,14 @@ export default function RoleDetailPage() {
                 )}
               </section>
 
-              {editing && mayManageRoles && (
-                <EditRole detail={detail} busy={role.busy === 'save'} onSave={save} onCancel={() => setEditing(false)} />
-              )}
-
-              <PermissionMatrix permissions={detail.effectivePermissions} roleName={detail.name} />
+              <PermissionMatrix
+                permissions={detail.effectivePermissions}
+                roleName={detail.name}
+                editable={mayManageRoles}
+                held={held}
+                onToggle={toggle}
+                catalog={mayManageRoles ? (catalog.data?.permissions ?? []) : []}
+              />
 
               {detail.denialRationale && detail.denialRationale.length > 0 && (
                 <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -182,7 +293,7 @@ export default function RoleDetailPage() {
                 </section>
               )}
 
-              {mayReadCatalog && mayManageRoles && editing && <CatalogHint />}
+              {mayReadCatalog && mayManageRoles && <CatalogHint />}
 
               {mayViewAssignments && (
                 <Assignments roleId={roleId} mayManage={mayManageAssignments} onChanged={() => void role.reload()} />
@@ -199,9 +310,24 @@ export default function RoleDetailPage() {
  * A grid rather than a list because the question a reviewer actually has is comparative. "Can this
  * role manage what it can view" is answerable at a glance here and only by careful reading in a
  * list, and the second one is the format that lets a mistake survive review.
+ *
+ * View and edit share every cell. A cell inherited from a parent is never a checkbox here, whether
+ * or not `editable`: removing it means editing that role, not this one. A cell this role grants
+ * directly becomes an uncheckable-only-here checkbox once `editable`, and a cell the realm's own
+ * catalog declares but this role does not yet hold becomes an empty one, so granting something new
+ * does not require leaving the page that already shows everything else this role does.
  */
-function PermissionMatrix({ permissions, roleName }: { permissions: ResolvedPermission[]; roleName: string }) {
-  const { actions, resources, cells } = useMemo(() => {
+function PermissionMatrix({
+  permissions, roleName, editable, held, onToggle, catalog,
+}: {
+  permissions: ResolvedPermission[];
+  roleName: string;
+  editable: boolean;
+  held: Set<string>;
+  onToggle: (key: string) => void;
+  catalog: CatalogPermission[];
+}) {
+  const { actions, resources, cells, catalogSet } = useMemo(() => {
     const actionSet = new Set<string>();
     const resourceMap = new Map<string, { server: string }>();
     const cellMap = new Map<string, ResolvedPermission>();
@@ -210,19 +336,29 @@ function PermissionMatrix({ permissions, roleName }: { permissions: ResolvedPerm
       resourceMap.set(permission.resource, { server: permission.resourceServer });
       cellMap.set(`${permission.resource}:${permission.action}`, permission);
     }
+    const catalogKeys = new Set<string>();
+    for (const permission of catalog) {
+      if (permission.deprecated) continue;
+      actionSet.add(permission.action);
+      if (!resourceMap.has(permission.resource)) resourceMap.set(permission.resource, { server: permission.resourceServer });
+      catalogKeys.add(`${permission.resource}:${permission.action}`);
+    }
     return {
       actions: [...actionSet].sort(),
       resources: [...resourceMap.entries()].sort((a, b) => a[0].localeCompare(b[0])),
       cells: cellMap,
+      catalogSet: catalogKeys,
     };
-  }, [permissions]);
+  }, [permissions, catalog]);
 
-  if (permissions.length === 0) {
+  if (resources.length === 0) {
     return (
       <EmptyState
         icon={ShieldHalf}
-        title="This role grants nothing"
-        description="No permission is written on it and it inherits none. A principal holding it gains no authority."
+        title={editable ? 'Nothing to grant yet' : 'This role grants nothing'}
+        description={editable
+          ? 'The realm\'s resource servers have not registered a permission catalog yet, so there is nothing to check here.'
+          : 'No permission is written on it and it inherits none. A principal holding it gains no authority.'}
       />
     );
   }
@@ -258,30 +394,51 @@ function PermissionMatrix({ permissions, roleName }: { permissions: ResolvedPerm
                   <span className="ml-2 font-mono text-[10px] font-normal text-gray-400">{server}</span>
                 </th>
                 {actions.map((action) => {
-                  const cell = cells.get(`${resource}:${action}`);
+                  const key = `${resource}:${action}`;
+                  const cell = cells.get(key);
+                  const isHeld = held.has(key);
+                  // Editable AND (a direct grant, toggleable off, OR not yet granted but the catalog
+                  // says it could be). An inherited-only cell never qualifies: that grant belongs to
+                  // the parent, and unchecking it here would silently do nothing.
+                  const asCheckbox = editable && (isHeld || (!cell && catalogSet.has(key)));
+
                   return (
                     <td key={action} className="px-3 py-2 text-center">
-                      {!cell
-                        ? <Minus size={13} className="mx-auto text-gray-200" aria-label="not granted" />
-                        : (
-                          <Tooltip text={
+                      {asCheckbox ? (
+                        <Tooltip text={isHeld
+                          ? (cell?.unenforced
+                            ? `Granted through ${cell.via}, but no resource server declares it, so nothing checks it.`
+                            : 'Granted directly by this role. Uncheck to remove it.')
+                          : 'Not yet granted. Check to grant it directly.'}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isHeld}
+                            onChange={() => onToggle(key)}
+                            className="h-4 w-4 rounded border-gray-300 accent-[#00684A]"
+                          />
+                        </Tooltip>
+                      ) : !cell ? (
+                        <Minus size={13} className="mx-auto text-gray-200" aria-label="not granted" />
+                      ) : (
+                        <Tooltip text={
+                          cell.unenforced
+                            ? `Granted through ${cell.via}, but no resource server declares it, so nothing checks it.`
+                            : cell.inherited
+                              ? `Inherited from ${cell.via}. Removing it means editing that role.`
+                              : `Granted directly by ${roleName}.`
+                        }>
+                          <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
                             cell.unenforced
-                              ? `Granted through ${cell.via}, but no resource server declares it, so nothing checks it.`
+                              ? 'bg-amber-100 text-amber-700'
                               : cell.inherited
-                                ? `Inherited from ${cell.via}. Removing it means editing that role.`
-                                : `Granted directly by ${roleName}.`
-                          }>
-                            <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
-                              cell.unenforced
-                                ? 'bg-amber-100 text-amber-700'
-                                : cell.inherited
-                                  ? 'bg-gray-100 text-gray-500'
-                                  : 'bg-emerald-100 text-emerald-700'
-                            }`}>
-                              <Check size={12} aria-label={cell.inherited ? 'granted, inherited' : 'granted'} />
-                            </span>
-                          </Tooltip>
-                        )}
+                                ? 'bg-gray-100 text-gray-500'
+                                : 'bg-emerald-100 text-emerald-700'
+                          }`}>
+                            <Check size={12} aria-label={cell.inherited ? 'granted, inherited' : 'granted'} />
+                          </span>
+                        </Tooltip>
+                      )}
                     </td>
                   );
                 })}
@@ -308,158 +465,6 @@ function Legend({ className, label }: { className: string; label: string }) {
       </span>
       {label}
     </span>
-  );
-}
-
-/**
- * Editing what a role states.
- *
- * The permission list is replaced rather than merged, which is why the whole set is presented as
- * checkboxes against the realm's catalog: a form that could only add would make removing a
- * permission impossible from here, and the API says the same thing.
- */
-function EditRole({ detail, busy, onSave, onCancel }: {
-  detail: RoleDetail;
-  busy: boolean;
-  onSave: (patch: Record<string, unknown>) => void;
-  onCancel: () => void;
-}) {
-  const [displayName, setDisplayName] = useState(detail.displayName);
-  const [description, setDescription] = useState(detail.description);
-  const [scopeKind, setScopeKind] = useState(detail.scopeKind);
-  const [held, setHeld] = useState<Set<string>>(
-    () => new Set(detail.ownPermissions.map((permission) => `${permission.resource}:${permission.action}`)),
-  );
-  const [parents, setParents] = useState<string[]>(detail.parentRoleIds);
-
-  const readCatalog = useCallback(
-    () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
-    [],
-  );
-  const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
-
-  const readRoles = useCallback(
-    () => callApi<{ roles: RoleSummary[] }>('/roles', { query: { limit: 200 }, subject: 'the roles in this realm' }),
-    [],
-  );
-  const allRoles = useConsoleResource(readRoles, 'The roles could not be read.');
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, CatalogPermission[]>();
-    for (const permission of catalog.data?.permissions ?? []) {
-      if (permission.deprecated) continue;
-      const list = map.get(permission.resource) ?? [];
-      list.push(permission);
-      map.set(permission.resource, list);
-    }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [catalog.data]);
-
-  function toggle(key: string) {
-    setHeld((was) => {
-      const next = new Set(was);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  }
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSave({
-          displayName,
-          description,
-          scopeKind,
-          parentRoleIds: parents,
-          permissions: [...held].map((key) => {
-            const [resource, action] = key.split(':');
-            return { resource, action };
-          }),
-        });
-      }}
-      className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
-    >
-      <h2 className="font-semibold text-[#001E2B]">Edit this role</h2>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Display name">
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={INPUT} />
-        </Field>
-        <Field label="Scope" hint="Realm wide is what makes a role administrative.">
-          <select value={scopeKind} onChange={(e) => setScopeKind(e.target.value as 'self' | 'all')} className={INPUT}>
-            <option value="self">Own records only</option>
-            <option value="all">Realm wide</option>
-          </select>
-        </Field>
-      </div>
-
-      <Field label="Description">
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={INPUT} />
-      </Field>
-
-      <Field label="Inherits from" hint="A composition that would loop is refused rather than truncated.">
-        <select
-          multiple
-          value={parents}
-          onChange={(e) => setParents([...e.target.selectedOptions].map((option) => option.value))}
-          className={`${INPUT} h-28`}
-        >
-          {(allRoles.data?.roles ?? [])
-            .filter((candidate) => candidate.roleId !== detail.roleId)
-            .map((candidate) => (
-              <option key={candidate.roleId} value={candidate.roleId}>{candidate.displayName}</option>
-            ))}
-        </select>
-      </Field>
-
-      <fieldset>
-        <legend className="text-xs font-medium text-gray-600">Permissions this role states</legend>
-        <p className="mt-0.5 text-[11px] text-gray-400">
-          Only what the realm&apos;s resource servers have registered. Inherited permissions are not
-          listed here, because they belong to the parent that grants them.
-        </p>
-        {catalog.loading
-          ? <LoadingState label="Reading the permission catalog…" />
-          : catalog.error
-            ? <ErrorState message={catalog.error} onRetry={() => void catalog.reload()} />
-            : (
-              <div className="mt-2 max-h-72 space-y-3 overflow-y-auto rounded-lg border border-gray-100 p-3">
-                {grouped.map(([resource, permissions]) => (
-                  <div key={resource}>
-                    <p className="text-xs font-medium text-[#001E2B]">
-                      {resource}
-                      <span className="ml-2 font-mono text-[10px] font-normal text-gray-400">{permissions[0].resourceServer}</span>
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-3">
-                      {permissions.map((permission) => {
-                        const key = `${permission.resource}:${permission.action}`;
-                        return (
-                          <label key={key} className="inline-flex items-center gap-1.5 text-xs text-gray-600">
-                            <input type="checkbox" checked={held.has(key)} onChange={() => toggle(key)} className="rounded border-gray-300" />
-                            {permission.action}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-      </fieldset>
-
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
-        >
-          <Save size={12} aria-hidden />
-          {busy ? 'Saving…' : 'Save changes'}
-        </button>
-        <ActionButton icon={Minus} label="Cancel" onClick={onCancel} />
-      </div>
-    </form>
   );
 }
 
