@@ -48,6 +48,7 @@ Three, and there is no specification behind them. All are declared in the discov
 | `session_epoch` | A generation counter on the principal. Refuse a whole generation of tokens at once by comparing it, which is what makes "sign out everywhere" work without listing outstanding tokens. |
 | `admin_realms` | Realm NAMES this subject may administer besides the issuing one. Widens nothing: every request against a named realm is re-decided against the stored grant. |
 | `account_holder` | An opaque reference to the business record a self-scoped principal owns. This authority never resolves it and does not know what it names. |
+| `domain_id` | Which authentication domain the subject signed in through. Absent when the subject has none (a workload issued a token by `client_credentials`, or a delegated hop). What a relying party reads to apply a domain-scoped policy of its own; this authority already uses the same domain to narrow the token's own lifetime, client narrows realm, domain narrows client. |
 
 ### Size
 

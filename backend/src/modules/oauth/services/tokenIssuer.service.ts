@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  RESOURCE_COLLECTION, REALM_COLLECTION, SESSION_COLLECTION, GRANT_COLLECTION,
+  RESOURCE_COLLECTION, REALM_COLLECTION, SESSION_COLLECTION, GRANT_COLLECTION, DOMAIN_COLLECTION,
 } from '../../../shared/models/collections';
 import { GrantRecord } from '../../consent/models/grant.model';
 import { authorizationDetailsFor, hasConstraints } from './authorizationDetails';
@@ -10,6 +10,7 @@ import { ActorClaim } from '../models/actor.model';
 import { SessionRecord, RefreshClaims, isLive } from '../../authentication/models/session.model';
 import { getSessionWatch } from '../../../plugins/mongodb';
 import { RealmRecord } from '../../realm/models/realm.model';
+import { DomainRecord } from '../../realm/models/domain.model';
 import { OAuthClient } from '../models/client.model';
 import { JwtTokenFormat } from './jwtTokenFormat';
 import { PrincipalRecord, oidcProfileClaims } from '../../directory/models/principal.model';
@@ -64,11 +65,13 @@ export interface IssueTokensInput {
   includeRefreshToken?: boolean;
   includeIdToken?: boolean;
   /**
-   * The subject's directory record, read once by the caller. Only consumed here to fill the ID
-   * token's `name`/`preferred_username`/`email` per the granted scope (OIDC Core 1.0 5.4); a token
-   * issued with no `subjectProfile` carries none of them, same as a scope that was not granted.
+   * The subject's directory record, read once by the caller. Consumed here for two things: filling
+   * the ID token's `name`/`preferred_username`/`email` per the granted scope (OIDC Core 1.0 5.4),
+   * and, from `domainId`, both the `domain_id` claim on the access and ID token and which domain's
+   * `tokenPolicy` narrows this issuance's lifetimes. A token issued with no `subjectProfile` (or one
+   * with no `domainId`, e.g. a workload with none) carries neither.
    */
-  subjectProfile?: Pick<PrincipalRecord, 'userName' | 'name' | 'primaryEmail'>;
+  subjectProfile?: Pick<PrincipalRecord, 'userName' | 'name' | 'primaryEmail' | 'domainId'>;
   /**
    * The flow this issuance belongs to, carried as the `txn` claim.
    *
@@ -255,10 +258,21 @@ export class TokenIssuer {
     return realms.map((entry) => entry.name);
   }
 
-  private ttl(realm: RealmRecord, client: OAuthClient): { access: number; refresh: number } {
+  /**
+   * Domain narrows client narrows realm. A client registers once across every path a subject might
+   * reach it from; the domain IS that one path, so it is the more specific of the two, the same
+   * order every other domain-vs-realm rule (the password policy, the session limit) already applies.
+   */
+  private async ttl(realm: RealmRecord, client: OAuthClient, domainId?: string): Promise<{ access: number; refresh: number }> {
+    const domainPolicy = domainId
+      ? (await this.db.collection<DomainRecord>(DOMAIN_COLLECTION).findOne(
+        { realmId: realm.realmId, domainId },
+        { projection: { _id: 0, 'authentication.tokenPolicy': 1 } },
+      ))?.authentication?.tokenPolicy
+      : undefined;
     return {
-      access: client.tokenPolicy?.accessTokenTtlSeconds ?? realm.tokenPolicy.accessTokenTtlSeconds,
-      refresh: client.tokenPolicy?.refreshTokenTtlSeconds ?? realm.tokenPolicy.refreshTokenTtlSeconds,
+      access: domainPolicy?.accessTokenTtlSeconds ?? client.tokenPolicy?.accessTokenTtlSeconds ?? realm.tokenPolicy.accessTokenTtlSeconds,
+      refresh: domainPolicy?.refreshTokenTtlSeconds ?? client.tokenPolicy?.refreshTokenTtlSeconds ?? realm.tokenPolicy.refreshTokenTtlSeconds,
     };
   }
 
@@ -278,7 +292,7 @@ export class TokenIssuer {
       : request;
 
     const { realm, client } = input;
-    const ttl = this.ttl(realm, client);
+    const ttl = await this.ttl(realm, client, input.subjectProfile?.domainId);
     const now = Math.floor(Date.now() / 1000);
     const scope = input.scope.join(' ');
 
@@ -453,6 +467,11 @@ export class TokenIssuer {
       exp: now + ttl.access,
       scope,
       client_id: client.clientId,
+      // Which authentication path the subject came through, so a relying party can apply a policy
+      // of its own scoped to that domain without asking this authority first. Absent for a subject
+      // with none: a workload (`client_credentials`) or a delegated hop, neither of which was
+      // authenticated through a domain at all.
+      ...(input.subjectProfile?.domainId ? { domain_id: input.subjectProfile.domainId } : {}),
       ...authContext,
       ...(input.sessionId ? { sid: input.sessionId } : {}),
       /**
@@ -594,6 +613,8 @@ export class TokenIssuer {
         // The same authentication context the access token carries. An RP checking that the person
         // authenticated recently, or strongly, reads it here rather than introspecting.
         ...authContext,
+        // Same claim, same reason as the access token: which domain to apply a policy from.
+        ...(input.subjectProfile?.domainId ? { domain_id: input.subjectProfile.domainId } : {}),
         // Same flow, same claim name. A different name per token type would make one concept read
         // as two.
         ...(txn ? { txn } : {}),

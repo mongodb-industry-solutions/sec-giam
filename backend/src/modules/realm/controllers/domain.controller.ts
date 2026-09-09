@@ -286,6 +286,15 @@ export async function domainController(fastify: FastifyInstance) {
         additionalProperties: false,
         properties: {
           cibaEnabled: { type: 'boolean', description: 'Whether a principal identified through this path may be reached by CIBA.' },
+          tokenPolicy: {
+            type: 'object',
+            additionalProperties: false,
+            description: 'Narrows the realm\'s token lifetimes for a subject identified through this path. Absent means inherit.',
+            properties: {
+              accessTokenTtlSeconds: { type: 'integer', minimum: 1 },
+              refreshTokenTtlSeconds: { type: 'integer', minimum: 1 },
+            },
+          },
         },
       },
     },

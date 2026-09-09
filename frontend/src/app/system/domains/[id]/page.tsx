@@ -31,7 +31,10 @@ interface Domain {
   hasClientSecret: boolean;
   claimMappings: Array<{ claim: string; value: string; roleName: string }>;
   registration?: { selfServiceEnabled: boolean; autoApprove: boolean };
-  authentication?: { cibaEnabled?: boolean };
+  authentication?: {
+    cibaEnabled?: boolean;
+    tokenPolicy?: { accessTokenTtlSeconds?: number; refreshTokenTtlSeconds?: number };
+  };
   createdAt?: string;
   lastModifiedAt?: string;
 }
@@ -53,6 +56,10 @@ export default function DomainDetailPage() {
   const [selfService, setSelfService] = useState(false);
   const [autoApprove, setAutoApprove] = useState(false);
   const [cibaEnabled, setCibaEnabled] = useState(true);
+  // Strings, not numbers: an empty field has to mean "inherit the realm's value", which a numeric
+  // input cannot distinguish from zero.
+  const [accessTtl, setAccessTtl] = useState('');
+  const [refreshTtl, setRefreshTtl] = useState('');
   const [mappings, setMappings] = useState<Array<{ claim: string; value: string; roleName: string }>>([]);
 
   usePermissions();
@@ -70,6 +77,8 @@ export default function DomainDetailPage() {
       setSelfService(record.registration?.selfServiceEnabled ?? false);
       setAutoApprove(record.registration?.autoApprove ?? false);
       setCibaEnabled(record.authentication?.cibaEnabled ?? true);
+      setAccessTtl(record.authentication?.tokenPolicy?.accessTokenTtlSeconds?.toString() ?? '');
+      setRefreshTtl(record.authentication?.tokenPolicy?.refreshTokenTtlSeconds?.toString() ?? '');
       setMappings(record.claimMappings ?? []);
       setError(null);
     } catch (failure) {
@@ -92,7 +101,16 @@ export default function DomainDetailPage() {
           enabled,
           ...(notice ? { notice } : {}),
           registration: { selfServiceEnabled: selfService, autoApprove: selfService && autoApprove },
-          authentication: { cibaEnabled },
+          authentication: {
+            cibaEnabled,
+            // Sent whole, empty fields included: this is a $set at `authentication.tokenPolicy`, so
+            // an emptied field must arrive as an absent key to actually clear a prior override, not
+            // as a key this request simply did not mention.
+            tokenPolicy: {
+              ...(accessTtl ? { accessTokenTtlSeconds: Number(accessTtl) } : {}),
+              ...(refreshTtl ? { refreshTokenTtlSeconds: Number(refreshTtl) } : {}),
+            },
+          },
           claimMappings: mappings.filter((m) => m.claim && m.value && m.roleName),
         },
       });
@@ -238,6 +256,38 @@ export default function DomainDetailPage() {
                 Allow CIBA sign-in for a principal identified through this path
                 <Tooltip text="A principal already registered a device key elsewhere may still be reached by CIBA unless this is off. It does not affect client_credentials: that authenticates a workload, not a person, and has no domain to check." />
               </label>
+            </div>
+
+            <div className="space-y-2 border-t border-gray-100 pt-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Token lifetimes</h3>
+              <p className="text-xs text-gray-500">
+                Narrows how long a token issued to a subject identified through this path lives.
+                Empty means this path uses the realm&apos;s own default.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Access token, seconds">
+                  <input
+                    type="number"
+                    min={1}
+                    value={accessTtl}
+                    disabled={!mayManage}
+                    onChange={(e) => setAccessTtl(e.target.value)}
+                    placeholder="Realm default"
+                    className={INPUT}
+                  />
+                </Field>
+                <Field label="Refresh token, seconds">
+                  <input
+                    type="number"
+                    min={1}
+                    value={refreshTtl}
+                    disabled={!mayManage}
+                    onChange={(e) => setRefreshTtl(e.target.value)}
+                    placeholder="Realm default"
+                    className={INPUT}
+                  />
+                </Field>
+              </div>
             </div>
 
             {isFederated && (

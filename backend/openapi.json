@@ -3504,6 +3504,16 @@
             "schema": {
               "type": "string"
             },
+            "example": "b3f1c2d4",
+            "in": "query",
+            "name": "request_id",
+            "required": false,
+            "description": "The pending authorization the authority parked at the sign-in screen. Preferred over client_id from a hosted screen, which is not told which application asked."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "example": "acme",
             "in": "path",
             "name": "realm",
@@ -4828,7 +4838,8 @@
                     "description": "Ends EVERY session this principal holds."
                   },
                   "post_logout_redirect_uri": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Honoured only when a registered client declares it in postLogoutRedirectUris."
                   }
                 }
               }
@@ -4896,7 +4907,7 @@
             }
           },
           "400": {
-            "description": "Neither a session nor a subject was named.",
+            "description": "No session was named, and the browser holds no session cookie either.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5347,6 +5358,7 @@
                         "additionalProperties": false,
                         "required": [
                           "grantId",
+                          "subjectId",
                           "clientId",
                           "clientName",
                           "scopes",
@@ -5357,6 +5369,14 @@
                         "properties": {
                           "grantId": {
                             "type": "string"
+                          },
+                          "subjectId": {
+                            "type": "string",
+                            "description": "The principal this grant belongs to. Redundant on a self-service read; the only way an oversight caller reading every grant for one client can tell them apart."
+                          },
+                          "subjectName": {
+                            "type": "string",
+                            "description": "The principal's own user name, resolved once for the whole response."
                           },
                           "clientId": {
                             "type": "string"
@@ -5400,6 +5420,8 @@
                         },
                         "example": {
                           "grantId": "g-4c1f",
+                          "subjectId": "a1000070-0000-4000-8000-000000000070",
+                          "subjectName": "alex.rivera",
                           "clientId": "acme-portal",
                           "clientName": "Acme Portal",
                           "scopes": [
@@ -5422,6 +5444,8 @@
                   "grants": [
                     {
                       "grantId": "g-4c1f",
+                      "subjectId": "a1000070-0000-4000-8000-000000000070",
+                      "subjectName": "alex.rivera",
                       "clientId": "acme-portal",
                       "clientName": "Acme Portal",
                       "scopes": [
@@ -5531,6 +5555,7 @@
                   "additionalProperties": false,
                   "required": [
                     "grantId",
+                    "subjectId",
                     "clientId",
                     "clientName",
                     "scopes",
@@ -5541,6 +5566,14 @@
                   "properties": {
                     "grantId": {
                       "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string",
+                      "description": "The principal this grant belongs to. Redundant on a self-service read; the only way an oversight caller reading every grant for one client can tell them apart."
+                    },
+                    "subjectName": {
+                      "type": "string",
+                      "description": "The principal's own user name, resolved once for the whole response."
                     },
                     "clientId": {
                       "type": "string"
@@ -5586,6 +5619,8 @@
                 },
                 "example": {
                   "grantId": "g-4c1f",
+                  "subjectId": "a1000070-0000-4000-8000-000000000070",
+                  "subjectName": "alex.rivera",
                   "clientId": "acme-portal",
                   "clientName": "Acme Portal",
                   "scopes": [
@@ -5841,6 +5876,7 @@
                   "additionalProperties": false,
                   "required": [
                     "grantId",
+                    "subjectId",
                     "clientId",
                     "clientName",
                     "scopes",
@@ -5851,6 +5887,14 @@
                   "properties": {
                     "grantId": {
                       "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string",
+                      "description": "The principal this grant belongs to. Redundant on a self-service read; the only way an oversight caller reading every grant for one client can tell them apart."
+                    },
+                    "subjectName": {
+                      "type": "string",
+                      "description": "The principal's own user name, resolved once for the whole response."
                     },
                     "clientId": {
                       "type": "string"
@@ -5896,6 +5940,8 @@
                 },
                 "example": {
                   "grantId": "g-4c1f",
+                  "subjectId": "a1000070-0000-4000-8000-000000000070",
+                  "subjectName": "alex.rivera",
                   "clientId": "acme-portal",
                   "clientName": "Acme Portal",
                   "scopes": [
@@ -6125,6 +6171,7 @@
                   "additionalProperties": false,
                   "required": [
                     "grantId",
+                    "subjectId",
                     "clientId",
                     "clientName",
                     "scopes",
@@ -6135,6 +6182,14 @@
                   "properties": {
                     "grantId": {
                       "type": "string"
+                    },
+                    "subjectId": {
+                      "type": "string",
+                      "description": "The principal this grant belongs to. Redundant on a self-service read; the only way an oversight caller reading every grant for one client can tell them apart."
+                    },
+                    "subjectName": {
+                      "type": "string",
+                      "description": "The principal's own user name, resolved once for the whole response."
                     },
                     "clientId": {
                       "type": "string"
@@ -6180,6 +6235,8 @@
                 },
                 "example": {
                   "grantId": "g-4c1f",
+                  "subjectId": "a1000070-0000-4000-8000-000000000070",
+                  "subjectName": "alex.rivera",
                   "clientId": "acme-portal",
                   "clientName": "Acme Portal",
                   "scopes": [
@@ -7276,6 +7333,31 @@
                         ]
                       }
                     }
+                  },
+                  "authentication": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "cibaEnabled": {
+                        "type": "boolean",
+                        "description": "Whether a principal identified through this path may be reached by CIBA."
+                      },
+                      "tokenPolicy": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Narrows the realm's token lifetimes for a subject identified through this path. Absent means inherit.",
+                        "properties": {
+                          "accessTokenTtlSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "refreshTokenTtlSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        }
+                      }
+                    }
                   }
                 },
                 "required": [
@@ -7574,6 +7656,31 @@
                         ]
                       }
                     }
+                  },
+                  "authentication": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "cibaEnabled": {
+                        "type": "boolean",
+                        "description": "Whether a principal identified through this path may be reached by CIBA."
+                      },
+                      "tokenPolicy": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Narrows the realm's token lifetimes for a subject identified through this path. Absent means inherit.",
+                        "properties": {
+                          "accessTokenTtlSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "refreshTokenTtlSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -7767,6 +7874,531 @@
         }
       }
     },
+    "/realms": {
+      "get": {
+        "operationId": "listRealms",
+        "summary": "Every realm this deployment hosts",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** Realm-wide by nature: a realm is a trust boundary, so listing more than the caller's own home realm is always an oversight read, gated the same way reading another principal's record anywhere else in this authority is.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "realms"
+                  ],
+                  "properties": {
+                    "realms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "example": {
+                          "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
+                          "name": "acme",
+                          "displayName": "Acme",
+                          "issuer": "https://issuer.example/realms/acme",
+                          "enabled": true,
+                          "aliases": [],
+                          "tokenPolicy": {
+                            "accessTokenTtlSeconds": 300,
+                            "refreshTokenTtlSeconds": 2592000,
+                            "codeTtlSeconds": 120,
+                            "sessionIdleTtlSeconds": 3600,
+                            "sessionMaxTtlSeconds": 43200
+                          },
+                          "branding": {
+                            "displayName": "Acme"
+                          },
+                          "demoMode": false
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "realms": [
+                    {
+                      "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
+                      "name": "acme",
+                      "displayName": "Acme",
+                      "issuer": "https://issuer.example/realms/acme",
+                      "enabled": true,
+                      "aliases": [],
+                      "tokenPolicy": {
+                        "accessTokenTtlSeconds": 300,
+                        "refreshTokenTtlSeconds": 2592000,
+                        "codeTtlSeconds": 120,
+                        "sessionIdleTtlSeconds": 3600,
+                        "sessionMaxTtlSeconds": 43200
+                      },
+                      "branding": {
+                        "displayName": "Acme"
+                      },
+                      "demoMode": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held grants sight of realms beyond the caller's own.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRealm",
+        "summary": "Provision a new realm",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** Provisions the realm, its own internal directory (so it has somewhere for a principal to belong to) and a published signing key, together: a realm missing any one of the three is not usable, and this is the one call that leaves it ready to sign somebody in immediately.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "displayName"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Slug. Becomes part of the issuer URL and cannot be changed afterwards."
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "notice": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "demoMode": {
+                    "type": "boolean"
+                  },
+                  "clientEnforcement": {
+                    "type": "string",
+                    "enum": [
+                      "strict",
+                      "soft"
+                    ]
+                  },
+                  "branding": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "displayName": {
+                        "type": "string"
+                      },
+                      "logoUri": {
+                        "type": "string"
+                      },
+                      "primaryColor": {
+                        "type": "string"
+                      },
+                      "backgroundStyle": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "tokenPolicy": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessTokenTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      },
+                      "refreshTokenTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      },
+                      "codeTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 30
+                      },
+                      "sessionIdleTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      },
+                      "sessionMaxTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The realm as created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
+                    "name": "acme",
+                    "displayName": "Acme",
+                    "issuer": "https://issuer.example/realms/acme",
+                    "enabled": true,
+                    "aliases": [],
+                    "tokenPolicy": {
+                      "accessTokenTtlSeconds": 300,
+                      "refreshTokenTtlSeconds": 2592000,
+                      "codeTtlSeconds": 120,
+                      "sessionIdleTtlSeconds": 3600,
+                      "sessionMaxTtlSeconds": 43200
+                    },
+                    "branding": {
+                      "displayName": "Acme"
+                    },
+                    "demoMode": false
+                  },
+                  "description": "The realm as created."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a valid realm name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers realms.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That name is already taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}": {
+      "get": {
+        "operationId": "getRealm",
+        "summary": "One realm",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** The caller's own home realm always resolves; reading another is the same `realms:view` oversight permission `GET /realms` already requires.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
+                    "name": "acme",
+                    "displayName": "Acme",
+                    "issuer": "https://issuer.example/realms/acme",
+                    "enabled": true,
+                    "aliases": [],
+                    "tokenPolicy": {
+                      "accessTokenTtlSeconds": 300,
+                      "refreshTokenTtlSeconds": 2592000,
+                      "codeTtlSeconds": 120,
+                      "sessionIdleTtlSeconds": 3600,
+                      "sessionMaxTtlSeconds": 43200
+                    },
+                    "branding": {
+                      "displayName": "Acme"
+                    },
+                    "demoMode": false
+                  },
+                  "description": "The realm."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held grants sight of this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateRealm",
+        "summary": "Change a realm's own configuration",
+        "tags": [
+          "realms"
+        ],
+        "description": "**No applicable standard.** `name` cannot be changed here: it is embedded in the issuer URL and in every token, alias and lookup that already resolved on it, so changing it would be a new realm wearing an old one's identifier rather than an edit.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "notice": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "demoMode": {
+                    "type": "boolean"
+                  },
+                  "clientEnforcement": {
+                    "type": "string",
+                    "enum": [
+                      "strict",
+                      "soft"
+                    ]
+                  },
+                  "branding": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "displayName": {
+                        "type": "string"
+                      },
+                      "logoUri": {
+                        "type": "string"
+                      },
+                      "primaryColor": {
+                        "type": "string"
+                      },
+                      "backgroundStyle": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "tokenPolicy": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessTokenTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      },
+                      "refreshTokenTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      },
+                      "codeTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 30
+                      },
+                      "sessionIdleTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      },
+                      "sessionMaxTtlSeconds": {
+                        "type": "integer",
+                        "minimum": 60
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The realm, as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
+                    "name": "acme",
+                    "displayName": "Acme",
+                    "issuer": "https://issuer.example/realms/acme",
+                    "enabled": true,
+                    "aliases": [],
+                    "tokenPolicy": {
+                      "accessTokenTtlSeconds": 300,
+                      "refreshTokenTtlSeconds": 2592000,
+                      "codeTtlSeconds": 120,
+                      "sessionIdleTtlSeconds": 3600,
+                      "sessionMaxTtlSeconds": 43200
+                    },
+                    "branding": {
+                      "displayName": "Acme"
+                    },
+                    "demoMode": false
+                  },
+                  "description": "The realm, as it now stands."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers realms.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/register": {
       "post": {
         "operationId": "registerIdentity",
@@ -7902,7 +8534,7 @@
         "tags": [
           "scim"
         ],
-        "description": "Standard-defined: SCIM 2.0, RFC 7644 section 3.4.2. Only `eq` filters on userName, externalId and active are supported, and anything else is REFUSED rather than partially interpreted: a mistranslated filter returns the wrong principals instead of an error, which is far worse than an honest refusal.",
+        "description": "Standard-defined: SCIM 2.0, RFC 7644 section 3.4.2. Only `eq` filters on userName, externalId and active are supported, and anything else is REFUSED rather than partially interpreted: a mistranslated filter returns the wrong principals instead of an error, which is far worse than an honest refusal. `domainId` and `pending` are separate, platform-specific parameters rather than folded into `filter`, so the standard grammar stays exactly the standard grammar and neither narrowing is ever mistaken for part of it.",
         "parameters": [
           {
             "schema": {
@@ -7912,6 +8544,24 @@
             "in": "query",
             "name": "filter",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "domainId",
+            "required": false,
+            "description": "Principals provisioned through this authentication path."
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "pending",
+            "required": false,
+            "description": "Self-registered principals awaiting approval."
           },
           {
             "schema": {
@@ -8697,6 +9347,434 @@
                   "type": "object",
                   "additionalProperties": true,
                   "description": "No such principal."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/identities/{id}/credentials/password": {
+      "post": {
+        "operationId": "resetPassword",
+        "summary": "Set a new password for a principal",
+        "tags": [
+          "directory"
+        ],
+        "description": "No applicable standard; administrative credential reset. Checked against the same policy self-registration enforces, on the same local domain, so an administrator cannot set a password the person themselves would have been refused. The new password is never returned or logged.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "password"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "reset"
+                  ],
+                  "properties": {
+                    "reset": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "reset": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Does not meet the password policy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm or principal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/identities/{id}/credentials": {
+      "get": {
+        "operationId": "listPrincipalCredentials",
+        "summary": "Every credential a principal holds",
+        "tags": [
+          "directory"
+        ],
+        "description": "No applicable standard. One view across every credential type this authority recognises (password, authenticator, OAuth application, and any other), because they are all the same kind of record discriminated by type rather than kept in separate registries. Secret material (a hash, a public key) is never returned, only what identifies and describes each.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The credentials held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The credentials held.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "credentials"
+                  ],
+                  "properties": {
+                    "credentials": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "credentialId",
+                          "type",
+                          "status",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "password",
+                              "public_key",
+                              "client_secret",
+                              "totp",
+                              "recovery_code",
+                              "api_key",
+                              "oauth_client"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "clientId": {
+                            "type": "string",
+                            "description": "The wire identifier, for an `oauth_client` or `api_key`."
+                          },
+                          "clientName": {
+                            "type": "string",
+                            "description": "For `oauth_client`: the name it registered under."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "suspended",
+                              "revoked"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "lastUsedAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          }
+                        },
+                        "example": {
+                          "credentialId": "cred-4c1f",
+                          "type": "public_key",
+                          "label": "Phone",
+                          "status": "active",
+                          "createdAt": "2026-08-29T09:12:04.000Z"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "credentials": [
+                    {
+                      "credentialId": "cred-4c1f",
+                      "type": "public_key",
+                      "label": "Phone",
+                      "status": "active",
+                      "createdAt": "2026-08-29T09:12:04.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm or principal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/identities/{id}/credentials/{credentialId}": {
+      "delete": {
+        "operationId": "revokePrincipalCredential",
+        "summary": "Retire an authenticator on a principal's behalf",
+        "tags": [
+          "directory"
+        ],
+        "description": "No applicable standard. For an authenticator (`public_key`) the owner has lost or no longer controls. An OAuth application is withdrawn from the application registry instead, and a password is replaced by a reset rather than revoked; both are refused here, naming the right action, rather than silently doing something narrower than what was asked.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "credentialId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "credentialId",
+                    "type",
+                    "status",
+                    "createdAt"
+                  ],
+                  "properties": {
+                    "credentialId": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "password",
+                        "public_key",
+                        "client_secret",
+                        "totp",
+                        "recovery_code",
+                        "api_key",
+                        "oauth_client"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "clientId": {
+                      "type": "string",
+                      "description": "The wire identifier, for an `oauth_client` or `api_key`."
+                    },
+                    "clientName": {
+                      "type": "string",
+                      "description": "For `oauth_client`: the name it registered under."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "suspended",
+                        "revoked"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "lastUsedAt": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "Retired."
+                },
+                "example": {
+                  "credentialId": "cred-4c1f",
+                  "type": "public_key",
+                  "label": "Phone",
+                  "status": "active",
+                  "createdAt": "2026-08-29T09:12:04.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not an authenticator: withdraw the application, or reset the password, instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held permits administering the directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm, principal or credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -9570,6 +10648,103 @@
         }
       }
     },
+    "/realms/{realm}/me/permissions": {
+      "get": {
+        "operationId": "myPermissions",
+        "summary": "What this principal may do to the authority's own objects, resolved fresh",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard; console UI gating. The access token carries roles rather than entitlements by default (P9), so a screen deciding what to show cannot read the token alone without the answer being wrong for every default login. This is the same read the authority does to decide, not a claim the caller could be stale about: a role withdrawn a moment ago is withdrawn here too. It answers only for the CALLER, so no permission beyond \"read your own\" gates it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's own effective permissions on the authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The caller's own effective permissions on the authority.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "permissions",
+                    "roles",
+                    "scopeKind"
+                  ],
+                  "properties": {
+                    "permissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "`resource:action` strings."
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "scopeKind": {
+                      "type": "string",
+                      "enum": [
+                        "self",
+                        "all"
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "permissions": [
+                    "sessions:view",
+                    "sessions:manage"
+                  ],
+                  "roles": [
+                    "realm_administrator"
+                  ],
+                  "scopeKind": "all"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/roles": {
       "get": {
         "operationId": "listRoles",
@@ -9587,6 +10762,37 @@
             "name": "q",
             "required": false,
             "description": "Case-insensitive match on name, display name or description."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "self",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "scopeKind",
+            "required": false,
+            "description": "Own-records roles versus realm-wide ones."
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "builtin",
+            "required": false,
+            "description": "Ships with the deployment versus defined by this realm."
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "description": "Whether the role currently grants anything."
           },
           {
             "schema": {
@@ -9672,6 +10878,10 @@
                           "builtin": {
                             "type": "boolean"
                           },
+                          "enabled": {
+                            "type": "boolean",
+                            "description": "Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment."
+                          },
                           "parentRoleIds": {
                             "type": "array",
                             "items": {
@@ -9695,6 +10905,7 @@
                           "description": "Administers the identities, roles, keys and sessions of one realm.",
                           "scopeKind": "all",
                           "builtin": true,
+                          "enabled": true,
                           "parentRoleIds": [],
                           "ownPermissionCount": 14,
                           "effectivePermissionCount": 14,
@@ -9716,6 +10927,7 @@
                       "description": "Administers the identities, roles, keys and sessions of one realm.",
                       "scopeKind": "all",
                       "builtin": true,
+                      "enabled": true,
                       "parentRoleIds": [],
                       "ownPermissionCount": 14,
                       "effectivePermissionCount": 14,
@@ -9886,6 +11098,10 @@
                     "builtin": {
                       "type": "boolean"
                     },
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment."
+                    },
                     "parentRoleIds": {
                       "type": "array",
                       "items": {
@@ -10033,6 +11249,7 @@
                   "description": "Administers the identities, roles, keys and sessions of one realm.",
                   "scopeKind": "all",
                   "builtin": true,
+                  "enabled": true,
                   "parentRoleIds": [],
                   "ownPermissionCount": 14,
                   "effectivePermissionCount": 14,
@@ -10342,6 +11559,10 @@
                     "builtin": {
                       "type": "boolean"
                     },
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment."
+                    },
                     "parentRoleIds": {
                       "type": "array",
                       "items": {
@@ -10489,6 +11710,7 @@
                   "description": "Administers the identities, roles, keys and sessions of one realm.",
                   "scopeKind": "all",
                   "builtin": true,
+                  "enabled": true,
                   "parentRoleIds": [],
                   "ownPermissionCount": 14,
                   "effectivePermissionCount": 14,
@@ -10577,6 +11799,10 @@
                       "self",
                       "all"
                     ]
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Switched off, this role grants nothing anywhere it is held or inherited from. Assignments are untouched and restored the moment it is switched back on."
                   },
                   "permissions": {
                     "type": "array",
@@ -10674,6 +11900,10 @@
                     },
                     "builtin": {
                       "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Switched off grants nothing, everywhere it is held or inherited from, without touching an assignment."
                     },
                     "parentRoleIds": {
                       "type": "array",
@@ -10822,6 +12052,7 @@
                   "description": "Administers the identities, roles, keys and sessions of one realm.",
                   "scopeKind": "all",
                   "builtin": true,
+                  "enabled": true,
                   "parentRoleIds": [],
                   "ownPermissionCount": 14,
                   "effectivePermissionCount": 14,
@@ -11304,6 +12535,149 @@
         }
       }
     },
+    "/realms/{realm}/principals/{subjectId}/roles": {
+      "get": {
+        "operationId": "listPrincipalRoles",
+        "summary": "The roles one principal holds",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. The reverse of \"who holds this role\": one principal's own assignments, lapsed ones included, read from that principal's own record rather than by scanning every role in the catalog for a match.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "subjectId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every role this principal holds or held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Every role this principal holds or held.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "assignments"
+                  ],
+                  "properties": {
+                    "assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "subjectId",
+                          "roleId",
+                          "grantedAt",
+                          "live"
+                        ],
+                        "properties": {
+                          "subjectId": {
+                            "type": "string"
+                          },
+                          "userName": {
+                            "type": "string"
+                          },
+                          "roleId": {
+                            "type": "string"
+                          },
+                          "grantedAt": {
+                            "type": "string"
+                          },
+                          "grantedBy": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          },
+                          "ephemeral": {
+                            "type": "boolean"
+                          },
+                          "justification": {
+                            "type": "string"
+                          },
+                          "live": {
+                            "type": "boolean",
+                            "description": "False once an expiry has passed."
+                          }
+                        },
+                        "example": {
+                          "subjectId": "a1000070-0000-4000-8000-000000000070",
+                          "userName": "Alex Rivera",
+                          "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                          "grantedAt": "2026-08-30T09:12:00.000Z",
+                          "live": true
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "assignments": [
+                    {
+                      "subjectId": "a1000070-0000-4000-8000-000000000070",
+                      "userName": "Alex Rivera",
+                      "roleId": "a3f1e0c2-77d4-4a11-9c2e-2b6f0a51d8e4",
+                      "grantedAt": "2026-08-30T09:12:00.000Z",
+                      "live": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/principals/{subjectId}/roles/{roleId}": {
       "delete": {
         "operationId": "revokeRoleAssignment",
@@ -11430,6 +12804,19 @@
           },
           {
             "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "active",
+                "retired"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "integer",
               "default": 0
             },
@@ -11500,7 +12887,7 @@
                             "type": "string"
                           },
                           "version": {
-                            "type": "string"
+                            "type": "integer"
                           },
                           "status": {
                             "type": "string",
@@ -11544,7 +12931,7 @@
                         "example": {
                           "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                           "name": "administration-requires-strong-authentication",
-                          "version": "1",
+                          "version": 1,
                           "status": "active",
                           "effect": "deny",
                           "permissionCount": 1,
@@ -11564,7 +12951,7 @@
                     {
                       "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                       "name": "administration-requires-strong-authentication",
-                      "version": "1",
+                      "version": 1,
                       "status": "active",
                       "effect": "deny",
                       "permissionCount": 1,
@@ -11841,7 +13228,7 @@
                       "type": "string"
                     },
                     "version": {
-                      "type": "string"
+                      "type": "integer"
                     },
                     "status": {
                       "type": "string",
@@ -12013,7 +13400,7 @@
                 "example": {
                   "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                   "name": "administration-requires-strong-authentication",
-                  "version": "1",
+                  "version": 1,
                   "status": "active",
                   "effect": "deny",
                   "permissionCount": 1,
@@ -12154,7 +13541,7 @@
                       "type": "string"
                     },
                     "version": {
-                      "type": "string"
+                      "type": "integer"
                     },
                     "status": {
                       "type": "string",
@@ -12326,7 +13713,7 @@
                 "example": {
                   "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                   "name": "administration-requires-strong-authentication",
-                  "version": "1",
+                  "version": 1,
                   "status": "active",
                   "effect": "deny",
                   "permissionCount": 1,
@@ -12610,7 +13997,7 @@
                       "type": "string"
                     },
                     "version": {
-                      "type": "string"
+                      "type": "integer"
                     },
                     "status": {
                       "type": "string",
@@ -12782,7 +14169,7 @@
                 "example": {
                   "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                   "name": "administration-requires-strong-authentication",
-                  "version": "1",
+                  "version": 1,
                   "status": "active",
                   "effect": "deny",
                   "permissionCount": 1,
@@ -13084,7 +14471,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The decision, and how it was reached.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -13138,7 +14524,7 @@
                               "type": "string"
                             },
                             "version": {
-                              "type": "string",
+                              "type": "integer",
                               "description": "Which revision of the policy decided."
                             },
                             "effect": {
@@ -13193,7 +14579,8 @@
                         }
                       }
                     }
-                  }
+                  },
+                  "description": "The decision, and how it was reached."
                 },
                 "example": {
                   "decision": false,
@@ -13204,7 +14591,7 @@
                     "policy": {
                       "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
                       "name": "administration-requires-strong-authentication",
-                      "version": "1",
+                      "version": 1,
                       "effect": "deny"
                     },
                     "evaluators": [
@@ -13248,6 +14635,677 @@
           },
           "404": {
             "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/decision/evaluations": {
+      "post": {
+        "operationId": "evaluateDecisions",
+        "summary": "Evaluate several authorization decisions in one call",
+        "tags": [
+          "authorization"
+        ],
+        "description": "AuthZEN 1.0's batch evaluation extension. A `subject`, `resource`, `action` or `context` named at the top level is the default for every entry in `evaluations` that omits it. Answered in the same order asked, one `decision` per entry, each carrying this authority's own extended trace exactly as the single `/decision` endpoint does.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "evaluations"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subject": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "resource": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The enforcement point's resource name, such as `roles`."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                      }
+                    }
+                  },
+                  "action": {
+                    "type": "object",
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "view"
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                    "properties": {
+                      "audience": {
+                        "type": "string",
+                        "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                      },
+                      "assuranceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "aal1",
+                          "aal2",
+                          "aal3"
+                        ]
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "tenantId": {
+                        "type": "string"
+                      },
+                      "attestationState": {
+                        "type": "string",
+                        "enum": [
+                          "attested",
+                          "unattested"
+                        ]
+                      }
+                    }
+                  },
+                  "evaluations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "subject": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                            },
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          }
+                        },
+                        "resource": {
+                          "type": "object",
+                          "required": [
+                            "type"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The enforcement point's resource name, such as `roles`."
+                            },
+                            "id": {
+                              "type": "string",
+                              "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                            }
+                          }
+                        },
+                        "action": {
+                          "type": "object",
+                          "required": [
+                            "name"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "view"
+                            }
+                          }
+                        },
+                        "context": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                          "properties": {
+                            "audience": {
+                              "type": "string",
+                              "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                            },
+                            "assuranceLevel": {
+                              "type": "string",
+                              "enum": [
+                                "aal1",
+                                "aal2",
+                                "aal3"
+                              ]
+                            },
+                            "ip": {
+                              "type": "string"
+                            },
+                            "tenantId": {
+                              "type": "string"
+                            },
+                            "attestationState": {
+                              "type": "string",
+                              "enum": [
+                                "attested",
+                                "unattested"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "subject": {
+                  "type": "identity",
+                  "id": "a1000070-0000-4000-8000-000000000070"
+                },
+                "evaluations": [
+                  {
+                    "resource": {
+                      "type": "roles"
+                    },
+                    "action": {
+                      "name": "view"
+                    }
+                  },
+                  {
+                    "resource": {
+                      "type": "roles"
+                    },
+                    "action": {
+                      "name": "manage"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One decision per entry, in the order asked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "One decision per entry, in the order asked.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "evaluations"
+                  ],
+                  "properties": {
+                    "evaluations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "decision",
+                          "context"
+                        ],
+                        "properties": {
+                          "decision": {
+                            "type": "boolean",
+                            "description": "AuthZEN: true is permit, false is deny. Absence of a permit is a deny."
+                          },
+                          "context": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "effect",
+                              "reason",
+                              "evaluators"
+                            ],
+                            "properties": {
+                              "effect": {
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "description": "Why, in the words the deciding statement or role carries."
+                              },
+                              "source": {
+                                "type": "string",
+                                "description": "What decided: a policy as `name@version`, or `default-deny`."
+                              },
+                              "policy": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "description": "Present when a stored policy decided. Absent when a role or the default did.",
+                                "required": [
+                                  "policyId",
+                                  "name",
+                                  "version",
+                                  "effect"
+                                ],
+                                "properties": {
+                                  "policyId": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer",
+                                    "description": "Which revision of the policy decided."
+                                  },
+                                  "effect": {
+                                    "type": "string",
+                                    "enum": [
+                                      "allow",
+                                      "deny"
+                                    ]
+                                  }
+                                }
+                              },
+                              "evaluators": {
+                                "type": "array",
+                                "description": "What each evaluator said alone. A null effect is no opinion, which is not a denial.",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "name",
+                                    "effect"
+                                  ],
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "effect": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ],
+                                      "enum": [
+                                        "allow",
+                                        "deny",
+                                        null
+                                      ]
+                                    },
+                                    "reason": {
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              },
+                              "subjectId": {
+                                "type": "string",
+                                "description": "Who the decision was about, echoed so a trace is unambiguous."
+                              },
+                              "evaluatedAt": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "example": {
+                          "decision": false,
+                          "context": {
+                            "effect": "deny",
+                            "reason": "Changing what a role grants requires a second factor.",
+                            "source": "administration-requires-strong-authentication@1",
+                            "policy": {
+                              "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                              "name": "administration-requires-strong-authentication",
+                              "version": 1,
+                              "effect": "deny"
+                            },
+                            "evaluators": [
+                              {
+                                "name": "abac",
+                                "effect": "deny",
+                                "reason": "Changing what a role grants requires a second factor."
+                              },
+                              {
+                                "name": "rbac",
+                                "effect": "allow",
+                                "reason": "granted by realm_administrator"
+                              }
+                            ],
+                            "subjectId": "a1000070-0000-4000-8000-000000000070",
+                            "evaluatedAt": "2026-08-31T09:12:00.000Z"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "evaluations": [
+                    {
+                      "decision": true,
+                      "context": {
+                        "effect": "allow",
+                        "reason": "granted by realm_administrator",
+                        "evaluators": [
+                          {
+                            "name": "rbac",
+                            "effect": "allow",
+                            "reason": "granted by realm_administrator"
+                          }
+                        ],
+                        "subjectId": "a1000070-0000-4000-8000-000000000070",
+                        "evaluatedAt": "2026-08-31T09:12:00.000Z"
+                      }
+                    },
+                    {
+                      "decision": false,
+                      "context": {
+                        "effect": "deny",
+                        "reason": "Changing what a role grants requires a second factor.",
+                        "source": "administration-requires-strong-authentication@1",
+                        "policy": {
+                          "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                          "name": "administration-requires-strong-authentication",
+                          "version": 1,
+                          "effect": "deny"
+                        },
+                        "evaluators": [
+                          {
+                            "name": "abac",
+                            "effect": "deny",
+                            "reason": "Changing what a role grants requires a second factor."
+                          },
+                          {
+                            "name": "rbac",
+                            "effect": "allow",
+                            "reason": "granted by realm_administrator"
+                          }
+                        ],
+                        "subjectId": "a1000070-0000-4000-8000-000000000070",
+                        "evaluatedAt": "2026-08-31T09:12:00.000Z"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An entry names no resource and action, and none is given as a default.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Asking about another subject without the tier that reads policies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/decision/search/action": {
+      "post": {
+        "operationId": "searchActions",
+        "summary": "Which actions a subject may take on a resource",
+        "tags": [
+          "authorization"
+        ],
+        "description": "AuthZEN 1.0's `/access/v1/search/action` extension. Only the resource's DECLARED actions are considered, the same catalog a role can only ever be granted from, and each is asked through the identical decision path the single and batch endpoints use, with the SAME context: nothing here is answered by a cheaper approximation that drops a condition to make a reverse search possible.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "resource"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subject": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "resource": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The enforcement point's resource name, such as `roles`."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                    "properties": {
+                      "audience": {
+                        "type": "string",
+                        "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                      },
+                      "assuranceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "aal1",
+                          "aal2",
+                          "aal3"
+                        ]
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "tenantId": {
+                        "type": "string"
+                      },
+                      "attestationState": {
+                        "type": "string",
+                        "enum": [
+                          "attested",
+                          "unattested"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "subject": {
+                  "type": "identity",
+                  "id": "a1000070-0000-4000-8000-000000000070"
+                },
+                "resource": {
+                  "type": "roles"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The actions this resource declares that the subject may currently take.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The actions this resource declares that the subject may currently take.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "actions"
+                  ],
+                  "properties": {
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "actions": [
+                    {
+                      "name": "view"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Asking about another subject without the tier that reads policies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm, or no such resource type declared.",
             "content": {
               "application/json": {
                 "schema": {
