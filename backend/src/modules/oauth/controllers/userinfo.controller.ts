@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
 import { DirectoryService } from '../../directory/services/directory.service';
+import { oidcProfileClaims } from '../../directory/models/principal.model';
 
 /**
  * The UserInfo endpoint (OpenID Connect Core 1.0, section 5.3).
@@ -55,16 +56,7 @@ export async function userinfoController(fastify: FastifyInstance) {
 
     return {
       sub: identity.subjectId,
-      // `profile` is what buys a display name. Without it a client learns only who, not what to call them.
-      ...(scope.includes('profile')
-        ? {
-          ...(identity.name?.formatted ? { name: identity.name.formatted } : {}),
-          preferred_username: identity.userName,
-        }
-        : {}),
-      ...(scope.includes('email') && identity.primaryEmail
-        ? { email: identity.primaryEmail, email_verified: false }
-        : {}),
+      ...oidcProfileClaims(identity, scope),
     };
   }
 

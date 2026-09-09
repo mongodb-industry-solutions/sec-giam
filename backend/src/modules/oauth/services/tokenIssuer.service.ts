@@ -12,6 +12,7 @@ import { getSessionWatch } from '../../../plugins/mongodb';
 import { RealmRecord } from '../../realm/models/realm.model';
 import { OAuthClient } from '../models/client.model';
 import { JwtTokenFormat } from './jwtTokenFormat';
+import { PrincipalRecord, oidcProfileClaims } from '../../directory/models/principal.model';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { newMeta } from '../../../shared/models/base.model';
 import { SOFT_ADMISSION_SCOPE } from './clientAuth.service';
@@ -62,6 +63,12 @@ export interface IssueTokensInput {
   nonce?: string;
   includeRefreshToken?: boolean;
   includeIdToken?: boolean;
+  /**
+   * The subject's directory record, read once by the caller. Only consumed here to fill the ID
+   * token's `name`/`preferred_username`/`email` per the granted scope (OIDC Core 1.0 5.4); a token
+   * issued with no `subjectProfile` carries none of them, same as a scope that was not granted.
+   */
+  subjectProfile?: Pick<PrincipalRecord, 'userName' | 'name' | 'primaryEmail'>;
   /**
    * The flow this issuance belongs to, carried as the `txn` claim.
    *
@@ -591,6 +598,9 @@ export class TokenIssuer {
         // as two.
         ...(txn ? { txn } : {}),
         ...(input.nonce ? { nonce: input.nonce } : {}),
+        // Bounded by the granted scope, exactly as UserInfo bounds the same subject's claims: a
+        // scope this token does not carry buys no claim here either.
+        ...(input.subjectProfile ? oidcProfileClaims(input.subjectProfile, input.scope) : {}),
       }, kid);
     }
 

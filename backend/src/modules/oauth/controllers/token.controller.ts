@@ -492,6 +492,7 @@ export async function tokenController(fastify: FastifyInstance) {
         nonce: pending.nonce,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
+        subjectProfile: identity,
       });
 
       recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
@@ -530,6 +531,7 @@ export async function tokenController(fastify: FastifyInstance) {
         txn: claimed.requestId,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
+        subjectProfile: identity,
       });
 
       // push delivery carries the tokens to the client's endpoint as well. The poll that got here
