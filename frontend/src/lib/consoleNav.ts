@@ -76,10 +76,12 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
   },
   {
     key: 'applications',
-    // Named for what it holds: consents this person granted, not the credential registry above. An
-    // OAuth application IS a credential (ADR-001), but WHO has authorized ONE to act for them is a
-    // different question, asked and answered here.
-    label: 'Authorized apps',
+    // Short here, same as "Authenticators" above is short for its own page's "Your authenticators":
+    // the nav names the section, the page itself is where "Authorized applications" earns its
+    // fuller wording. What this holds is consents this person granted, not the credential registry
+    // (Credentials > Applications is a different tab entirely, for a different question: an OAuth
+    // application IS a credential, ADR-001, but WHO authorized one to act for them is asked here).
+    label: 'Applications',
     path: '/system/applications',
     icon: Layers,
     description: 'Applications allowed to act on a principal\'s behalf, what each may do, and when it was granted.',
