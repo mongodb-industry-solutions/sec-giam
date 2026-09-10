@@ -15051,6 +15051,130 @@
         }
       }
     },
+    "/realms/{realm}/policies/{policyId}/resources": {
+      "get": {
+        "operationId": "listPolicyResources",
+        "summary": "Which resources this policy actually governs",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Every resource in this realm's own catalog that this policy's `resource` selector matches, exact name or pattern, resolved with the identical `resourceApplies` the decision engine uses. Not paged: a realm's resource catalog is the kind of thing read whole, the same reasoning `/permissions` and `/resource-servers` follow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "policyId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The resources this policy currently matches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The resources this policy currently matches.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resources",
+                    "total"
+                  ],
+                  "properties": {
+                    "resources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "resourceId",
+                          "name",
+                          "status"
+                        ],
+                        "properties": {
+                          "resourceId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "deprecated",
+                              "withdrawn"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "resources": [
+                    {
+                      "resourceId": "b2d5…",
+                      "name": "reports",
+                      "status": "active"
+                    }
+                  ],
+                  "total": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such policy in this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/decision": {
       "post": {
         "operationId": "evaluateDecision",

@@ -3,6 +3,7 @@ import { RealmService } from '../../realm/services/realm.service';
 import { PolicyAdminService, isPolicyRefusal } from '../services/policyAdmin.service';
 import { PolicyDecisionService } from '../services/policyDecision.service';
 import { RoleAdminService } from '../services/roleAdmin.service';
+import { ResourceAdminService } from '../services/resourceAdmin.service';
 import { authorityAccess, refusal } from '../services/authorityAccess';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requirePrincipal, requirePrincipalAtHome } from '../../../vendors/middleware/principalAuth';
@@ -288,6 +289,70 @@ export async function policyController(fastify: FastifyInstance) {
     const detail = await new PolicyAdminService(fastify.db).detail(realm.realmId, policyId);
     if (!detail) return reply.status(404).send(problem(404, 'No such policy'));
     return reply.send(detail);
+  });
+
+  /**
+   * Which of this realm's own resources this policy actually governs, resolved the same way a
+   * decision is: `resourceApplies` against the resource catalog, not a second, approximate idea of
+   * what `names`/`pattern` mean. A `names` policy's own list is trivially every match; a `pattern`
+   * one has no list at all until this runs it against every registered resource, which is the
+   * entire reason this is its own read rather than a field on the policy's own document.
+   */
+  fastify.get(`${base}/:policyId/resources`, {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'listPolicyResources',
+      tags: ['authorization'],
+      summary: 'Which resources this policy actually governs',
+      description:
+        'No applicable standard. Every resource in this realm\'s own catalog that this policy\'s '
+        + '`resource` selector matches, exact name or pattern, resolved with the identical '
+        + '`resourceApplies` the decision engine uses. Not paged: a realm\'s resource catalog is the '
+        + 'kind of thing read whole, the same reasoning `/permissions` and `/resource-servers` follow.',
+      security: [{ bearerAuth: [] }],
+      params: policyParams,
+      response: {
+        200: {
+          description: 'The resources this policy currently matches.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['resources', 'total'],
+          properties: {
+            resources: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['resourceId', 'name', 'status'],
+                properties: {
+                  resourceId: { type: 'string' },
+                  name: { type: 'string' },
+                  status: { type: 'string', enum: ['active', 'deprecated', 'withdrawn'] },
+                },
+              },
+            },
+            total: { type: 'integer' },
+          },
+          examples: [{ resources: [{ resourceId: 'b2d5…', name: 'reports', status: 'active' }], total: 1 }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
+        404: { $ref: 'Problem#', description: 'No such policy in this realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const { realm: realmName, policyId } = request.params as { realm: string; policyId: string };
+    const realm = await realmOf(realmName);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const gate = await administers(realm.realmId, request.principal!.subjectId, 'policies', 'view');
+    if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
+
+    const detail = await new PolicyAdminService(fastify.db).detail(realm.realmId, policyId);
+    if (!detail) return reply.status(404).send(problem(404, 'No such policy'));
+
+    const resources = await new ResourceAdminService(fastify.db).matching(realm.realmId, detail.resource);
+    return reply.send({ resources, total: resources.length });
   });
 
   fastify.post(base, {

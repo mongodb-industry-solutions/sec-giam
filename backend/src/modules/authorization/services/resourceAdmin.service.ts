@@ -4,6 +4,7 @@ import { RESOURCE_COLLECTION } from '../../../shared/models/collections';
 import { newMeta, touchMeta, DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
 import { recordConfigurationChange } from '../../audit/services/configurationChange';
 import { ResourceRecord, ResourceKind, ValidationMode } from '../models/resource.model';
+import { PolicyRecord, resourceApplies } from '../models/policy.model';
 
 /**
  * Reading the resource-server catalog back, and the one write it has.
@@ -125,6 +126,28 @@ export class ResourceAdminService {
         })),
       })),
     };
+  }
+
+  /**
+   * Every resource in this realm that a policy's own `resource` selector actually matches.
+   *
+   * The same `resourceApplies` the decision engine and the resource-detail page's own
+   * `?governs=` filter both use, run the other direction: given a policy, which of the realm's
+   * own resources fall under it, `names` and `pattern` handled identically since matching a
+   * catalog entry's name is the whole of what either one means. Only `kind: 'object'` entries
+   * count, because those are the resource TYPES a decision is ever actually asked about; a
+   * top-level server is never itself the target of one.
+   */
+  async matching(realmId: string, selector: PolicyRecord['resource']): Promise<Array<{
+    resourceId: string; name: string; status: ResourceRecord['status'];
+  }>> {
+    const candidates = await this.resources
+      .find({ realmId, kind: 'object' }, { projection: { _id: 0, resourceId: 1, name: 1, status: 1 } })
+      .sort({ name: 1 })
+      .toArray();
+    return candidates
+      .filter((candidate) => resourceApplies(selector, candidate.name))
+      .map((candidate) => ({ resourceId: candidate.resourceId, name: candidate.name, status: candidate.status }));
   }
 
   /**

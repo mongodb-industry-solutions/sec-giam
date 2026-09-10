@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Code2, ListChecks, Play, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Boxes, Code2, ListChecks, Play, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
-import { ErrorState, LoadingState } from '../../../../components/ResultState';
-import { ActionButton, Fact } from '../../../../components/RecordCard';
+import { Pagination } from '../../../../components/Pagination';
+import { ListToolbar } from '../../../../components/ListToolbar';
+import {
+  EmptyState, ErrorState, LoadingState, StatusBadge as CatalogStatusBadge,
+} from '../../../../components/ResultState';
+import { ActionButton, Fact, RecordCard } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { useConfirm } from '../../../../components/ConfirmProvider';
@@ -19,7 +23,7 @@ import {
 } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
-  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail,
+  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail, type PolicyResource,
 } from '../types';
 
 /**
@@ -138,6 +142,8 @@ export default function PolicyDetailPage() {
                 ? <PolicyEditor detail={detail} busy={policy.busy === 'save'} onSave={save} onCancel={() => setEditing(false)} />
                 : <PolicyStatement detail={detail} />}
 
+              {!editing && <GovernedResources policyId={detail.policyId} resourceSelector={detail.resource} />}
+
               <Simulator policyId={detail.policyId} subjectId={claims?.sub ?? ''} />
             </>
           )}
@@ -183,6 +189,97 @@ function PolicyStatement({ detail }: { detail: PolicyDetail }) {
           <p className="mt-3 border-l-2 border-gray-200 pl-2.5 text-sm italic text-gray-600">{detail.reason}</p>
         )}
       </div>
+    </section>
+  );
+}
+
+/**
+ * Which of this realm's own resources this policy actually governs, as an ordinary list: a name
+ * on its own is not "visible" the way a link, a status and a search box are, and it was exactly
+ * that flat one-line summary above (`describeResource`) that made it hard to tell which resources
+ * were really affected once a policy named more than one, or matched by pattern instead of naming
+ * any at all.
+ *
+ * `resource.names` and `resource.pattern` are exclusive in storage (the API refuses a policy naming
+ * both), so there is nothing here to reconcile: whichever one is actually stored is the only one
+ * this reads, and the read comes from the SAME `resourceApplies` the decision engine itself uses,
+ * never a second, approximate idea of what either one means. Fetched once (a realm's catalog is
+ * small enough to read whole, the same call `/permissions` and `/resource-servers` already make),
+ * search and paging happen over what was already read.
+ */
+function GovernedResources({ policyId, resourceSelector }: { policyId: string; resourceSelector: PolicyResource }) {
+  const read = useCallback(
+    () => callApi<{ resources: Array<{ resourceId: string; name: string; status: string }>; total: number }>(
+      `/policies/${encodeURIComponent(policyId)}/resources`,
+      { subject: 'the resources this policy governs' },
+    ),
+    [policyId],
+  );
+  const resources = useConsoleResource(read, 'The resources this policy governs could not be read.');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
+  const all = resources.data?.resources ?? [];
+  const filtered = query ? all.filter((r) => r.name.toLowerCase().includes(query.toLowerCase())) : all;
+  const total = filtered.length;
+  const rows = filtered.slice((page - 1) * limit, page * limit);
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="font-semibold text-[#001E2B]">Resources this policy governs</h2>
+        <p className="mt-0.5 text-sm text-gray-500">
+          {resourceSelector.pattern
+            ? `Every resource in this realm's catalog the pattern (${resourceSelector.pattern}) currently matches. A pattern names no resource directly, so this is the only place to see which ones it actually reaches.`
+            : 'Named exactly: this policy attaches to each of these directly, and to nothing this pattern alone might otherwise have matched.'}
+        </p>
+      </div>
+
+      <ListToolbar search={{ value: query, onChange: (next) => { setQuery(next); setPage(1); }, placeholder: 'Search by name' }} />
+
+      {resources.error && <ErrorState message={resources.error} onRetry={() => void resources.reload()} />}
+      {resources.loading && <LoadingState label="Reading the resources this policy governs…" />}
+
+      {!resources.loading && !resources.error && total === 0 && (
+        <EmptyState
+          icon={Boxes}
+          title={query ? 'No resource matches that' : 'This policy governs no resource yet'}
+          description={query
+            ? 'Nothing in the current match set matches that search.'
+            : resourceSelector.pattern
+              ? 'Nothing in this realm\'s resource catalog matches this pattern right now.'
+              : 'The names on this policy do not (or no longer) correspond to a registered resource.'}
+        />
+      )}
+
+      {!resources.loading && rows.length > 0 && (
+        <ul className="space-y-2">
+          {rows.map((resource) => (
+            <RecordCard
+              key={resource.resourceId}
+              title={(
+                <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
+                  {resource.name}
+                </Link>
+              )}
+              badges={<CatalogStatusBadge status={resource.status} />}
+            />
+          ))}
+        </ul>
+      )}
+
+      {!resources.loading && total > 0 && (
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(total / limit))}
+          total={total}
+          limit={limit}
+          noun="resources"
+          onPageChange={setPage}
+          onLimitChange={(next) => { setLimit(next); setPage(1); }}
+        />
+      )}
     </section>
   );
 }
