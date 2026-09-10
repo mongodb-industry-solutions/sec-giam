@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { POLICY_COLLECTION } from '../../../shared/models/collections';
 import { newMeta, touchMeta } from '../../../shared/models/base.model';
 import {
-  PolicyRecord, PolicyCondition, POLICY_CONDITION_KEYS, PolicyConditionKey, isInEffect,
+  PolicyRecord, PolicyCondition, POLICY_CONDITION_KEYS, PolicyConditionKey, isInEffect, resourceApplies,
 } from '../models/policy.model';
 import { parsePermission } from '../models/resource.model';
 
@@ -35,6 +35,9 @@ export interface PolicySummary {
   status: PolicyRecord['status'];
   /** Named outright, because "does this policy prohibit anything" is the first question asked. */
   effect: 'allow' | 'deny';
+  /** What it governs. Carried on the summary, not only the detail, so a resource's own screen can
+   * ask "which policies govern me" without a round trip per policy to find out. */
+  resource: PolicyRecord['resource'];
   permissionCount: number;
   conditionCount: number;
   /** False while a policy is drafted or dated ahead, so a list shows what actually decides today. */
@@ -45,7 +48,6 @@ export interface PolicySummary {
 
 export interface PolicyDetail extends PolicySummary {
   permissions: string[];
-  resource: PolicyRecord['resource'];
   principals?: string[];
   conditions: PolicyCondition[];
   obligations?: PolicyRecord['obligations'];
@@ -208,6 +210,7 @@ export class PolicyAdminService {
       version: policy.version,
       status: policy.status,
       effect: policy.effect,
+      resource: policy.resource,
       permissionCount: (policy.permissions ?? []).length,
       conditionCount: (policy.conditions ?? []).length,
       inEffect: isInEffect(policy),
@@ -218,7 +221,9 @@ export class PolicyAdminService {
 
   async list(
     realmId: string,
-    options: { q?: string; status?: PolicyRecord['status']; skip?: number; limit?: number } = {},
+    options: {
+      q?: string; status?: PolicyRecord['status']; governs?: string; skip?: number; limit?: number;
+    } = {},
   ): Promise<{ policies: PolicySummary[]; total: number }> {
     const skip = Math.max(0, options.skip ?? 0);
     const limit = Math.min(200, Math.max(1, options.limit ?? 20));
@@ -234,6 +239,23 @@ export class PolicyAdminService {
       ];
     }
 
+    if (options.governs) {
+      // Every candidate that could possibly govern this resource: an exact name is a plain equality
+      // a query can decide, but `resource.pattern` is a regular expression a query cannot evaluate,
+      // so a policy using one is a candidate here and `resourceApplies` decides for real below. This
+      // is a screen a human reads, not the decision path, so filtering candidates in memory rather
+      // than pushing every last bit of it into the query is the right trade here.
+      const candidates = await this.policies
+        .find({ ...filter, $or: [{ 'resource.names': options.governs }, { 'resource.pattern': { $exists: true } }] }, { projection: { _id: 0 } })
+        .sort({ name: 1 })
+        .toArray();
+      const matching = candidates.filter((policy) => resourceApplies(policy.resource, options.governs!));
+      return {
+        policies: matching.slice(skip, skip + limit).map((policy) => PolicyAdminService.summary(policy)),
+        total: matching.length,
+      };
+    }
+
     const [found, total] = await Promise.all([
       this.policies.find(filter, { projection: { _id: 0 } }).sort({ name: 1 }).skip(skip).limit(limit).toArray(),
       this.policies.countDocuments(filter),
@@ -247,7 +269,6 @@ export class PolicyAdminService {
     return {
       ...PolicyAdminService.summary(policy),
       permissions: policy.permissions ?? [],
-      resource: policy.resource,
       conditions: policy.conditions ?? [],
       ...(policy.principals ? { principals: policy.principals } : {}),
       ...(policy.obligations ? { obligations: policy.obligations } : {}),

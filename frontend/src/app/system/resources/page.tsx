@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import Link from 'next/link';
 import { Boxes } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Fact } from '../../../components/Fact';
@@ -96,7 +97,11 @@ export default function ResourcesPage() {
                 <tbody>
                   {server.resources.map((resource) => (
                     <tr key={resource.resourceId} className="border-b border-gray-50 last:border-0">
-                      <td className="px-3 py-2 font-medium text-[#001E2B]">{resource.name}</td>
+                      <td className="px-3 py-2 font-medium text-[#001E2B]">
+                        <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
+                          {resource.name}
+                        </Link>
+                      </td>
                       <td className="px-3 py-2">
                         <div className="flex flex-wrap gap-1">
                           {resource.actions.map((action) => (

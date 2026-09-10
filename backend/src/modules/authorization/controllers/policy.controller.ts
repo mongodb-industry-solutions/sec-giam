@@ -125,7 +125,7 @@ export async function policyController(fastify: FastifyInstance) {
   const policySummary = {
     type: 'object',
     additionalProperties: false,
-    required: ['policyId', 'name', 'version', 'status', 'effect', 'permissionCount', 'conditionCount', 'inEffect'],
+    required: ['policyId', 'name', 'version', 'status', 'effect', 'resource', 'permissionCount', 'conditionCount', 'inEffect'],
     properties: {
       policyId: { type: 'string' },
       name: { type: 'string' },
@@ -134,6 +134,7 @@ export async function policyController(fastify: FastifyInstance) {
       version: { type: 'integer' },
       status: { type: 'string', enum: ['draft', 'active', 'retired'] },
       effect: { type: 'string', enum: ['allow', 'deny'], description: 'Whether this policy prohibits. The first thing a reviewer wants to know.' },
+      resource: resourceSchema,
       permissionCount: { type: 'integer' },
       conditionCount: { type: 'integer' },
       inEffect: { type: 'boolean', description: 'False while drafted, retired, or dated ahead.' },
@@ -146,6 +147,7 @@ export async function policyController(fastify: FastifyInstance) {
       version: 1,
       status: 'active',
       effect: 'deny',
+      resource: { names: ['roles'] },
       permissionCount: 1,
       conditionCount: 1,
       inEffect: true,
@@ -155,7 +157,7 @@ export async function policyController(fastify: FastifyInstance) {
   const policyDetail = {
     type: 'object',
     additionalProperties: false,
-    required: [...policySummary.required, 'permissions', 'resource', 'conditions'],
+    required: [...policySummary.required, 'permissions', 'conditions'],
     properties: { ...policySummary.properties, ...policyBody },
     /**
      * The FLAT shape, which is what the endpoint returns.
@@ -219,6 +221,12 @@ export async function policyController(fastify: FastifyInstance) {
         properties: {
           q: { type: 'string', description: 'Case-insensitive match on name or version.' },
           status: { type: 'string', enum: ['draft', 'active', 'retired'] },
+          governs: {
+            type: 'string',
+            description:
+              'Only policies whose resource selector actually matches this resource name, by exact '
+              + 'name or by pattern. What a resource\'s own screen asks to show which policies govern it.',
+          },
           skip: { type: 'integer', default: 0 },
           limit: { type: 'integer', default: 20, maximum: 200 },
         },
@@ -244,10 +252,10 @@ export async function policyController(fastify: FastifyInstance) {
     const gate = await administers(realm.realmId, request.principal!.subjectId, 'policies', 'view');
     if ('refused' in gate) return reply.status(403).send(problem(403, 'Not permitted', gate.refused));
 
-    const { q, status, skip, limit } = request.query as {
-      q?: string; status?: 'draft' | 'active' | 'retired'; skip?: number; limit?: number;
+    const { q, status, governs, skip, limit } = request.query as {
+      q?: string; status?: 'draft' | 'active' | 'retired'; governs?: string; skip?: number; limit?: number;
     };
-    return reply.send(await new PolicyAdminService(fastify.db).list(realm.realmId, { q, status, skip, limit }));
+    return reply.send(await new PolicyAdminService(fastify.db).list(realm.realmId, { q, status, governs, skip, limit }));
   });
 
   fastify.get(`${base}/:policyId`, {

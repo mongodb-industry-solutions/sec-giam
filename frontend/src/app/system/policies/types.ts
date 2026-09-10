@@ -63,6 +63,9 @@ export interface PolicySummary {
   status: 'draft' | 'active' | 'retired';
   /** Whether this policy prohibits. The first thing a reviewer wants to know. */
   effect: 'allow' | 'deny';
+  /** Carried on the summary, not only the detail: a resource's own screen asks "which policies
+   * govern me" and needs this to decide, without a round trip per policy to find out. */
+  resource: PolicyResource;
   permissionCount: number;
   conditionCount: number;
   /** False while drafted, retired, or dated ahead, so a list shows what actually decides today. */
@@ -74,7 +77,6 @@ export interface PolicySummary {
 export interface PolicyDetail extends PolicySummary {
   /** Full permission strings, `resource:action`. The same spelling a role and a token use. */
   permissions: string[];
-  resource: PolicyResource;
   /** Subject patterns. `*` alone, or a trailing `*` for a prefix. Absent matches anyone. */
   principals?: string[];
   conditions: PolicyCondition[];

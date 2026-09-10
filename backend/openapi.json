@@ -13200,6 +13200,15 @@
           },
           {
             "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "governs",
+            "required": false,
+            "description": "Only policies whose resource selector actually matches this resource name, by exact name or by pattern. What a resource's own screen asks to show which policies govern it."
+          },
+          {
+            "schema": {
               "type": "integer",
               "default": 0
             },
@@ -13257,6 +13266,7 @@
                           "version",
                           "status",
                           "effect",
+                          "resource",
                           "permissionCount",
                           "conditionCount",
                           "inEffect"
@@ -13287,6 +13297,25 @@
                             ],
                             "description": "Whether this policy prohibits. The first thing a reviewer wants to know."
                           },
+                          "resource": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "names": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "pattern": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "A regular expression, compiled with RE2. Exclusive with `names`."
+                              }
+                            }
+                          },
                           "permissionCount": {
                             "type": "integer"
                           },
@@ -13310,6 +13339,11 @@
                           "version": 1,
                           "status": "active",
                           "effect": "deny",
+                          "resource": {
+                            "names": [
+                              "roles"
+                            ]
+                          },
                           "permissionCount": 1,
                           "conditionCount": 1,
                           "inEffect": true
@@ -13329,6 +13363,11 @@
                       "version": 1,
                       "status": "active",
                       "effect": "deny",
+                      "resource": {
+                        "names": [
+                          "roles"
+                        ]
+                      },
                       "permissionCount": 1,
                       "conditionCount": 1,
                       "inEffect": true
@@ -13596,11 +13635,11 @@
                     "version",
                     "status",
                     "effect",
+                    "resource",
                     "permissionCount",
                     "conditionCount",
                     "inEffect",
                     "permissions",
-                    "resource",
                     "conditions"
                   ],
                   "properties": {
@@ -13629,6 +13668,25 @@
                       ],
                       "description": "Deny wins over every allow, absolutely."
                     },
+                    "resource": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "names": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
+                        }
+                      }
+                    },
                     "permissionCount": {
                       "type": "integer"
                     },
@@ -13652,25 +13710,6 @@
                         "type": "string"
                       },
                       "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
-                    },
-                    "resource": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "names": {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": "string",
-                            "minLength": 1
-                          }
-                        },
-                        "pattern": {
-                          "type": "string",
-                          "minLength": 1,
-                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
-                        }
-                      }
                     },
                     "principals": {
                       "type": "array",
@@ -13796,17 +13835,17 @@
                   "version": 1,
                   "status": "active",
                   "effect": "deny",
+                  "resource": {
+                    "names": [
+                      "roles"
+                    ]
+                  },
                   "permissionCount": 1,
                   "conditionCount": 1,
                   "inEffect": true,
                   "permissions": [
                     "roles:manage"
                   ],
-                  "resource": {
-                    "names": [
-                      "roles"
-                    ]
-                  },
                   "conditions": [
                     {
                       "assuranceAtLeast": "aal2"
@@ -13918,11 +13957,11 @@
                     "version",
                     "status",
                     "effect",
+                    "resource",
                     "permissionCount",
                     "conditionCount",
                     "inEffect",
                     "permissions",
-                    "resource",
                     "conditions"
                   ],
                   "properties": {
@@ -13951,6 +13990,25 @@
                       ],
                       "description": "Deny wins over every allow, absolutely."
                     },
+                    "resource": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "names": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
+                        }
+                      }
+                    },
                     "permissionCount": {
                       "type": "integer"
                     },
@@ -13974,25 +14032,6 @@
                         "type": "string"
                       },
                       "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
-                    },
-                    "resource": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "names": {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": "string",
-                            "minLength": 1
-                          }
-                        },
-                        "pattern": {
-                          "type": "string",
-                          "minLength": 1,
-                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
-                        }
-                      }
                     },
                     "principals": {
                       "type": "array",
@@ -14118,17 +14157,17 @@
                   "version": 1,
                   "status": "active",
                   "effect": "deny",
+                  "resource": {
+                    "names": [
+                      "roles"
+                    ]
+                  },
                   "permissionCount": 1,
                   "conditionCount": 1,
                   "inEffect": true,
                   "permissions": [
                     "roles:manage"
                   ],
-                  "resource": {
-                    "names": [
-                      "roles"
-                    ]
-                  },
                   "conditions": [
                     {
                       "assuranceAtLeast": "aal2"
@@ -14393,11 +14432,11 @@
                     "version",
                     "status",
                     "effect",
+                    "resource",
                     "permissionCount",
                     "conditionCount",
                     "inEffect",
                     "permissions",
-                    "resource",
                     "conditions"
                   ],
                   "properties": {
@@ -14426,6 +14465,25 @@
                       ],
                       "description": "Deny wins over every allow, absolutely."
                     },
+                    "resource": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "names": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
+                        }
+                      }
+                    },
                     "permissionCount": {
                       "type": "integer"
                     },
@@ -14449,25 +14507,6 @@
                         "type": "string"
                       },
                       "description": "Full permission strings, `resource:action`. The same spelling a role and a token use."
-                    },
-                    "resource": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "names": {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": "string",
-                            "minLength": 1
-                          }
-                        },
-                        "pattern": {
-                          "type": "string",
-                          "minLength": 1,
-                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
-                        }
-                      }
                     },
                     "principals": {
                       "type": "array",
@@ -14593,17 +14632,17 @@
                   "version": 1,
                   "status": "active",
                   "effect": "deny",
+                  "resource": {
+                    "names": [
+                      "roles"
+                    ]
+                  },
                   "permissionCount": 1,
                   "conditionCount": 1,
                   "inEffect": true,
                   "permissions": [
                     "roles:manage"
                   ],
-                  "resource": {
-                    "names": [
-                      "roles"
-                    ]
-                  },
                   "conditions": [
                     {
                       "assuranceAtLeast": "aal2"
