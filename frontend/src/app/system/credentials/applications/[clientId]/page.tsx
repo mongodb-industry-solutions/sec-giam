@@ -11,17 +11,25 @@ import { Tooltip } from '../../../../../components/Tooltip';
 import { Fact } from '../../../../../components/Fact';
 import { SecretOnce } from '../../../../../components/SecretOnce';
 import { Pagination } from '../../../../../components/Pagination';
+import { UriListEditor } from '../../../../../components/UriListEditor';
+import { IntegrationUrls } from '../../../../../components/IntegrationUrls';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../../components/ResultState';
 import { ApiError, callApi, when } from '../../../../../lib/console';
+import { storedRealm } from '../../../../../lib/session';
 import { useConsoleResource } from '../../../../../lib/useConsoleResource';
 import { useConfirm } from '../../../../../components/ConfirmProvider';
 import {
-  ClientOwner, RegisteredClient, SELF_SERVICE_SCOPES, firstRedirectProblem, linesToUris,
+  ClientOwner, RegisteredClient, SELF_SERVICE_SCOPES, redirectUriProblem, firstRedirectProblem,
 } from '../../../../../lib/clients';
 
 const FIELD_LABEL = 'text-[10px] uppercase tracking-wider text-gray-400';
 const FIELD_INPUT = 'mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10';
 const FIELD_INPUT_MONO = `${FIELD_INPUT} font-mono text-xs`;
+
+/** Two address lists read the same when they hold the same entries in the same order. */
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
 
 /**
  * One registered application: what it is, what it may return to, and its credential.
@@ -50,8 +58,8 @@ export default function ClientDetailPage() {
   // Draft fields, reset to the server's own values whenever `client` changes: once on the first
   // read, and again the moment a save reloads it, so a saved change can never look undone.
   const [name, setName] = useState('');
-  const [redirects, setRedirects] = useState('');
-  const [postLogout, setPostLogout] = useState('');
+  const [redirects, setRedirects] = useState<string[]>([]);
+  const [postLogout, setPostLogout] = useState<string[]>([]);
   const [scope, setScope] = useState('');
   const [logoUri, setLogoUri] = useState('');
   const [saving, setSaving] = useState(false);
@@ -77,8 +85,8 @@ export default function ClientDetailPage() {
   useEffect(() => {
     if (!client) return;
     setName(client.client_name ?? '');
-    setRedirects((client.redirect_uris ?? []).join('\n'));
-    setPostLogout((client.post_logout_redirect_uris ?? []).join('\n'));
+    setRedirects(client.redirect_uris ?? []);
+    setPostLogout(client.post_logout_redirect_uris ?? []);
     setScope(client.scope ?? '');
     setLogoUri(client.logo_uri ?? '');
     setSaveFailure(null);
@@ -87,8 +95,8 @@ export default function ClientDetailPage() {
   const dirty = useMemo(() => {
     if (!client) return false;
     return name !== (client.client_name ?? '')
-      || redirects !== (client.redirect_uris ?? []).join('\n')
-      || postLogout !== (client.post_logout_redirect_uris ?? []).join('\n')
+      || !sameList(redirects, client.redirect_uris ?? [])
+      || !sameList(postLogout, client.post_logout_redirect_uris ?? [])
       || scope !== (client.scope ?? '')
       || logoUri !== (client.logo_uri ?? '');
   }, [client, name, redirects, postLogout, scope, logoUri]);
@@ -112,10 +120,10 @@ export default function ClientDetailPage() {
   }
 
   async function save() {
-    const redirectUris = linesToUris(redirects);
+    const redirectUris = redirects.map((uri) => uri.trim()).filter(Boolean);
     const problem = firstRedirectProblem(redirectUris);
     if (problem) { setSaveFailure(problem); return; }
-    const logoutUris = linesToUris(postLogout);
+    const logoutUris = postLogout.map((uri) => uri.trim()).filter(Boolean);
     const logoutProblem = firstRedirectProblem(logoutUris);
     if (logoutProblem) { setSaveFailure(logoutProblem); return; }
 
@@ -276,17 +284,31 @@ export default function ClientDetailPage() {
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block">
+              <div>
                 <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
                   Redirect URIs
-                  <Tooltip text="Compared exactly, never by prefix. One address per line, written in full. A wildcard is refused, and plain HTTP is accepted only on a loopback address." />
+                  <Tooltip text="Compared exactly, never by prefix. Written in full, one address per row. A wildcard is refused, and plain HTTP is accepted only on a loopback address." />
                 </span>
-                <textarea rows={3} value={redirects} onChange={(event) => setRedirects(event.target.value)} className={FIELD_INPUT_MONO} />
-              </label>
-              <label className="block">
+                <div className="mt-1">
+                  <UriListEditor
+                    values={redirects}
+                    onChange={setRedirects}
+                    placeholder="https://app.example/callback"
+                    problemFor={redirectUriProblem}
+                  />
+                </div>
+              </div>
+              <div>
                 <span className={FIELD_LABEL}>Post sign-out redirect URIs</span>
-                <textarea rows={3} value={postLogout} onChange={(event) => setPostLogout(event.target.value)} className={FIELD_INPUT_MONO} />
-              </label>
+                <div className="mt-1">
+                  <UriListEditor
+                    values={postLogout}
+                    onChange={setPostLogout}
+                    placeholder="https://app.example/signed-out"
+                    problemFor={redirectUriProblem}
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -310,6 +332,8 @@ export default function ClientDetailPage() {
               />
             </div>
           </section>
+
+          <IntegrationUrls realm={storedRealm()} grantTypes={client.grant_types ?? []} />
 
           <OwnersPanel
             owners={client.owners ?? []}
