@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Check, Plus, UserX, UsersRound, X } from 'lucide-react';
+import { Check, Plus, UserX, UsersRound } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Pagination } from '../../../components/Pagination';
 import { FilterChips } from '../../../components/FilterChips';
@@ -35,10 +35,12 @@ export default function IdentitiesPage() {
 }
 
 function IdentitiesInner() {
-  // `domainId` arrives only as a link from a domain's own screen, never typed by hand, so it is read
-  // once from the address rather than added to the attribute picker's vocabulary.
+  // Read once from the address so a link from a domain's own screen still lands pre-filtered, but
+  // also offered as an ordinary picker below: arriving only by URL meant the same question asked
+  // from this screen directly had no way to be asked at all.
   const searchParams = useSearchParams();
-  const [domainId, setDomainId] = useState<string | null>(() => searchParams.get('domainId'));
+  const [domainId, setDomainId] = useState<string>(() => searchParams.get('domainId') ?? '');
+  const [kind, setKind] = useState<string>('');
 
   const [list, setList] = useState<ScimList | null>(null);
   const [scope, setScope] = useState<Scope>('all');
@@ -63,7 +65,8 @@ function IdentitiesInner() {
         subject: 'the principal directory',
         query: {
           filter: applied,
-          domainId: domainId ?? undefined,
+          domainId: domainId || undefined,
+          kind: kind || undefined,
           pending: scope === 'pending' ? 'true' : undefined,
           // One-based, per the specification. An off-by-one here silently skips a record per page.
           startIndex: (pageNumber - 1) * limit + 1,
@@ -76,7 +79,7 @@ function IdentitiesInner() {
     } finally {
       setLoading(false);
     }
-  }, [applied, domainId, scope, pageNumber, limit]);
+  }, [applied, domainId, kind, scope, pageNumber, limit]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -139,30 +142,52 @@ function IdentitiesInner() {
         />
       )}
 
-      {domainId && (
-        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-          <span>Showing principals provisioned through one authentication path.</span>
-          <button
-            type="button"
-            onClick={() => { setDomainId(null); setPageNumber(1); }}
-            className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-0.5 font-medium text-gray-700 hover:bg-gray-100"
-          >
-            <X size={11} aria-hidden />
-            Clear
-          </button>
-        </div>
-      )}
+      <div className="flex flex-wrap items-end gap-4">
+        <Tooltip text="A principal awaiting approval exists but cannot sign in yet: this realm reviews sign-ups rather than approving them automatically.">
+          <div className="inline-block">
+            <FilterChips
+              label="Filter by lifecycle"
+              value={scope}
+              onChange={(next) => { setScope(next); setPageNumber(1); }}
+              options={[{ key: 'all', label: 'All' }, { key: 'pending', label: 'Awaiting approval' }]}
+            />
+          </div>
+        </Tooltip>
 
-      <Tooltip text="A principal awaiting approval exists but cannot sign in yet: this realm reviews sign-ups rather than approving them automatically.">
-        <div className="inline-block">
-          <FilterChips
-            label="Filter by lifecycle"
-            value={scope}
-            onChange={(next) => { setScope(next); setPageNumber(1); }}
-            options={[{ key: 'all', label: 'All' }, { key: 'pending', label: 'Awaiting approval' }]}
-          />
-        </div>
-      </Tooltip>
+        <Tooltip text="The authentication path a principal was provisioned through. Every credential it can sign in with belongs to this path.">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">Filter by authentication path</span>
+            <select
+              value={domainId}
+              onChange={(event) => { setDomainId(event.target.value); setPageNumber(1); }}
+              className="mt-1 block h-[34px] rounded-lg border border-gray-200 px-2 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+            >
+              <option value="">Every path</option>
+              {domainName.domains.map((domain) => (
+                <option key={domain.domainId} value={domain.domainId}>{domain.displayName}</option>
+              ))}
+            </select>
+          </label>
+        </Tooltip>
+
+        <Tooltip text="What this principal IS, not how it authenticates: a person, a workload, an agent, an application acting as its own credential, or a service.">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">Filter by kind</span>
+            <select
+              value={kind}
+              onChange={(event) => { setKind(event.target.value); setPageNumber(1); }}
+              className="mt-1 block h-[34px] rounded-lg border border-gray-200 px-2 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+            >
+              <option value="">Every kind</option>
+              <option value="human">Person</option>
+              <option value="workload">Workload</option>
+              <option value="agent">Agent</option>
+              <option value="application">Application</option>
+              <option value="service">Service</option>
+            </select>
+          </label>
+        </Tooltip>
+      </div>
 
       <form
         className="flex flex-wrap items-end gap-2"

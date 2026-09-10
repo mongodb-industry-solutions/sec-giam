@@ -2,6 +2,7 @@
 
 import { Tooltip } from '../../../components/Tooltip';
 import { Field, INPUT } from '../roles/parts';
+import type { CatalogPermission } from '../roles/types';
 import type { PolicyCondition, PolicyResource } from './types';
 
 /** The small pieces both policy screens use. Kept out of the pages so neither owns the other's shape. */
@@ -79,35 +80,103 @@ export function describeResource(resource: PolicyResource): string {
   return 'unspecified';
 }
 
+/** Every field on this screen that takes "one or several" holds them the same way: comma separated. */
+export function splitPatterns(value: string): string[] {
+  return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+/** Adds or removes one value from a comma-separated field, without disturbing anything typed by hand. */
+function toggleCsv(current: string, value: string, checked: boolean): string {
+  const values = splitPatterns(current);
+  const next = checked ? [...new Set([...values, value])] : values.filter((entry) => entry !== value);
+  return next.join(', ');
+}
+
 /**
  * Which resource a policy governs, exact names or a regular expression. Shared by the create form
  * and the detail page's editor, so the two cannot drift into offering the choice differently.
+ *
+ * `catalog`, when given, offers every resource this realm's own resource servers have actually
+ * declared as checkboxes alongside the free-text field: the common case is picking one that already
+ * exists, and typing remains for a resource not registered yet, or a realm with none to offer.
  */
-export function ResourceFields({ mode, onModeChange, names, onNamesChange, pattern, onPatternChange }: {
+export function ResourceFields({ mode, onModeChange, names, onNamesChange, pattern, onPatternChange, catalog }: {
   mode: 'names' | 'pattern';
   onModeChange: (mode: 'names' | 'pattern') => void;
   names: string;
   onNamesChange: (value: string) => void;
   pattern: string;
   onPatternChange: (value: string) => void;
+  catalog?: string[];
 }) {
+  const selected = new Set(splitPatterns(names));
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <Field label="Resource, by" hint="Exact names are a fast, indexed lookup. A pattern is a regular expression, compiled with RE2 so it cannot hang a decision, evaluated only against the policies that chose it.">
-        <select value={mode} onChange={(e) => onModeChange(e.target.value as 'names' | 'pattern')} className={INPUT}>
-          <option value="names">Exact name(s)</option>
-          <option value="pattern">Pattern (regular expression)</option>
-        </select>
-      </Field>
-      {mode === 'names' ? (
-        <Field label="Resource name(s)" hint="Comma separated, e.g. roles, sessions.">
-          <input required value={names} onChange={(e) => onNamesChange(e.target.value)} className={INPUT} placeholder="roles" />
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Resource, by" hint="Exact names are a fast, indexed lookup. A pattern is a regular expression, compiled with RE2 so it cannot hang a decision, evaluated only against the policies that chose it.">
+          <select value={mode} onChange={(e) => onModeChange(e.target.value as 'names' | 'pattern')} className={INPUT}>
+            <option value="names">Exact name(s)</option>
+            <option value="pattern">Pattern (regular expression)</option>
+          </select>
         </Field>
-      ) : (
-        <Field label="Pattern" hint="A regular expression (RE2 syntax), matched against the resource name.">
-          <input required value={pattern} onChange={(e) => onPatternChange(e.target.value)} className={INPUT} placeholder="^reports.*" />
-        </Field>
+        {mode === 'names' ? (
+          <Field label="Resource name(s)" hint="Comma separated, e.g. roles, sessions. Or check them below.">
+            <input required value={names} onChange={(e) => onNamesChange(e.target.value)} className={INPUT} placeholder="roles" />
+          </Field>
+        ) : (
+          <Field label="Pattern" hint="A regular expression (RE2 syntax), matched against the resource name.">
+            <input required value={pattern} onChange={(e) => onPatternChange(e.target.value)} className={INPUT} placeholder="^reports.*" />
+          </Field>
+        )}
+      </div>
+
+      {mode === 'names' && catalog && catalog.length > 0 && (
+        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
+          {catalog.map((name) => (
+            <label key={name} className="flex items-center gap-1.5 py-0.5 text-xs text-gray-700">
+              <input
+                type="checkbox"
+                checked={selected.has(name)}
+                onChange={(e) => onNamesChange(toggleCsv(names, name, e.target.checked))}
+                className="rounded border-gray-300"
+              />
+              <span className="font-mono">{name}</span>
+            </label>
+          ))}
+        </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Every `resource:action` this realm's catalog declares, as checkboxes toggling the same
+ * comma-separated field a caller can also type into directly: wildcards (`roles:*`, `*`) have no
+ * catalog entry to check, so free text stays the only way to reach them.
+ */
+export function PermissionChecklist({ value, onChange, catalog }: {
+  value: string;
+  onChange: (next: string) => void;
+  catalog: CatalogPermission[];
+}) {
+  const selected = new Set(splitPatterns(value));
+  if (catalog.length === 0) return null;
+  return (
+    <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
+      {catalog.map((permission) => {
+        const key = `${permission.resource}:${permission.action}`;
+        return (
+          <label key={key} className="flex items-center gap-1.5 py-0.5 text-xs text-gray-700">
+            <input
+              type="checkbox"
+              checked={selected.has(key)}
+              onChange={(e) => onChange(toggleCsv(value, key, e.target.checked))}
+              className="rounded border-gray-300"
+            />
+            <span className="font-mono">{key}</span>
+          </label>
+        );
+      })}
     </div>
   );
 }

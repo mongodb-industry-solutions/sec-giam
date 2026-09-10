@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Scale, X } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
@@ -12,7 +12,8 @@ import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
 import { usePermissions } from '../../../lib/profile';
 import { Field, INPUT } from '../roles/parts';
-import { EffectBadge, ResourceFields, StatusBadge } from './parts';
+import type { CatalogPermission } from '../roles/types';
+import { EffectBadge, PermissionChecklist, ResourceFields, StatusBadge } from './parts';
 import type { PolicyDetail, PolicySummary } from './types';
 
 /**
@@ -196,6 +197,24 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
 
   const resourceGiven = resourceMode === 'names' ? resourceNames.trim() : resourcePattern.trim();
 
+  const readCatalog = useCallback(
+    () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
+    [],
+  );
+  const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
+  const readResources = useCallback(
+    () => callApi<{ resourceServers: Array<{ resources: Array<{ name: string }> }> }>('/resource-servers', { subject: 'the resource server catalog' }),
+    [],
+  );
+  const resourceServers = useConsoleResource(readResources, 'The resource server catalog could not be read.');
+  useEffect(() => {
+    void catalog.reload(); void resourceServers.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const resourceCatalog = [...new Set(
+    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((entry) => entry.name)),
+  )].sort();
+
   return (
     <form
       onSubmit={(event) => {
@@ -230,11 +249,13 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         onNamesChange={setResourceNames}
         pattern={resourcePattern}
         onPatternChange={setResourcePattern}
+        catalog={resourceCatalog}
       />
 
-      <Field label="Permissions" hint="Comma separated, full resource:action strings. The same spelling a role and a token use.">
+      <Field label="Permissions" hint="Comma separated, full resource:action strings. Or check them below.">
         <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} placeholder="roles:manage, sessions:view" />
       </Field>
+      <PermissionChecklist value={permissions} onChange={setPermissions} catalog={catalog.data?.permissions ?? []} />
 
       <Field label="Reason" hint="Carried into every decision this policy makes. A decision a log cannot explain is not auditable.">
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={INPUT} />

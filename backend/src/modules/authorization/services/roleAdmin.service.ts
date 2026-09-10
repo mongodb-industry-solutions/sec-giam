@@ -766,21 +766,29 @@ export class RoleAdminService {
       .toArray();
     const byId = new Map(resources.map((resource) => [resource.resourceId, resource]));
 
-    const catalog: Array<{
+    const catalog = new Map<string, {
       permission: string; resource: string; action: string; description: string; resourceServer: string;
-    }> = [];
+    }>();
     for (const resource of resources) {
       const parent = resource.parentResourceId ? byId.get(resource.parentResourceId) : undefined;
       for (const action of resource.actions ?? []) {
-        catalog.push({
-          permission: permissionString(resource.name, action),
-          resource: resource.name,
-          action,
-          description: resource.description ?? '',
-          resourceServer: parent?.name ?? resource.name,
-        });
+        const permission = permissionString(resource.name, action);
+        // Two different resource servers can each declare a resource type of the same name (nothing
+        // stops "accounts" existing under two applications), and a permission is the STRING, not the
+        // pair of resource and server: `accounts:view` is one grantable thing everywhere it is held
+        // or checked, so the first server to declare it is the one this catalog remembers, rather
+        // than listing the same permission twice with nothing to tell the two apart once granted.
+        if (!catalog.has(permission)) {
+          catalog.set(permission, {
+            permission,
+            resource: resource.name,
+            action,
+            description: resource.description ?? '',
+            resourceServer: parent?.name ?? resource.name,
+          });
+        }
       }
     }
-    return catalog.sort((a, b) => a.permission.localeCompare(b.permission));
+    return [...catalog.values()].sort((a, b) => a.permission.localeCompare(b.permission));
   }
 }

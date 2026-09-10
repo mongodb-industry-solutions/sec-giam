@@ -4,7 +4,7 @@ import { RealmService } from '../../realm/services/realm.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requireAuthority } from '../../../vendors/middleware/authorityAuth';
 import { PRINCIPAL_COLLECTION, ROLE_COLLECTION } from '../../../shared/models/collections';
-import { PrincipalRecord } from '../models/principal.model';
+import { PrincipalRecord, PrincipalKind } from '../models/principal.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { provisioningTargets } from '../../../shared/ports';
 import {
@@ -113,9 +113,10 @@ export async function scimController(fastify: FastifyInstance) {
         'Standard-defined: SCIM 2.0, RFC 7644 section 3.4.2. Only `eq` filters on userName, '
         + 'externalId and active are supported, and anything else is REFUSED rather than partially '
         + 'interpreted: a mistranslated filter returns the wrong principals instead of an error, '
-        + 'which is far worse than an honest refusal. `domainId` and `pending` are separate, '
+        + 'which is far worse than an honest refusal. `domainId`, `kind` and `pending` are separate, '
         + 'platform-specific parameters rather than folded into `filter`, so the standard grammar '
-        + 'stays exactly the standard grammar and neither narrowing is ever mistaken for part of it.',
+        + 'stays exactly the standard grammar and none of these narrowings is ever mistaken for '
+        + 'part of it.',
       security: [{ bearerAuth: [] }],
       params: realmParam,
       querystring: {
@@ -123,6 +124,7 @@ export async function scimController(fastify: FastifyInstance) {
         properties: {
           filter: { type: 'string', examples: ['userName eq "ada"'] },
           domainId: { type: 'string', description: 'Principals provisioned through this authentication path.' },
+          kind: { type: 'string', enum: ['human', 'workload', 'agent', 'application', 'service'], description: 'What this principal IS, not how it authenticates: a person, a workload, an agent, an application acting as its own credential, or a service.' },
           pending: { type: 'boolean', description: 'Self-registered principals awaiting approval.' },
           startIndex: { type: 'integer', default: 1, description: 'One-based, per the specification.' },
           count: { type: 'integer', default: 100 },
@@ -157,8 +159,8 @@ export async function scimController(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const { realm: realmName } = request.params as { realm: string };
-    const { filter, domainId, pending, startIndex, count } = request.query as {
-      filter?: string; domainId?: string; pending?: boolean; startIndex?: number; count?: number;
+    const { filter, domainId, kind, pending, startIndex, count } = request.query as {
+      filter?: string; domainId?: string; kind?: PrincipalKind; pending?: boolean; startIndex?: number; count?: number;
     };
 
     const realm = await realmOf(realmName);
@@ -175,6 +177,7 @@ export async function scimController(fastify: FastifyInstance) {
       realmId: realm.realmId,
       ...parsed,
       ...(domainId ? { domainId } : {}),
+      ...(kind ? { kind } : {}),
       ...(pending ? { lifecycleState: 'pending' as const } : {}),
     };
 

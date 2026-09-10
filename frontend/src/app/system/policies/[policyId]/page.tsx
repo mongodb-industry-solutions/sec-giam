@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Play, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Code2, ListChecks, Play, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { ErrorState, LoadingState } from '../../../../components/ResultState';
@@ -13,7 +13,8 @@ import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { Field, INPUT } from '../../roles/parts';
 import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import {
-  EffectBadge, PatternList, ResourceFields, StatusBadge, describeCondition, describeResource,
+  EffectBadge, PatternList, PermissionChecklist, ResourceFields, StatusBadge,
+  describeCondition, describeResource, splitPatterns,
 } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
@@ -212,8 +213,8 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
     setCondition(patch === undefined || Object.keys(patch).length === 0 ? undefined : patch);
   }
 
-  // Fetched here rather than at the page level: only an editing screen needs a role and a
-  // permission to pick from, and this component only exists while one is open.
+  // Fetched here rather than at the page level: only an editing screen needs a role, a permission
+  // and a resource to pick from, and this component only exists while one is open.
   const readCatalog = useCallback(
     () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
     [],
@@ -224,70 +225,176 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
     [],
   );
   const allRoles = useConsoleResource(readRoles, 'The roles could not be read.');
-  useEffect(() => { void catalog.reload(); void allRoles.reload(); }, [catalog.reload, allRoles.reload]);
+  const readResources = useCallback(
+    () => callApi<{ resourceServers: Array<{ resources: Array<{ name: string }> }> }>('/resource-servers', { subject: 'the resource server catalog' }),
+    [],
+  );
+  const resourceServers = useConsoleResource(readResources, 'The resource server catalog could not be read.');
+  useEffect(() => {
+    void catalog.reload(); void allRoles.reload(); void resourceServers.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const resourceCatalog = [...new Set(
+    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((entry) => entry.name)),
+  )].sort();
+
+  function buildPatch(): Record<string, unknown> {
+    // A role or permission checkbox toggled on and then fully unchecked leaves an empty array
+    // behind rather than removing the key; stripped here so the request never carries a condition
+    // that could never hold.
+    const sent = condition
+      ? Object.fromEntries(Object.entries(condition).filter(([, value]) => !(Array.isArray(value) && value.length === 0)))
+      : undefined;
+    return {
+      effect,
+      resource: resourceMode === 'names' ? { names: splitPatterns(resourceNames) } : { pattern: resourcePattern },
+      permissions: splitPatterns(permissions),
+      ...(principals.trim() ? { principals: splitPatterns(principals) } : { principals: [] }),
+      conditions: sent && Object.keys(sent).length > 0 ? [sent] : [],
+      ...(reason.trim() ? { reason: reason.trim() } : {}),
+    };
+  }
+
+  const [mode, setMode] = useState<'form' | 'json'>('form');
+  const [json, setJson] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  function enterJsonMode() {
+    setJson(JSON.stringify(buildPatch(), null, 2));
+    setJsonError(null);
+    setMode('json');
+  }
+
+  /** Best-effort: what was typed becomes the form's own fields, so switching back loses nothing. */
+  function enterFormMode() {
+    try {
+      const parsed = JSON.parse(json) as {
+        effect?: 'allow' | 'deny'; resource?: { names?: string[]; pattern?: string };
+        permissions?: string[]; principals?: string[]; reason?: string; conditions?: PolicyCondition[];
+      };
+      if (parsed.effect === 'allow' || parsed.effect === 'deny') setEffect(parsed.effect);
+      const resource = parsed.resource ?? {};
+      if (resource.pattern) { setResourceMode('pattern'); setResourcePattern(resource.pattern); } else {
+        setResourceMode('names');
+        setResourceNames((resource.names ?? []).join(', '));
+      }
+      setPermissions((parsed.permissions ?? []).join(', '));
+      setPrincipals((parsed.principals ?? []).join(', '));
+      setReason(parsed.reason ?? '');
+      setCondition(parsed.conditions?.[0]);
+      setJsonError(null);
+      setMode('form');
+    } catch {
+      setJsonError('This is not valid JSON. Fix it, or cancel to discard these changes.');
+    }
+  }
+
+  let jsonParseError: string | null = null;
+  if (mode === 'json') {
+    try { JSON.parse(json); } catch { jsonParseError = 'This is not valid JSON.'; }
+  }
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        // A role or permission checkbox toggled on and then fully unchecked leaves an empty array
-        // behind rather than removing the key; stripped here so the request never carries a
-        // condition that could never hold.
-        const sent = condition
-          ? Object.fromEntries(Object.entries(condition).filter(([, value]) => !(Array.isArray(value) && value.length === 0)))
-          : undefined;
-        onSave({
-          effect,
-          resource: resourceMode === 'names' ? { names: splitPatterns(resourceNames) } : { pattern: resourcePattern },
-          permissions: splitPatterns(permissions),
-          ...(principals.trim() ? { principals: splitPatterns(principals) } : { principals: [] }),
-          conditions: sent && Object.keys(sent).length > 0 ? [sent] : [],
-          ...(reason.trim() ? { reason: reason.trim() } : {}),
-        });
+        if (mode === 'json') {
+          try {
+            onSave(JSON.parse(json) as Record<string, unknown>);
+          } catch {
+            setJsonError('This is not valid JSON.');
+          }
+          return;
+        }
+        onSave(buildPatch());
       }}
       className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
     >
-      <h2 className="font-semibold text-[#001E2B]">Edit what it states</h2>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Effect" hint="Deny wins over every allow in the realm.">
-          <select value={effect} onChange={(e) => setEffect(e.target.value as 'allow' | 'deny')} className={INPUT}>
-            <option value="allow">Allow</option>
-            <option value="deny">Deny</option>
-          </select>
-        </Field>
-        <Field label="Permissions" hint="Comma separated, full resource:action strings.">
-          <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} />
-        </Field>
-        <Field label="Principals" hint="Comma separated. Empty matches anyone. A trailing * matches a prefix.">
-          <input value={principals} onChange={(e) => setPrincipals(e.target.value)} className={INPUT} />
-        </Field>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold text-[#001E2B]">Edit what it states</h2>
+        <div className="flex gap-1 text-xs">
+          <button
+            type="button"
+            onClick={() => { if (mode === 'json') enterFormMode(); }}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium ${mode === 'form' ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+          >
+            <ListChecks size={12} aria-hidden />
+            Form
+          </button>
+          <button
+            type="button"
+            onClick={() => { if (mode === 'form') enterJsonMode(); }}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium ${mode === 'json' ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+          >
+            <Code2 size={12} aria-hidden />
+            JSON
+          </button>
+        </div>
       </div>
 
-      <ResourceFields
-        mode={resourceMode}
-        onModeChange={setResourceMode}
-        names={resourceNames}
-        onNamesChange={setResourceNames}
-        pattern={resourcePattern}
-        onPatternChange={setResourcePattern}
-      />
+      {mode === 'json' ? (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            The same document `PATCH /realms/:realm/policies/:policyId` accepts, edited directly.
+            Switching back to the form parses this; an invalid document stays here until it is valid JSON.
+          </p>
+          <textarea
+            value={json}
+            onChange={(e) => { setJson(e.target.value); setJsonError(null); }}
+            rows={16}
+            spellCheck={false}
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-xs text-gray-800 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          />
+          {(jsonError ?? jsonParseError) && <p className="text-xs text-red-600">{jsonError ?? jsonParseError}</p>}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Effect" hint="Deny wins over every allow in the realm.">
+              <select value={effect} onChange={(e) => setEffect(e.target.value as 'allow' | 'deny')} className={INPUT}>
+                <option value="allow">Allow</option>
+                <option value="deny">Deny</option>
+              </select>
+            </Field>
+            <Field label="Principals" hint="Comma separated. Empty matches anyone. A trailing * matches a prefix.">
+              <input value={principals} onChange={(e) => setPrincipals(e.target.value)} className={INPUT} />
+            </Field>
+          </div>
 
-      <ConditionEditor
-        condition={condition}
-        onChange={changeCondition}
-        roles={allRoles.data?.roles ?? []}
-        permissions={catalog.data?.permissions ?? []}
-      />
+          <Field label="Permissions" hint="Comma separated, full resource:action strings. Or check them below; a wildcard has no box to check, so typing stays the way to reach one.">
+            <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} />
+          </Field>
+          <PermissionChecklist value={permissions} onChange={setPermissions} catalog={catalog.data?.permissions ?? []} />
 
-      <Field label="Reason" hint="Carried into the decision. Write what a reader should understand months from now.">
-        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={INPUT} />
-      </Field>
+          <ResourceFields
+            mode={resourceMode}
+            onModeChange={setResourceMode}
+            names={resourceNames}
+            onNamesChange={setResourceNames}
+            pattern={resourcePattern}
+            onPatternChange={setResourcePattern}
+            catalog={resourceCatalog}
+          />
+
+          <ConditionEditor
+            condition={condition}
+            onChange={changeCondition}
+            roles={allRoles.data?.roles ?? []}
+            permissions={catalog.data?.permissions ?? []}
+          />
+
+          <Field label="Reason" hint="Carried into the decision. Write what a reader should understand months from now.">
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={INPUT} />
+          </Field>
+        </>
+      )}
 
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={busy || !permissions.trim() || !(resourceMode === 'names' ? resourceNames.trim() : resourcePattern.trim())}
+          disabled={busy || (mode === 'json'
+            ? Boolean(jsonParseError)
+            : !permissions.trim() || !(resourceMode === 'names' ? resourceNames.trim() : resourcePattern.trim()))}
           className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
         >
           <Save size={12} aria-hidden />
@@ -297,10 +404,6 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
       </div>
     </form>
   );
-}
-
-function splitPatterns(value: string): string[] {
-  return value.split(',').map((entry) => entry.trim()).filter(Boolean);
 }
 
 /**

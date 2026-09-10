@@ -8534,7 +8534,7 @@
         "tags": [
           "scim"
         ],
-        "description": "Standard-defined: SCIM 2.0, RFC 7644 section 3.4.2. Only `eq` filters on userName, externalId and active are supported, and anything else is REFUSED rather than partially interpreted: a mistranslated filter returns the wrong principals instead of an error, which is far worse than an honest refusal. `domainId` and `pending` are separate, platform-specific parameters rather than folded into `filter`, so the standard grammar stays exactly the standard grammar and neither narrowing is ever mistaken for part of it.",
+        "description": "Standard-defined: SCIM 2.0, RFC 7644 section 3.4.2. Only `eq` filters on userName, externalId and active are supported, and anything else is REFUSED rather than partially interpreted: a mistranslated filter returns the wrong principals instead of an error, which is far worse than an honest refusal. `domainId`, `kind` and `pending` are separate, platform-specific parameters rather than folded into `filter`, so the standard grammar stays exactly the standard grammar and none of these narrowings is ever mistaken for part of it.",
         "parameters": [
           {
             "schema": {
@@ -8553,6 +8553,22 @@
             "name": "domainId",
             "required": false,
             "description": "Principals provisioned through this authentication path."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "human",
+                "workload",
+                "agent",
+                "application",
+                "service"
+              ]
+            },
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "description": "What this principal IS, not how it authenticates: a person, a workload, an agent, an application acting as its own credential, or a service."
           },
           {
             "schema": {
