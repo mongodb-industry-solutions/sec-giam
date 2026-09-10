@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Play, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
@@ -11,6 +11,7 @@ import { ActionButton, Fact } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { Field, INPUT } from '../../roles/parts';
+import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import { EffectBadge, PatternList, StatusBadge, describeCondition } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
@@ -208,16 +209,36 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
     setCondition(patch === undefined || Object.keys(patch).length === 0 ? undefined : patch);
   }
 
+  // Fetched here rather than at the page level: only an editing screen needs a role and a
+  // permission to pick from, and this component only exists while one is open.
+  const readCatalog = useCallback(
+    () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
+    [],
+  );
+  const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
+  const readRoles = useCallback(
+    () => callApi<{ roles: RoleSummary[] }>('/roles', { query: { limit: 200 }, subject: 'the roles in this realm' }),
+    [],
+  );
+  const allRoles = useConsoleResource(readRoles, 'The roles could not be read.');
+  useEffect(() => { void catalog.reload(); void allRoles.reload(); }, [catalog.reload, allRoles.reload]);
+
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
+        // A role or permission checkbox toggled on and then fully unchecked leaves an empty array
+        // behind rather than removing the key; stripped here so the request never carries a
+        // condition that could never hold.
+        const sent = condition
+          ? Object.fromEntries(Object.entries(condition).filter(([, value]) => !(Array.isArray(value) && value.length === 0)))
+          : undefined;
         onSave({
           effect,
           resource: { type: resourceType, pattern: resourcePattern || '*' },
           permissions: splitPatterns(permissions),
           ...(principals.trim() ? { principals: splitPatterns(principals) } : { principals: [] }),
-          conditions: condition ? [condition] : [],
+          conditions: sent && Object.keys(sent).length > 0 ? [sent] : [],
           ...(reason.trim() ? { reason: reason.trim() } : {}),
         });
       }}
@@ -246,7 +267,12 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
         </Field>
       </div>
 
-      <ConditionEditor condition={condition} onChange={changeCondition} />
+      <ConditionEditor
+        condition={condition}
+        onChange={changeCondition}
+        roles={allRoles.data?.roles ?? []}
+        permissions={catalog.data?.permissions ?? []}
+      />
 
       <Field label="Reason" hint="Carried into the decision. Write what a reader should understand months from now.">
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={INPUT} />
@@ -278,9 +304,11 @@ function splitPatterns(value: string): string[] {
  * which is the whole point: what a policy may say about a request is what this authority can
  * actually observe about the identity making it.
  */
-function ConditionEditor({ condition, onChange }: {
+function ConditionEditor({ condition, onChange, roles, permissions }: {
   condition?: PolicyCondition;
   onChange: (next: PolicyCondition | undefined) => void;
+  roles: RoleSummary[];
+  permissions: CatalogPermission[];
 }) {
   const held = condition ?? {};
 
@@ -298,8 +326,15 @@ function ConditionEditor({ condition, onChange }: {
       timeOfDayUtc: { from: 8, to: 18 },
       tenantIs: 'default',
       attestationRequired: true,
+      heldRole: [],
+      heldPermission: [],
     };
     set(key, on ? defaults[key] : undefined);
+  }
+
+  function toggleMember(key: 'heldRole' | 'heldPermission', value: string, checked: boolean) {
+    const current = (held[key] as string[] | undefined) ?? [];
+    set(key, checked ? [...current, value] : current.filter((entry) => entry !== value));
   }
 
   const labels: Record<ConditionKey, string> = {
@@ -308,6 +343,8 @@ function ConditionEditor({ condition, onChange }: {
     timeOfDayUtc: 'Hour of day (UTC)',
     tenantIs: 'Tenant is',
     attestationRequired: 'Attestation required',
+    heldRole: 'Role already held',
+    heldPermission: 'Permission already held',
   };
 
   return (
@@ -315,7 +352,8 @@ function ConditionEditor({ condition, onChange }: {
       <legend className="text-xs font-medium text-gray-600">Condition</legend>
       <Tooltip text="Identity context only, and this list is all of it. A condition naming a business threshold would be a judgement about inputs this authority cannot observe, so there is no way to write one.">
         <p className="mt-0.5 text-[11px] text-gray-400">
-          Assurance, network, time, tenant and attestation. There is nothing else a policy may say.
+          Assurance, network, time, tenant, attestation, and what the subject already holds. There is
+          nothing else a policy may say.
         </p>
       </Tooltip>
 
@@ -378,6 +416,51 @@ function ConditionEditor({ condition, onChange }: {
 
               {on && key === 'attestationRequired' && (
                 <span className="text-xs text-gray-400">the caller must arrive already attested</span>
+              )}
+
+              {on && key === 'heldRole' && (
+                <div className="min-w-48 flex-1">
+                  <p className="text-[11px] text-gray-400">Any one of the checked roles satisfies it.</p>
+                  <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                    {roles.length === 0
+                      ? <p className="text-xs text-gray-400">No role is registered in this realm yet.</p>
+                      : roles.map((role) => (
+                        <label key={role.roleId} className="flex items-center gap-1.5 py-0.5 text-xs text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={(held.heldRole ?? []).includes(role.name)}
+                            onChange={(e) => toggleMember('heldRole', role.name, e.target.checked)}
+                            className="rounded border-gray-300"
+                          />
+                          {role.displayName} <span className="font-mono text-gray-400">({role.name})</span>
+                        </label>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {on && key === 'heldPermission' && (
+                <div className="min-w-48 flex-1">
+                  <p className="text-[11px] text-gray-400">Every checked permission must already be held, all of them at once.</p>
+                  <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                    {permissions.length === 0
+                      ? <p className="text-xs text-gray-400">The permission catalog is empty.</p>
+                      : permissions.map((permission) => {
+                        const value = `${permission.resource}:${permission.action}`;
+                        return (
+                          <label key={value} className="flex items-center gap-1.5 py-0.5 text-xs text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={(held.heldPermission ?? []).includes(value)}
+                              onChange={(e) => toggleMember('heldPermission', value, e.target.checked)}
+                              className="rounded border-gray-300"
+                            />
+                            <span className="font-mono">{value}</span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
               )}
             </div>
           );

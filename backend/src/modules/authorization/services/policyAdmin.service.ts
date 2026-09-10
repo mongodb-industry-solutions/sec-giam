@@ -142,6 +142,24 @@ export function validatePolicy(policy: {
     if (condition.tenantIs !== undefined && !condition.tenantIs) {
       return { status: 400, title: 'Empty tenant', detail: `${at} carries a tenant condition with no tenant.` };
     }
+    if (condition.heldRole !== undefined && (!Array.isArray(condition.heldRole) || condition.heldRole.length === 0)) {
+      return { status: 400, title: 'Empty role requirement', detail: `${at} carries a role condition that matches nothing.` };
+    }
+    if (condition.heldPermission !== undefined
+      && (!Array.isArray(condition.heldPermission) || condition.heldPermission.length === 0)) {
+      return { status: 400, title: 'Empty permission requirement', detail: `${at} carries a permission condition that matches nothing.` };
+    }
+    for (const permission of condition.heldPermission ?? []) {
+      // Same one spelling everywhere. A condition naming something that is not resource:action would
+      // never hold, however it was meant.
+      if (!parsePermission(permission)) {
+        return {
+          status: 400,
+          title: 'Not a permission',
+          detail: `${at} names "${permission}" as a required permission, which is not of the form resource:action.`,
+        };
+      }
+    }
   }
   return null;
 }

@@ -13,6 +13,8 @@ export const CONDITION_KEYS = [
   'timeOfDayUtc',
   'tenantIs',
   'attestationRequired',
+  'heldRole',
+  'heldPermission',
 ] as const;
 
 export type ConditionKey = (typeof CONDITION_KEYS)[number];
@@ -24,6 +26,10 @@ export interface PolicyCondition {
   timeOfDayUtc?: { from: number; to: number };
   tenantIs?: string;
   attestationRequired?: boolean;
+  /** At least one of these, by role name. Independent of `heldPermission`: either, neither or both. */
+  heldRole?: string[];
+  /** Every one of these, `resource:action`. Independent of `heldRole`. */
+  heldPermission?: string[];
 }
 
 export interface PolicyResource {

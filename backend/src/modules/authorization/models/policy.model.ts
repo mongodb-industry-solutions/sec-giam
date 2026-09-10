@@ -18,6 +18,19 @@ export interface PolicyCondition {
   timeOfDayUtc?: { from: number; to: number };
   tenantIs?: string;
   attestationRequired?: boolean;
+  /**
+   * The subject must hold at least one of these roles, by name. Membership, exactly as NIST SP
+   * 800-162 names role among the subject attributes ABAC narrows on, and as AWS Cedar expresses it
+   * (`principal in Role::X`): not a second decision engine, one more thing this one may ask about
+   * who is asking.
+   */
+  heldRole?: string[];
+  /**
+   * The subject must hold every one of these permissions, `resource:action`. Independent of
+   * `heldRole` rather than an alternative to it: a policy may name one, the other, or both together
+   * for a narrower requirement than either alone states.
+   */
+  heldPermission?: string[];
 }
 
 /**
@@ -33,6 +46,8 @@ export const POLICY_CONDITION_KEYS = [
   'timeOfDayUtc',
   'tenantIs',
   'attestationRequired',
+  'heldRole',
+  'heldPermission',
 ] as const;
 
 export type PolicyConditionKey = (typeof POLICY_CONDITION_KEYS)[number];

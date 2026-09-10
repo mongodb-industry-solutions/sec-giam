@@ -66,5 +66,7 @@ export function describeCondition(condition: PolicyCondition): string[] {
   }
   if (condition.tenantIs) parts.push(`the request is inside tenant ${condition.tenantIs}`);
   if (condition.attestationRequired) parts.push('the caller arrived attested');
+  if (condition.heldRole?.length) parts.push(`the subject already holds one of these roles: ${condition.heldRole.join(', ')}`);
+  if (condition.heldPermission?.length) parts.push(`the subject already holds every one of these permissions: ${condition.heldPermission.join(', ')}`);
   return parts;
 }

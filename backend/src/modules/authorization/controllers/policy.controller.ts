@@ -46,7 +46,9 @@ export async function policyController(fastify: FastifyInstance) {
   const conditionSchema = {
     type: 'object',
     additionalProperties: false,
-    description: 'Identity context only: assurance, network, time, tenant, attestation. Nothing else may be expressed.',
+    description:
+      'Identity context only: assurance, network, time, tenant, attestation, and what the subject '
+      + 'already holds (role membership, specific permissions). Nothing else may be expressed.',
     properties: {
       assuranceAtLeast: { type: 'string', enum: ['aal1', 'aal2', 'aal3'], description: 'The floor the authentication must have reached.' },
       ipInRange: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Address prefixes, matched literally rather than as an expression.' },
@@ -59,6 +61,14 @@ export async function policyController(fastify: FastifyInstance) {
       },
       tenantIs: { type: 'string', minLength: 1, description: 'The data boundary the request must be acting inside.' },
       attestationRequired: { type: 'boolean', description: 'The caller must arrive already attested.' },
+      heldRole: {
+        type: 'array', minItems: 1, items: { type: 'string' },
+        description: 'The subject must hold at least one of these roles, by name. Any one of them satisfies it.',
+      },
+      heldPermission: {
+        type: 'array', minItems: 1, items: { type: 'string' },
+        description: 'The subject must hold every one of these permissions, `resource:action`. Independent of heldRole: either, neither or both may be named.',
+      },
     },
   } as const;
 
