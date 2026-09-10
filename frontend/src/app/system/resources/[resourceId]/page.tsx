@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Boxes, Plus, Power, Scale, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Boxes, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Fact } from '../../../../components/Fact';
 import { Pagination } from '../../../../components/Pagination';
@@ -15,6 +15,8 @@ import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { Field, INPUT } from '../../roles/parts';
 import { EffectBadge, StatusBadge as PolicyStatusBadge } from '../../policies/parts';
 import type { PolicySummary } from '../../policies/types';
+import { ServerForm } from '../ServerForm';
+import { draftFromResponse, draftToRegisterBody } from '../shared';
 
 type PolicyStatusFilter = 'all' | 'active' | 'draft' | 'retired';
 
@@ -54,6 +56,9 @@ export default function ResourceDetailPage() {
 
   const claims = currentClaims();
   const mayManagePolicies = can(claims, 'policies', 'manage');
+  const mayManageResources = can(claims, 'permissions', 'manage');
+  const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const readCatalog = useCallback(
     () => callApi<{ resourceServers: ResourceServer[] }>('/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' }),
@@ -61,16 +66,36 @@ export default function ResourceDetailPage() {
   );
   const catalog = useConsoleResource(readCatalog, 'The resource server catalog could not be read.');
 
-  const resource = useMemo(() => {
+  const { resource, parentServer } = useMemo(() => {
     for (const server of catalog.data?.resourceServers ?? []) {
       if (server.resourceId === resourceId) {
-        return { resourceId: server.resourceId, name: server.name, kind: server.kind, status: server.status, actions: [] as string[], serverName: server.name };
+        return {
+          resource: { resourceId: server.resourceId, name: server.name, kind: server.kind, status: server.status, actions: [] as string[], serverName: server.name },
+          parentServer: server,
+        };
       }
       const child = server.resources.find((entry) => entry.resourceId === resourceId);
-      if (child) return { resourceId: child.resourceId, name: child.name, kind: 'object', status: child.status, actions: child.actions, serverName: server.name };
+      if (child) {
+        return {
+          resource: { resourceId: child.resourceId, name: child.name, kind: 'object', status: child.status, actions: child.actions, serverName: server.name },
+          parentServer: server,
+        };
+      }
     }
-    return null;
+    return { resource: null, parentServer: null };
   }, [catalog.data, resourceId]);
+
+  async function registerServer(draft: ReturnType<typeof draftFromResponse>) {
+    setNotice(null);
+    const done = await catalog.run(
+      `register-${draft.name}`,
+      () => callApi(`/resource-servers/${encodeURIComponent(draft.name)}/permissions`, {
+        method: 'PUT', body: draftToRegisterBody(draft), subject: 'that resource server',
+      }),
+      'That resource server could not be registered.',
+    );
+    if (done) { setNotice(`${draft.name}: registered.`); setEditing(false); }
+  }
 
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<PolicyStatusFilter>('all');
@@ -199,18 +224,41 @@ export default function ResourceDetailPage() {
 
       {resource && (
         <>
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <CatalogStatusBadge status={resource.status} />
-              <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
-                {resource.kind}
-              </span>
-            </div>
-            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-              <Fact label="Resource server" value={resource.serverName} mono />
-              <Fact label="Declared actions" value={resource.actions.length ? resource.actions.join(', ') : 'none'} mono />
-            </dl>
-          </section>
+          {notice && <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{notice}</p>}
+
+          {editing && parentServer ? (
+            <ServerForm
+              title={parentServer.name}
+              draft={draftFromResponse(parentServer)}
+              original={draftFromResponse(parentServer)}
+              busy={catalog.busy === `register-${parentServer.name}`}
+              onCancel={() => setEditing(false)}
+              onSave={(draft) => void registerServer(draft)}
+            />
+          ) : (
+            <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CatalogStatusBadge status={resource.status} />
+                  <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+                    {resource.kind}
+                  </span>
+                </div>
+                {mayManageResources && (
+                  <ActionButton icon={Save} label="Edit" onClick={() => setEditing(true)} />
+                )}
+              </div>
+              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                <Fact label="Resource server" value={resource.serverName} mono />
+                <Fact label="Declared actions" value={resource.actions.length ? resource.actions.join(', ') : 'none'} mono />
+              </dl>
+              <p className="mt-2 text-[11px] text-gray-400">
+                Editing here opens {resource.kind === 'object' ? 'this resource\'s own server' : 'this server'}'s
+                whole catalog: the write replaces it as a block, so every resource type it declares is
+                shown together, not only this one.
+              </p>
+            </section>
+          )}
 
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
