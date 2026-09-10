@@ -126,8 +126,8 @@ export default function ResourcesPage() {
           {servers.map((server) => (
             <RecordCard
               key={server.resourceId}
-              title={<Link href={`/system/resources/${encodeURIComponent(server.resourceId)}`} className="hover:underline">{server.name}</Link>}
-              subtitle={server.audience}
+              title={<Link href={`/system/resources/${encodeURIComponent(server.resourceId)}`} className="hover:underline">{server.displayName ?? server.name}</Link>}
+              subtitle={server.displayName ? `${server.name} · ${server.audience}` : server.audience}
               badges={<StatusBadge status={server.status} />}
               facts={
                 <>
@@ -139,7 +139,9 @@ export default function ResourcesPage() {
                   <Fact label="Catalog version" value={String(server.catalogVersion)} />
                 </>
               }
-            />
+            >
+              {server.description && <p className="mt-2 text-xs text-gray-500">{server.description}</p>}
+            </RecordCard>
           ))}
         </ul>
       )}

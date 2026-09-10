@@ -23,6 +23,8 @@ const AUTHORIZATION_NAMESPACE = 'a1c4e7b2-5d9f-4a3c-8e6b-2f7d1c9a4b83';
 export interface ResourceServerView {
   resourceId: string;
   name: string;
+  displayName?: string;
+  description?: string;
   kind: ResourceKind;
   audience?: string;
   catalogVersion: number;
@@ -32,6 +34,8 @@ export interface ResourceServerView {
   resources: Array<{
     resourceId: string;
     name: string;
+    displayName?: string;
+    description?: string;
     actions: string[];
     status: ResourceRecord['status'];
     catalogVersion: number;
@@ -111,6 +115,8 @@ export class ResourceAdminService {
       resourceServers: servers.map((server) => ({
         resourceId: server.resourceId,
         name: server.name,
+        ...(server.displayName ? { displayName: server.displayName } : {}),
+        ...(server.description ? { description: server.description } : {}),
         kind: server.kind,
         ...(server.audience ? { audience: server.audience } : {}),
         catalogVersion: server.catalogVersion,
@@ -120,6 +126,8 @@ export class ResourceAdminService {
         resources: (childrenByParent.get(server.resourceId) ?? []).map((child) => ({
           resourceId: child.resourceId,
           name: child.name,
+          ...(child.displayName ? { displayName: child.displayName } : {}),
+          ...(child.description ? { description: child.description } : {}),
           actions: child.actions,
           status: child.status,
           catalogVersion: child.catalogVersion,

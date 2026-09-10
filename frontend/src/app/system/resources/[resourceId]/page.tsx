@@ -24,6 +24,8 @@ type PolicyStatusFilter = 'all' | 'active' | 'draft' | 'retired';
 interface CatalogResource {
   resourceId: string;
   name: string;
+  displayName?: string;
+  description?: string;
   actions: string[];
   status: string;
   catalogVersion: number;
@@ -32,6 +34,8 @@ interface CatalogResource {
 interface ResourceServer {
   resourceId: string;
   name: string;
+  displayName?: string;
+  description?: string;
   kind: string;
   audience?: string;
   catalogVersion: number;
@@ -72,14 +76,20 @@ export default function ResourceDetailPage() {
     for (const server of catalog.data?.resourceServers ?? []) {
       if (server.resourceId === resourceId) {
         return {
-          resource: { resourceId: server.resourceId, name: server.name, kind: server.kind, status: server.status, actions: [] as string[], serverName: server.name },
+          resource: {
+            resourceId: server.resourceId, name: server.name, displayName: server.displayName, description: server.description,
+            kind: server.kind, status: server.status, actions: [] as string[], serverName: server.displayName ?? server.name,
+          },
           parentServer: server,
         };
       }
       const child = server.resources.find((entry) => entry.resourceId === resourceId);
       if (child) {
         return {
-          resource: { resourceId: child.resourceId, name: child.name, kind: 'object', status: child.status, actions: child.actions, serverName: server.name },
+          resource: {
+            resourceId: child.resourceId, name: child.name, displayName: child.displayName, description: child.description,
+            kind: 'object', status: child.status, actions: child.actions, serverName: server.displayName ?? server.name,
+          },
           parentServer: server,
         };
       }
@@ -227,8 +237,9 @@ export default function ResourceDetailPage() {
 
       <SectionHeader
         icon={Boxes}
-        title={resource?.name ?? 'Resource'}
-        description="What this resource declares, and which policies actually govern it, found the same way the decision engine finds them."
+        title={resource?.displayName ?? resource?.name ?? 'Resource'}
+        description={resource?.description
+          ?? 'What this resource declares, and which policies actually govern it, found the same way the decision engine finds them.'}
       />
 
       {catalog.error && <ErrorState message={catalog.error} onRetry={() => void catalog.reload()} />}
@@ -244,7 +255,7 @@ export default function ResourceDetailPage() {
 
           {editing && parentServer ? (
             <ServerForm
-              title={parentServer.name}
+              title={parentServer.displayName ?? parentServer.name}
               draft={draftFromResponse(parentServer)}
               original={draftFromResponse(parentServer)}
               busy={catalog.busy === `register-${parentServer.name}`}

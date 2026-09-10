@@ -14,6 +14,8 @@ const resourceView = {
   properties: {
     resourceId: { type: 'string' },
     name: { type: 'string' },
+    displayName: { type: 'string' },
+    description: { type: 'string' },
     actions: { type: 'array', items: { type: 'string' } },
     status: { type: 'string', enum: ['active', 'deprecated', 'withdrawn'] },
     catalogVersion: { type: 'integer' },
@@ -31,6 +33,8 @@ export const resourceServerView = {
   properties: {
     resourceId: { type: 'string' },
     name: { type: 'string' },
+    displayName: { type: 'string' },
+    description: { type: 'string' },
     kind: { type: 'string', enum: ['api', 'tool', 'mcp_server', 'object'] },
     audience: { type: 'string' },
     catalogVersion: { type: 'integer' },

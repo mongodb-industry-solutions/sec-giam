@@ -28,11 +28,13 @@ export interface ServerDraft {
 export interface ResourceServerResponse {
   resourceId: string;
   name: string;
+  displayName?: string;
+  description?: string;
   audience?: string;
   catalogVersion: number;
   validationMode?: string;
   status: string;
-  resources: Array<{ resourceId: string; name: string; actions: string[]; status: string }>;
+  resources: Array<{ resourceId: string; name: string; displayName?: string; description?: string; actions: string[]; status: string }>;
 }
 
 export function emptyServerDraft(): ServerDraft {

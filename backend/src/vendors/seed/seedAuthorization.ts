@@ -57,6 +57,72 @@ interface IdentityFixture {
 /** The authority's own resource server, so administering it is a permission like any other. */
 const AUTHORITY_RESOURCE_SERVER = 'authority';
 
+/**
+ * Human-readable labels for a resource SERVER, keyed by the technical `name` every permission,
+ * audience check and test fixture is built from.
+ *
+ * `name`/`audience` stay the stable identifiers (renaming either would ripple into token audiences
+ * and every integration test that asserts against them); `displayName`/`description` are the console's
+ * own presentation of that identifier, exactly the split a role already has between `name` and
+ * `displayName`.
+ */
+const RESOURCE_SERVER_META: Record<string, { displayName: string; description: string }> = {
+  leafypay: {
+    displayName: 'Leafy Pay Core API',
+    description: 'The consumer payments application: transactions, cards, accounts, merchants and fraud cases.',
+  },
+  bankcore: {
+    displayName: 'Partner Bank Core Banking API',
+    description: 'The federated partner bank\'s own core banking system, reached through a trust boundary this authority does not own.',
+  },
+  [AUTHORITY_RESOURCE_SERVER]: {
+    displayName: 'Leafy IdP Authority API',
+    description: 'The console\'s own control objects: realms, roles, policies, sessions and signing keys.',
+  },
+};
+
+/** Same idea, one level down: a resource TYPE's label, keyed by the name a permission string embeds. */
+const RESOURCE_TYPE_META: Record<string, { displayName: string; description: string }> = {
+  // leafypay
+  transactions: { displayName: 'Transactions', description: 'Payment and transfer records a customer, analyst or investigator can view.' },
+  cards: { displayName: 'Stored Cards', description: 'Tokenized payment cards a customer has saved to their wallet.' },
+  merchants: { displayName: 'Merchants', description: 'Registered businesses accepting payments on the platform.' },
+  consents: { displayName: 'Consents', description: 'Open banking consent grants a customer has authorized.' },
+  accounts: { displayName: 'Accounts', description: 'Customer deposit and payout accounts.' },
+  beneficiaries: { displayName: 'Beneficiaries', description: 'Saved payees a customer can send funds to.' },
+  paymentRequests: { displayName: 'Payment Requests', description: 'Requests to pay raised against a merchant or a peer.' },
+  customers: { displayName: 'Customers', description: 'Customer identity and profile records.' },
+  fraudCases: { displayName: 'Fraud Cases', description: 'Investigation case files opened against suspicious activity.' },
+  auditEvents: { displayName: 'Audit Events', description: 'The platform-wide administrative and access event stream.' },
+  modules: { displayName: 'Capability Modules', description: 'The optional business capabilities enabled for a merchant or business file.' },
+  grants: { displayName: 'Scope Grants', description: 'Application scopes a customer has authorized, and can revoke.' },
+  // bankcore
+  accountHolders: { displayName: 'Account Holders', description: 'The people and businesses holding an account at this bank.' },
+  movements: { displayName: 'Ledger Movements', description: 'Posted debits and credits against a bank account.' },
+  issuedCards: { displayName: 'Issued Cards', description: 'Physical and virtual cards this bank has issued.' },
+  cardData: { displayName: 'Card Vault Data', description: 'The card number itself, held in the issuer vault behind a separate disclosure authority.' },
+  creditAssessments: { displayName: 'Credit Assessments', description: 'Underwriting decisions and risk scoring for an account holder.' },
+  tppRegistrations: { displayName: 'Third-Party Provider Registrations', description: 'PSD2 third-party providers registered to access accounts on a holder\'s behalf.' },
+  counterpartyBanks: { displayName: 'Counterparty Banks', description: 'Other institutions this bank exchanges movements with.' },
+  bankModules: { displayName: 'Bank Engine Modules', description: 'Configurable engine capabilities for the core banking platform.' },
+  bankAudit: { displayName: 'Bank Audit Trail', description: 'The bank\'s own administrative and disclosure event stream.' },
+  // authority (providers/accounts/consents/grants shared with leafypay's own labels above)
+  realms: { displayName: 'Realms', description: 'The organizations that group this authority\'s own configuration.' },
+  tenants: { displayName: 'Tenants', description: 'The partition a realm\'s data is isolated under.' },
+  providers: { displayName: 'Identity Providers', description: 'External or federated identity sources a realm trusts.' },
+  identities: { displayName: 'Identities', description: 'The people and services this authority recognizes as principals.' },
+  credentials: { displayName: 'Credentials', description: 'The passwords, keys and factors an identity authenticates with.' },
+  clients: { displayName: 'Applications', description: 'The registered applications that request tokens from this authority.' },
+  roles: { displayName: 'Roles', description: 'Named bundles of permission a principal can hold.' },
+  assignments: { displayName: 'Role Assignments', description: 'Who holds which role, and where that holding came from.' },
+  policies: { displayName: 'Policies', description: 'The attribute-based rules that narrow or withhold what a role would otherwise allow.' },
+  permissions: { displayName: 'Permission Catalog', description: 'Every `resource:action` a resource server has declared it enforces.' },
+  resourceServers: { displayName: 'Resource Servers', description: 'The applications, tools and MCP servers that have registered a permission catalog.' },
+  sessions: { displayName: 'Sessions', description: 'Active and lapsed sign-ins across this realm.' },
+  keys: { displayName: 'Signing Keys', description: 'The key set this realm publishes for verifying its own tokens.' },
+  elevations: { displayName: 'Elevations', description: 'Time-bound approvals that raise a session\'s assurance for a sensitive action.' },
+};
+
 function resourceId(realmId: string, name: string): string {
   return uuidv5(`resource-server:${realmId}:${name}`, AUTHORIZATION_NAMESPACE);
 }
@@ -103,12 +169,14 @@ export async function seedAuthorization(
     const id = resourceId(realmId, name);
     if (seenServers.has(id)) return id;
     seenServers.add(id);
+    const meta = RESOURCE_SERVER_META[name];
     await upsertSeed<ResourceRecord>(
       servers,
       { resourceId: id },
       {
         name,
         audience,
+        ...(meta ? { displayName: meta.displayName, description: meta.description } : {}),
         kind: 'api',
         catalogVersion: 0,
         // Filled in P5 from the permissions this resource declares: the catalog is what a policy
@@ -147,11 +215,13 @@ export async function seedAuthorization(
     for (const [key, entry] of actionsByType) {
       const type = key.slice(entry.serverId.length + 1);
       const id = uuidv5(`resource:${entry.realmId}:${entry.serverId}:${type}`, AUTHORIZATION_NAMESPACE);
+      const meta = RESOURCE_TYPE_META[type];
       await upsertSeed<ResourceRecord>(
         servers,
         { resourceId: id },
         {
           name: type,
+          ...(meta ? { displayName: meta.displayName, description: meta.description } : {}),
           actions: [...entry.actions].sort(),
           catalogVersion: 1,
           status: 'active',
