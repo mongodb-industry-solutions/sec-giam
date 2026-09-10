@@ -36,6 +36,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^7.5.0",
     "mongodb-client-encryption": "^7.2.0",
+    "re2": "^1.26.1",
     "uuid": "^14.0.1"
   },
   "devDependencies": {

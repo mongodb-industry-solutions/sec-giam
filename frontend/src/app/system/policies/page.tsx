@@ -12,7 +12,7 @@ import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
 import { usePermissions } from '../../../lib/profile';
 import { Field, INPUT } from '../roles/parts';
-import { EffectBadge, StatusBadge } from './parts';
+import { EffectBadge, ResourceFields, StatusBadge } from './parts';
 import type { PolicyDetail, PolicySummary } from './types';
 
 /**
@@ -47,7 +47,7 @@ export default function PoliciesPage() {
   const rows = policies.data?.policies ?? [];
 
   async function create(input: {
-    name: string; effect: 'allow' | 'deny'; resourceType: string; resourcePattern: string;
+    name: string; effect: 'allow' | 'deny'; resourceMode: 'names' | 'pattern'; resourceNames: string; resourcePattern: string;
     permissions: string; reason: string;
   }) {
     const done = await policies.run(
@@ -57,7 +57,9 @@ export default function PoliciesPage() {
         body: {
           name: input.name,
           effect: input.effect,
-          resource: { type: input.resourceType, pattern: input.resourcePattern || '*' },
+          resource: input.resourceMode === 'names'
+            ? { names: input.resourceNames.split(',').map((value) => value.trim()).filter(Boolean) }
+            : { pattern: input.resourcePattern },
           permissions: input.permissions.split(',').map((value) => value.trim()).filter(Boolean),
           ...(input.reason ? { reason: input.reason } : {}),
         },
@@ -179,23 +181,26 @@ export default function PoliciesPage() {
 function CreatePolicy({ onCancel, onSubmit, busy }: {
   onCancel: () => void;
   onSubmit: (input: {
-    name: string; effect: 'allow' | 'deny'; resourceType: string; resourcePattern: string;
+    name: string; effect: 'allow' | 'deny'; resourceMode: 'names' | 'pattern'; resourceNames: string; resourcePattern: string;
     permissions: string; reason: string;
   }) => void;
   busy: boolean;
 }) {
   const [name, setName] = useState('');
   const [effect, setEffect] = useState<'allow' | 'deny'>('allow');
-  const [resourceType, setResourceType] = useState('');
-  const [resourcePattern, setResourcePattern] = useState('*');
+  const [resourceMode, setResourceMode] = useState<'names' | 'pattern'>('names');
+  const [resourceNames, setResourceNames] = useState('');
+  const [resourcePattern, setResourcePattern] = useState('');
   const [permissions, setPermissions] = useState('');
   const [reason, setReason] = useState('');
+
+  const resourceGiven = resourceMode === 'names' ? resourceNames.trim() : resourcePattern.trim();
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit({ name, effect, resourceType, resourcePattern, permissions, reason });
+        onSubmit({ name, effect, resourceMode, resourceNames, resourcePattern, permissions, reason });
       }}
       className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
     >
@@ -218,14 +223,14 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         </Field>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Resource type" hint="What object kind this policy governs, e.g. roles, sessions.">
-          <input required value={resourceType} onChange={(e) => setResourceType(e.target.value)} className={INPUT} placeholder="roles" />
-        </Field>
-        <Field label="Resource pattern" hint="`*` alone, or a trailing `*` for a prefix. Never a regular expression.">
-          <input value={resourcePattern} onChange={(e) => setResourcePattern(e.target.value)} className={INPUT} />
-        </Field>
-      </div>
+      <ResourceFields
+        mode={resourceMode}
+        onModeChange={setResourceMode}
+        names={resourceNames}
+        onNamesChange={setResourceNames}
+        pattern={resourcePattern}
+        onPatternChange={setResourcePattern}
+      />
 
       <Field label="Permissions" hint="Comma separated, full resource:action strings. The same spelling a role and a token use.">
         <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} placeholder="roles:manage, sessions:view" />
@@ -237,7 +242,7 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
 
       <button
         type="submit"
-        disabled={busy || !name || !permissions.trim() || !resourceType.trim()}
+        disabled={busy || !name || !permissions.trim() || !resourceGiven}
         className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
       >
         <Plus size={12} aria-hidden />

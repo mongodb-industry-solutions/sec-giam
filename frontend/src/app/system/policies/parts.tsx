@@ -1,7 +1,8 @@
 'use client';
 
 import { Tooltip } from '../../../components/Tooltip';
-import type { PolicyCondition } from './types';
+import { Field, INPUT } from '../roles/parts';
+import type { PolicyCondition, PolicyResource } from './types';
 
 /** The small pieces both policy screens use. Kept out of the pages so neither owns the other's shape. */
 
@@ -69,4 +70,44 @@ export function describeCondition(condition: PolicyCondition): string[] {
   if (condition.heldRole?.length) parts.push(`the subject already holds one of these roles: ${condition.heldRole.join(', ')}`);
   if (condition.heldPermission?.length) parts.push(`the subject already holds every one of these permissions: ${condition.heldPermission.join(', ')}`);
   return parts;
+}
+
+/** What a policy governs, read as a sentence: named exactly, or by pattern. Never both, per the contract. */
+export function describeResource(resource: PolicyResource): string {
+  if (resource.names?.length) return `named exactly: ${resource.names.join(', ')}`;
+  if (resource.pattern) return `matching the pattern ${resource.pattern}`;
+  return 'unspecified';
+}
+
+/**
+ * Which resource a policy governs, exact names or a regular expression. Shared by the create form
+ * and the detail page's editor, so the two cannot drift into offering the choice differently.
+ */
+export function ResourceFields({ mode, onModeChange, names, onNamesChange, pattern, onPatternChange }: {
+  mode: 'names' | 'pattern';
+  onModeChange: (mode: 'names' | 'pattern') => void;
+  names: string;
+  onNamesChange: (value: string) => void;
+  pattern: string;
+  onPatternChange: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Resource, by" hint="Exact names are a fast, indexed lookup. A pattern is a regular expression, compiled with RE2 so it cannot hang a decision, evaluated only against the policies that chose it.">
+        <select value={mode} onChange={(e) => onModeChange(e.target.value as 'names' | 'pattern')} className={INPUT}>
+          <option value="names">Exact name(s)</option>
+          <option value="pattern">Pattern (regular expression)</option>
+        </select>
+      </Field>
+      {mode === 'names' ? (
+        <Field label="Resource name(s)" hint="Comma separated, e.g. roles, sessions.">
+          <input required value={names} onChange={(e) => onNamesChange(e.target.value)} className={INPUT} placeholder="roles" />
+        </Field>
+      ) : (
+        <Field label="Pattern" hint="A regular expression (RE2 syntax), matched against the resource name.">
+          <input required value={pattern} onChange={(e) => onPatternChange(e.target.value)} className={INPUT} placeholder="^reports.*" />
+        </Field>
+      )}
+    </div>
+  );
 }

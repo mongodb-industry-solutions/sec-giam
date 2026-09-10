@@ -32,14 +32,13 @@ interface PolicyFixture {
   status: PolicyRecord['status'];
   effect: 'allow' | 'deny';
   permissions: string[];
-  resource: { type: string; pattern: string };
+  resource: { names?: string[]; pattern?: string };
   principals?: string[];
   conditions?: PolicyCondition[];
   obligations?: PolicyRecord['obligations'];
   approvedBy?: string;
   effectiveFrom?: string;
   reason?: string;
-  attachedTo?: string[];
 }
 
 function policyId(realmId: string, name: string): string {
@@ -84,7 +83,6 @@ export async function seedPolicies(db: Db, fixtureName = 'policies.json'): Promi
         ...(fixture.approvedBy ? { approvedBy: fixture.approvedBy } : {}),
         ...(fixture.effectiveFrom ? { effectiveFrom: fixture.effectiveFrom } : {}),
         ...(fixture.reason ? { reason: fixture.reason } : {}),
-        ...(fixture.attachedTo?.length ? { attachedTo: fixture.attachedTo } : {}),
       },
       { policyId: id, realmId, tenantId: DEFAULT_TENANT_ID },
       'Policy',

@@ -12,7 +12,9 @@ import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { Field, INPUT } from '../../roles/parts';
 import type { CatalogPermission, RoleSummary } from '../../roles/types';
-import { EffectBadge, PatternList, StatusBadge, describeCondition } from '../parts';
+import {
+  EffectBadge, PatternList, ResourceFields, StatusBadge, describeCondition, describeResource,
+} from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
   type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail,
@@ -154,7 +156,7 @@ function PolicyStatement({ detail }: { detail: PolicyDetail }) {
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <EffectBadge effect={detail.effect} />
-          <span className="font-mono text-xs text-gray-500">{detail.resource.type}:{detail.resource.pattern}</span>
+          <span className="font-mono text-xs text-gray-500">{describeResource(detail.resource)}</span>
         </div>
 
         <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
@@ -198,8 +200,9 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
   onCancel: () => void;
 }) {
   const [effect, setEffect] = useState(detail.effect);
-  const [resourceType, setResourceType] = useState(detail.resource.type);
-  const [resourcePattern, setResourcePattern] = useState(detail.resource.pattern);
+  const [resourceMode, setResourceMode] = useState<'names' | 'pattern'>(detail.resource.pattern ? 'pattern' : 'names');
+  const [resourceNames, setResourceNames] = useState((detail.resource.names ?? []).join(', '));
+  const [resourcePattern, setResourcePattern] = useState(detail.resource.pattern ?? '');
   const [permissions, setPermissions] = useState((detail.permissions ?? []).join(', '));
   const [principals, setPrincipals] = useState((detail.principals ?? []).join(', '));
   const [reason, setReason] = useState(detail.reason ?? '');
@@ -235,7 +238,7 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
           : undefined;
         onSave({
           effect,
-          resource: { type: resourceType, pattern: resourcePattern || '*' },
+          resource: resourceMode === 'names' ? { names: splitPatterns(resourceNames) } : { pattern: resourcePattern },
           permissions: splitPatterns(permissions),
           ...(principals.trim() ? { principals: splitPatterns(principals) } : { principals: [] }),
           conditions: sent && Object.keys(sent).length > 0 ? [sent] : [],
@@ -253,12 +256,6 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
             <option value="deny">Deny</option>
           </select>
         </Field>
-        <Field label="Resource type">
-          <input required value={resourceType} onChange={(e) => setResourceType(e.target.value)} className={INPUT} />
-        </Field>
-        <Field label="Resource pattern" hint="`*` alone, or a trailing * for a prefix.">
-          <input value={resourcePattern} onChange={(e) => setResourcePattern(e.target.value)} className={INPUT} />
-        </Field>
         <Field label="Permissions" hint="Comma separated, full resource:action strings.">
           <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} />
         </Field>
@@ -266,6 +263,15 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
           <input value={principals} onChange={(e) => setPrincipals(e.target.value)} className={INPUT} />
         </Field>
       </div>
+
+      <ResourceFields
+        mode={resourceMode}
+        onModeChange={setResourceMode}
+        names={resourceNames}
+        onNamesChange={setResourceNames}
+        pattern={resourcePattern}
+        onPatternChange={setResourcePattern}
+      />
 
       <ConditionEditor
         condition={condition}
@@ -281,7 +287,7 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={busy || !permissions.trim() || !resourceType.trim()}
+          disabled={busy || !permissions.trim() || !(resourceMode === 'names' ? resourceNames.trim() : resourcePattern.trim())}
           className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
         >
           <Save size={12} aria-hidden />

@@ -13259,8 +13259,7 @@
                           "effect",
                           "permissionCount",
                           "conditionCount",
-                          "inEffect",
-                          "attachedTo"
+                          "inEffect"
                         ],
                         "properties": {
                           "policyId": {
@@ -13298,12 +13297,6 @@
                             "type": "boolean",
                             "description": "False while drafted, retired, or dated ahead."
                           },
-                          "attachedTo": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
                           "created": {
                             "type": "string"
                           },
@@ -13319,8 +13312,7 @@
                           "effect": "deny",
                           "permissionCount": 1,
                           "conditionCount": 1,
-                          "inEffect": true,
-                          "attachedTo": []
+                          "inEffect": true
                         }
                       }
                     },
@@ -13339,8 +13331,7 @@
                       "effect": "deny",
                       "permissionCount": 1,
                       "conditionCount": 1,
-                      "inEffect": true,
-                      "attachedTo": []
+                      "inEffect": true
                     }
                   ],
                   "total": 1
@@ -13425,19 +13416,19 @@
                   "resource": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": [
-                      "type",
-                      "pattern"
-                    ],
                     "properties": {
-                      "type": {
-                        "type": "string",
-                        "minLength": 1
+                      "names": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
                       },
                       "pattern": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                        "description": "A regular expression, compiled with RE2. Exclusive with `names`."
                       }
                     }
                   },
@@ -13556,12 +13547,6 @@
                     "type": "string",
                     "description": "Carried into the decision. A decision a log cannot explain is not auditable."
                   },
-                  "attachedTo": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
                   "status": {
                     "type": "string",
                     "enum": [
@@ -13614,7 +13599,6 @@
                     "permissionCount",
                     "conditionCount",
                     "inEffect",
-                    "attachedTo",
                     "permissions",
                     "resource",
                     "conditions"
@@ -13655,12 +13639,6 @@
                       "type": "boolean",
                       "description": "False while drafted, retired, or dated ahead."
                     },
-                    "attachedTo": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
                     "created": {
                       "type": "string"
                     },
@@ -13678,19 +13656,19 @@
                     "resource": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "type",
-                        "pattern"
-                      ],
                       "properties": {
-                        "type": {
-                          "type": "string",
-                          "minLength": 1
+                        "names": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
                         },
                         "pattern": {
                           "type": "string",
                           "minLength": 1,
-                          "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
                         }
                       }
                     },
@@ -13821,13 +13799,13 @@
                   "permissionCount": 1,
                   "conditionCount": 1,
                   "inEffect": true,
-                  "attachedTo": [],
                   "permissions": [
                     "roles:manage"
                   ],
                   "resource": {
-                    "type": "resource",
-                    "pattern": "roles"
+                    "names": [
+                      "roles"
+                    ]
                   },
                   "conditions": [
                     {
@@ -13943,7 +13921,6 @@
                     "permissionCount",
                     "conditionCount",
                     "inEffect",
-                    "attachedTo",
                     "permissions",
                     "resource",
                     "conditions"
@@ -13984,12 +13961,6 @@
                       "type": "boolean",
                       "description": "False while drafted, retired, or dated ahead."
                     },
-                    "attachedTo": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
                     "created": {
                       "type": "string"
                     },
@@ -14007,19 +13978,19 @@
                     "resource": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "type",
-                        "pattern"
-                      ],
                       "properties": {
-                        "type": {
-                          "type": "string",
-                          "minLength": 1
+                        "names": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
                         },
                         "pattern": {
                           "type": "string",
                           "minLength": 1,
-                          "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
                         }
                       }
                     },
@@ -14150,13 +14121,13 @@
                   "permissionCount": 1,
                   "conditionCount": 1,
                   "inEffect": true,
-                  "attachedTo": [],
                   "permissions": [
                     "roles:manage"
                   ],
                   "resource": {
-                    "type": "resource",
-                    "pattern": "roles"
+                    "names": [
+                      "roles"
+                    ]
                   },
                   "conditions": [
                     {
@@ -14237,19 +14208,19 @@
                   "resource": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": [
-                      "type",
-                      "pattern"
-                    ],
                     "properties": {
-                      "type": {
-                        "type": "string",
-                        "minLength": 1
+                      "names": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
                       },
                       "pattern": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                        "description": "A regular expression, compiled with RE2. Exclusive with `names`."
                       }
                     }
                   },
@@ -14368,12 +14339,6 @@
                     "type": "string",
                     "description": "Carried into the decision. A decision a log cannot explain is not auditable."
                   },
-                  "attachedTo": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
                   "status": {
                     "type": "string",
                     "enum": [
@@ -14431,7 +14396,6 @@
                     "permissionCount",
                     "conditionCount",
                     "inEffect",
-                    "attachedTo",
                     "permissions",
                     "resource",
                     "conditions"
@@ -14472,12 +14436,6 @@
                       "type": "boolean",
                       "description": "False while drafted, retired, or dated ahead."
                     },
-                    "attachedTo": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
                     "created": {
                       "type": "string"
                     },
@@ -14495,19 +14453,19 @@
                     "resource": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "type",
-                        "pattern"
-                      ],
                       "properties": {
-                        "type": {
-                          "type": "string",
-                          "minLength": 1
+                        "names": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
                         },
                         "pattern": {
                           "type": "string",
                           "minLength": 1,
-                          "description": "`*` alone, or a trailing `*` for a prefix. Never a regular expression."
+                          "description": "A regular expression, compiled with RE2. Exclusive with `names`."
                         }
                       }
                     },
@@ -14638,13 +14596,13 @@
                   "permissionCount": 1,
                   "conditionCount": 1,
                   "inEffect": true,
-                  "attachedTo": [],
                   "permissions": [
                     "roles:manage"
                   ],
                   "resource": {
-                    "type": "resource",
-                    "pattern": "roles"
+                    "names": [
+                      "roles"
+                    ]
                   },
                   "conditions": [
                     {
@@ -15769,6 +15727,901 @@
           },
           "404": {
             "description": "No such realm, or no such resource type declared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/access/evaluation": {
+      "post": {
+        "operationId": "evaluateDecisionAtHome",
+        "summary": "Evaluate one authorization decision, at the AuthZEN-shaped compatibility path",
+        "tags": [
+          "authorization"
+        ],
+        "description": "The same evaluation as `POST /realms/:realm/decision`, at a path shaped for a generic AuthZEN 1.0 client rather than named to one realm. There is no realm segment because the specification has none: the realm evaluated is always the caller's own, resolved from the token that authenticated the request.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "resource",
+                  "action"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subject": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "resource": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The enforcement point's resource name, such as `roles`."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                      }
+                    }
+                  },
+                  "action": {
+                    "type": "object",
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "view"
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                    "properties": {
+                      "audience": {
+                        "type": "string",
+                        "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                      },
+                      "assuranceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "aal1",
+                          "aal2",
+                          "aal3"
+                        ]
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "tenantId": {
+                        "type": "string"
+                      },
+                      "attestationState": {
+                        "type": "string",
+                        "enum": [
+                          "attested",
+                          "unattested"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "resource": {
+                  "type": "roles"
+                },
+                "action": {
+                  "name": "manage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The decision, and how it was reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "decision",
+                    "context"
+                  ],
+                  "properties": {
+                    "decision": {
+                      "type": "boolean",
+                      "description": "AuthZEN: true is permit, false is deny. Absence of a permit is a deny."
+                    },
+                    "context": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "effect",
+                        "reason",
+                        "evaluators"
+                      ],
+                      "properties": {
+                        "effect": {
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "deny"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "description": "Why, in the words the deciding statement or role carries."
+                        },
+                        "source": {
+                          "type": "string",
+                          "description": "What decided: a policy as `name@version`, or `default-deny`."
+                        },
+                        "policy": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Present when a stored policy decided. Absent when a role or the default did.",
+                          "required": [
+                            "policyId",
+                            "name",
+                            "version",
+                            "effect"
+                          ],
+                          "properties": {
+                            "policyId": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer",
+                              "description": "Which revision of the policy decided."
+                            },
+                            "effect": {
+                              "type": "string",
+                              "enum": [
+                                "allow",
+                                "deny"
+                              ]
+                            }
+                          }
+                        },
+                        "evaluators": {
+                          "type": "array",
+                          "description": "What each evaluator said alone. A null effect is no opinion, which is not a denial.",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "name",
+                              "effect"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "effect": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ],
+                                "enum": [
+                                  "allow",
+                                  "deny",
+                                  null
+                                ]
+                              },
+                              "reason": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "subjectId": {
+                          "type": "string",
+                          "description": "Who the decision was about, echoed so a trace is unambiguous."
+                        },
+                        "evaluatedAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "description": "The decision, and how it was reached."
+                },
+                "example": {
+                  "decision": false,
+                  "context": {
+                    "effect": "deny",
+                    "reason": "Changing what a role grants requires a second factor.",
+                    "source": "administration-requires-strong-authentication@1",
+                    "policy": {
+                      "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                      "name": "administration-requires-strong-authentication",
+                      "version": 1,
+                      "effect": "deny"
+                    },
+                    "evaluators": [
+                      {
+                        "name": "abac",
+                        "effect": "deny",
+                        "reason": "Changing what a role grants requires a second factor."
+                      },
+                      {
+                        "name": "rbac",
+                        "effect": "allow",
+                        "reason": "granted by realm_administrator"
+                      }
+                    ],
+                    "subjectId": "a1000070-0000-4000-8000-000000000070",
+                    "evaluatedAt": "2026-08-31T09:12:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token, or the realm it belongs to is no longer enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Asking about another subject without the tier that reads policies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/access/evaluations": {
+      "post": {
+        "operationId": "evaluateDecisionsAtHome",
+        "summary": "Evaluate several authorization decisions in one call, at the AuthZEN-shaped compatibility path",
+        "tags": [
+          "authorization"
+        ],
+        "description": "The same batch evaluation as `POST /realms/:realm/decision/evaluations`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "evaluations"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subject": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "resource": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The enforcement point's resource name, such as `roles`."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                      }
+                    }
+                  },
+                  "action": {
+                    "type": "object",
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "view"
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                    "properties": {
+                      "audience": {
+                        "type": "string",
+                        "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                      },
+                      "assuranceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "aal1",
+                          "aal2",
+                          "aal3"
+                        ]
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "tenantId": {
+                        "type": "string"
+                      },
+                      "attestationState": {
+                        "type": "string",
+                        "enum": [
+                          "attested",
+                          "unattested"
+                        ]
+                      }
+                    }
+                  },
+                  "evaluations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "subject": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                            },
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          }
+                        },
+                        "resource": {
+                          "type": "object",
+                          "required": [
+                            "type"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The enforcement point's resource name, such as `roles`."
+                            },
+                            "id": {
+                              "type": "string",
+                              "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                            }
+                          }
+                        },
+                        "action": {
+                          "type": "object",
+                          "required": [
+                            "name"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "view"
+                            }
+                          }
+                        },
+                        "context": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                          "properties": {
+                            "audience": {
+                              "type": "string",
+                              "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                            },
+                            "assuranceLevel": {
+                              "type": "string",
+                              "enum": [
+                                "aal1",
+                                "aal2",
+                                "aal3"
+                              ]
+                            },
+                            "ip": {
+                              "type": "string"
+                            },
+                            "tenantId": {
+                              "type": "string"
+                            },
+                            "attestationState": {
+                              "type": "string",
+                              "enum": [
+                                "attested",
+                                "unattested"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "evaluations": [
+                  {
+                    "resource": {
+                      "type": "roles"
+                    },
+                    "action": {
+                      "name": "view"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One decision per entry, in the order asked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "One decision per entry, in the order asked.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "evaluations"
+                  ],
+                  "properties": {
+                    "evaluations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "decision",
+                          "context"
+                        ],
+                        "properties": {
+                          "decision": {
+                            "type": "boolean",
+                            "description": "AuthZEN: true is permit, false is deny. Absence of a permit is a deny."
+                          },
+                          "context": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "effect",
+                              "reason",
+                              "evaluators"
+                            ],
+                            "properties": {
+                              "effect": {
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "description": "Why, in the words the deciding statement or role carries."
+                              },
+                              "source": {
+                                "type": "string",
+                                "description": "What decided: a policy as `name@version`, or `default-deny`."
+                              },
+                              "policy": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "description": "Present when a stored policy decided. Absent when a role or the default did.",
+                                "required": [
+                                  "policyId",
+                                  "name",
+                                  "version",
+                                  "effect"
+                                ],
+                                "properties": {
+                                  "policyId": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer",
+                                    "description": "Which revision of the policy decided."
+                                  },
+                                  "effect": {
+                                    "type": "string",
+                                    "enum": [
+                                      "allow",
+                                      "deny"
+                                    ]
+                                  }
+                                }
+                              },
+                              "evaluators": {
+                                "type": "array",
+                                "description": "What each evaluator said alone. A null effect is no opinion, which is not a denial.",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "name",
+                                    "effect"
+                                  ],
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "effect": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ],
+                                      "enum": [
+                                        "allow",
+                                        "deny",
+                                        null
+                                      ]
+                                    },
+                                    "reason": {
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              },
+                              "subjectId": {
+                                "type": "string",
+                                "description": "Who the decision was about, echoed so a trace is unambiguous."
+                              },
+                              "evaluatedAt": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "example": {
+                          "decision": false,
+                          "context": {
+                            "effect": "deny",
+                            "reason": "Changing what a role grants requires a second factor.",
+                            "source": "administration-requires-strong-authentication@1",
+                            "policy": {
+                              "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                              "name": "administration-requires-strong-authentication",
+                              "version": 1,
+                              "effect": "deny"
+                            },
+                            "evaluators": [
+                              {
+                                "name": "abac",
+                                "effect": "deny",
+                                "reason": "Changing what a role grants requires a second factor."
+                              },
+                              {
+                                "name": "rbac",
+                                "effect": "allow",
+                                "reason": "granted by realm_administrator"
+                              }
+                            ],
+                            "subjectId": "a1000070-0000-4000-8000-000000000070",
+                            "evaluatedAt": "2026-08-31T09:12:00.000Z"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "evaluations": [
+                    {
+                      "decision": false,
+                      "context": {
+                        "effect": "deny",
+                        "reason": "Changing what a role grants requires a second factor.",
+                        "source": "administration-requires-strong-authentication@1",
+                        "policy": {
+                          "policyId": "2b6f0a51-d8e4-4a11-9c2e-77d4a3f1e0c2",
+                          "name": "administration-requires-strong-authentication",
+                          "version": 1,
+                          "effect": "deny"
+                        },
+                        "evaluators": [
+                          {
+                            "name": "abac",
+                            "effect": "deny",
+                            "reason": "Changing what a role grants requires a second factor."
+                          },
+                          {
+                            "name": "rbac",
+                            "effect": "allow",
+                            "reason": "granted by realm_administrator"
+                          }
+                        ],
+                        "subjectId": "a1000070-0000-4000-8000-000000000070",
+                        "evaluatedAt": "2026-08-31T09:12:00.000Z"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An entry names no resource and action, and none is given as a default.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token, or the realm it belongs to is no longer enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Asking about another subject without the tier that reads policies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/access/search/action": {
+      "post": {
+        "operationId": "searchActionsAtHome",
+        "summary": "Which actions a subject may take on a resource, at the AuthZEN-shaped compatibility path",
+        "tags": [
+          "authorization"
+        ],
+        "description": "The same reverse search as `POST /realms/:realm/decision/search/action`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "resource"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "subject": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Omitted means the caller. Naming somebody else requires the policy-reading tier.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "resource": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The enforcement point's resource name, such as `roles`."
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "A particular instance. Recorded on the trace; no condition reads it today."
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Identity context only, matching the condition vocabulary a policy may use.",
+                    "properties": {
+                      "audience": {
+                        "type": "string",
+                        "description": "The resource server the roles are resolved against. Defaults to this authority's own."
+                      },
+                      "assuranceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "aal1",
+                          "aal2",
+                          "aal3"
+                        ]
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "tenantId": {
+                        "type": "string"
+                      },
+                      "attestationState": {
+                        "type": "string",
+                        "enum": [
+                          "attested",
+                          "unattested"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "resource": {
+                  "type": "roles"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The actions this resource declares that the subject may currently take.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The actions this resource declares that the subject may currently take.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "actions"
+                  ],
+                  "properties": {
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "actions": [
+                    {
+                      "name": "view"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token, or the realm it belongs to is no longer enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Asking about another subject without the tier that reads policies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource type declared.",
             "content": {
               "application/json": {
                 "schema": {

@@ -6,7 +6,7 @@
     "status": "active",
     "effect": "allow",
     "permissions": ["roles:view", "roles:manage"],
-    "resource": { "type": "roles", "pattern": "roles:*" },
+    "resource": { "names": ["roles"] },
     "principals": ["*"],
     "conditions": [],
     "reason": "Reading and editing the role catalogue is what administering a realm consists of."
@@ -18,7 +18,7 @@
     "status": "active",
     "effect": "deny",
     "permissions": ["roles:manage"],
-    "resource": { "type": "roles", "pattern": "roles:manage" },
+    "resource": { "names": ["roles"] },
     "conditions": [],
     "obligations": [{ "type": "AUDIT", "severity": "high" }],
     "reason": "Editing what a role grants is withheld while this policy stands, whatever else allows it. Withdraw the policy deliberately, so widening the authority is a decision somebody made rather than one nobody noticed."
@@ -30,7 +30,7 @@
     "status": "active",
     "effect": "allow",
     "permissions": ["sessions:view"],
-    "resource": { "type": "sessions", "pattern": "sessions:*" },
+    "resource": { "names": ["sessions"] },
     "conditions": [{ "assuranceAtLeast": "aal2" }],
     "reason": "Reading where an account is signed in is offered once the sign-in itself reached a second factor."
   }

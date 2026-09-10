@@ -1,7 +1,9 @@
 import { Db } from 'mongodb';
 import type { PolicyEvaluator, AuthorizationRequest, AuthorizationDecision } from '../../../shared/ports';
 import { POLICY_COLLECTION } from '../../../shared/models/collections';
-import { PolicyRecord, PolicyCondition, matchesPattern, isInEffect } from '../models/policy.model';
+import {
+  PolicyRecord, PolicyCondition, matchesPattern, isInEffect, resourceApplies,
+} from '../models/policy.model';
 import { DecisionService } from './decision.service';
 
 /**
@@ -52,7 +54,21 @@ export const abacEvaluator: PolicyEvaluator = {
   async evaluate(request: AuthorizationRequest): Promise<AuthorizationDecision | null> {
     const policies = await database()
       .collection<PolicyRecord>(POLICY_COLLECTION)
-      .find({ realmId: request.realmId, tenantId: request.tenantId, status: 'active' }, { projection: { _id: 0 } })
+      .find({
+        realmId: request.realmId,
+        tenantId: request.tenantId,
+        status: 'active',
+        // Pushed down rather than filtered in memory after the fact, because a realm with a very
+        // large policy table must not read every active policy to decide about one resource. Named
+        // exactly is a plain indexed equality lookup; a `pattern` policy cannot be excluded by an
+        // index (it is a regular expression, not a value to compare against), so every one of those
+        // is still a candidate and is resolved by `resourceApplies` below, in memory, against
+        // however many policies actually chose that slower form rather than against all of them.
+        $or: [
+          { 'resource.names': request.resource },
+          { 'resource.pattern': { $exists: true } },
+        ],
+      }, { projection: { _id: 0 } })
       .toArray();
 
     // Resolved once, and only when some policy actually asks: `heldRole`/`heldPermission` are the
@@ -115,9 +131,10 @@ function appliesTo(policy: PolicyRecord, request: AuthorizationRequest, holding:
   if (policy.permissions?.length && !policy.permissions.some((p) => matchesPattern(p, asked))) {
     return false;
   }
-  // The resource type narrows first, then the pattern narrows within it.
-  if (policy.resource?.type && !matchesPattern(policy.resource.type, request.resource)) return false;
-  if (policy.resource?.pattern && !matchesPattern(policy.resource.pattern, asked)) return false;
+  // Which resource this governs, by exact name or by pattern. The query above already narrowed to
+  // candidates for one or the other; this is the precise check, needed because `resource.pattern`
+  // could not be excluded by the query itself.
+  if (!resourceApplies(policy.resource, request.resource)) return false;
 
   // EVERY condition must hold. Any-of would mean adding a condition could WIDEN a policy, which is
   // the opposite of what somebody writing one down expects.

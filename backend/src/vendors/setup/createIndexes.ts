@@ -143,8 +143,20 @@ export function plannedIndexes(): IndexPlan[] {
     // A decision names the policy that decided it as `name@version`, so two policies sharing a name
     // in one realm would make that record ambiguous exactly when it is being read as evidence.
     { collection: POLICY_COLLECTION, keys: { realmId: 1, name: 1 }, options: { name: 'realm_name_unique', unique: true } },
-    { collection: POLICY_COLLECTION, keys: { realmId: 1, tenantId: 1, enabled: 1 }, options: { name: 'realm_tenant_enabled' } },
-    { collection: POLICY_COLLECTION, keys: { realmId: 1, attachedTo: 1 }, options: { name: 'realm_attachedTo' } },
+    // Exactly the fields the evaluator's own query filters by, in the order it filters them, so a
+    // decision does not read every active policy in the realm to decide about one resource. `enabled`
+    // was the pre-v40 field; `status` replaced it and this index had not caught up.
+    { collection: POLICY_COLLECTION, keys: { realmId: 1, tenantId: 1, status: 1 }, options: { name: 'realm_tenant_status' } },
+    // The fast path: a resource named exactly, a plain multikey equality lookup.
+    { collection: POLICY_COLLECTION, keys: { realmId: 1, 'resource.names': 1 }, options: { name: 'realm_resource_names' } },
+    // Existence only, sparse: a `pattern` policy cannot be excluded by an index (it is a regular
+    // expression, not a value to compare against), so this only needs to answer "does this policy use
+    // the slower form at all", cheaply, without touching the far more common `names` policies.
+    {
+      collection: POLICY_COLLECTION,
+      keys: { realmId: 1, 'resource.pattern': 1 },
+      options: { name: 'realm_resource_pattern', sparse: true },
+    },
 
     // Sessions and consent.
     { collection: SESSION_COLLECTION, keys: { sessionId: 1 }, options: { name: 'sessionId_unique', unique: true } },

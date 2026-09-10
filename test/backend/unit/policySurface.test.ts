@@ -61,7 +61,7 @@ const ALLOW_ROLES = {
   status: 'active',
   effect: 'allow',
   permissions: ['roles:view', 'roles:manage'],
-  resource: { type: 'roles', pattern: 'roles:*' },
+  resource: { names: ['roles'] },
   principals: ['*'],
   conditions: [],
   reason: 'administering the realm',
@@ -76,7 +76,7 @@ const DENY_ROLE_CHANGE = {
   status: 'active',
   effect: 'deny',
   permissions: ['roles:manage'],
-  resource: { type: 'roles', pattern: 'roles:manage' },
+  resource: { names: ['roles'] },
   conditions: [],
   reason: 'withheld while this policy stands',
 };
@@ -131,7 +131,7 @@ const ELEVATED_SESSIONS = {
   status: 'active',
   effect: 'allow',
   permissions: ['sessions:view'],
-  resource: { type: 'sessions', pattern: 'sessions:*' },
+  resource: { names: ['sessions'] },
   conditions: [{ assuranceAtLeast: 'aal2' }],
   reason: 'offered once the sign-in reached a second factor',
 };
@@ -239,7 +239,7 @@ describe('a condition can require what the subject already holds, not only the r
     realmId: 'r1', tenantId: 'default', policyId: 'p-role', name: 'export-allowed-for-auditors',
     version: 1, status: 'active', effect: 'allow',
     permissions: ['reports:export'],
-    resource: { type: 'reports', pattern: 'reports:*' },
+    resource: { names: ['reports'] },
     // Any ONE of the named roles, membership rather than an exhaustive list.
     conditions: [{ heldRole: ['auditor', 'compliance-officer'] }],
     reason: 'export requires holding one of the roles that reviews it',
@@ -267,7 +267,7 @@ describe('a condition can require what the subject already holds, not only the r
     realmId: 'r1', tenantId: 'default', policyId: 'p-perm', name: 'archive-allowed-with-both-permissions',
     version: 1, status: 'active', effect: 'allow',
     permissions: ['reports:archive'],
-    resource: { type: 'reports', pattern: 'reports:*' },
+    resource: { names: ['reports'] },
     // EVERY named permission, the narrower half: naming several is "all of these specifically".
     conditions: [{ heldPermission: ['reports:export', 'reports:redact'] }],
     reason: 'archiving requires already holding both of the permissions it combines',
@@ -369,7 +369,7 @@ describe('the condition vocabulary is closed, in the service', () => {
   const wellFormed = {
     effect: 'deny' as const,
     permissions: ['transfers:create'],
-    resource: { type: 'transfers', pattern: 'transfers:*' },
+    resource: { names: ['transfers'] },
     conditions: [] as never[],
   };
 
@@ -431,9 +431,31 @@ describe('the condition vocabulary is closed, in the service', () => {
     expect(validatePolicy({ ...wellFormed, permissions: ['*'] })).toBeNull();
   });
 
-  it('refuses a policy that names no resource', () => {
+  it('refuses a policy that names no resource, neither by name nor by pattern', () => {
     expect(validatePolicy({ ...wellFormed, resource: undefined })?.status).toBe(400);
-    expect(validatePolicy({ ...wellFormed, resource: { type: 'transfers', pattern: '' } })?.status).toBe(400);
+    expect(validatePolicy({ ...wellFormed, resource: {} })?.status).toBe(400);
+  });
+
+  it('refuses naming a resource both ways at once, since only one could have decided', () => {
+    expect(validatePolicy({
+      ...wellFormed,
+      resource: { names: ['transfers'], pattern: 'transfers.*' },
+    })?.status).toBe(400);
+  });
+
+  it('refuses an empty name in the list, which would match nothing', () => {
+    expect(validatePolicy({ ...wellFormed, resource: { names: [''] } })?.status).toBe(400);
+  });
+
+  it('refuses a pattern that does not compile under RE2', () => {
+    // A lookahead: valid in most regex engines, and precisely the kind of construct RE2 refuses,
+    // because it is also the kind that makes catastrophic backtracking possible elsewhere.
+    expect(validatePolicy({ ...wellFormed, resource: { pattern: '(?=foo)bar' } })?.status).toBe(400);
+  });
+
+  it('accepts a resource named exactly, or a resource matched by pattern, on their own', () => {
+    expect(validatePolicy({ ...wellFormed, resource: { names: ['transfers'] } })).toBeNull();
+    expect(validatePolicy({ ...wellFormed, resource: { pattern: '^transfers.*' } })).toBeNull();
   });
 
   it('refuses an unknown effect, so a typo cannot become a policy that never fires', () => {

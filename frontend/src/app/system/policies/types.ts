@@ -32,10 +32,16 @@ export interface PolicyCondition {
   heldPermission?: string[];
 }
 
+/**
+ * What a policy governs, by exact name or by pattern, never both.
+ *
+ * `names` is the fast path, matched by a plain indexed lookup. `pattern` is a regular expression
+ * (compiled with RE2, so it is guaranteed linear-time and cannot hang a decision), for the rare
+ * policy that describes a shape rather than listing every resource it covers.
+ */
 export interface PolicyResource {
-  type: string;
-  /** `*` alone, or a trailing `*` for a prefix. Never a regular expression. */
-  pattern: string;
+  names?: string[];
+  pattern?: string;
 }
 
 export interface PolicyObligation {
@@ -61,7 +67,6 @@ export interface PolicySummary {
   conditionCount: number;
   /** False while drafted, retired, or dated ahead, so a list shows what actually decides today. */
   inEffect: boolean;
-  attachedTo: string[];
   created?: string;
   lastModified?: string;
 }

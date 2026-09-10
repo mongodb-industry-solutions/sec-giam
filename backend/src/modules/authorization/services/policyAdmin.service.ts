@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import RE2 from 're2';
 import { recordConfigurationChange } from '../../audit/services/configurationChange';
 import { v4 as uuidv4 } from 'uuid';
 import { POLICY_COLLECTION } from '../../../shared/models/collections';
@@ -38,7 +39,6 @@ export interface PolicySummary {
   conditionCount: number;
   /** False while a policy is drafted or dated ahead, so a list shows what actually decides today. */
   inEffect: boolean;
-  attachedTo: string[];
   created?: string;
   lastModified?: string;
 }
@@ -66,7 +66,7 @@ const ASSURANCE_LEVELS = ['aal1', 'aal2', 'aal3'];
 export function validatePolicy(policy: {
   effect?: 'allow' | 'deny';
   permissions?: string[];
-  resource?: { type: string; pattern: string };
+  resource?: { names?: string[]; pattern?: string };
   conditions?: PolicyCondition[];
 }): PolicyRefusal | null {
   if (policy.effect !== 'allow' && policy.effect !== 'deny') {
@@ -101,12 +101,42 @@ export function validatePolicy(policy: {
     }
   }
 
-  if (!policy.resource?.type || !policy.resource?.pattern) {
+  const hasNames = Boolean(policy.resource?.names?.length);
+  const hasPattern = Boolean(policy.resource?.pattern);
+  if (!hasNames && !hasPattern) {
     return {
       status: 400,
       title: 'Policy names no resource',
-      detail: 'A policy states what it governs: a resource type, and the pattern an object must match.',
+      detail: 'A policy states what it governs: named resources, or a pattern. Neither was given.',
     };
+  }
+  if (hasNames && hasPattern) {
+    return {
+      status: 400,
+      title: 'Resource named twice, two different ways',
+      detail:
+        'A policy governs a resource by exact name or by pattern, never both: naming both leaves it '
+        + 'ambiguous which one actually decided. Pick one.',
+    };
+  }
+  if (policy.resource?.names && policy.resource.names.some((name) => !name)) {
+    return { status: 400, title: 'Empty resource name', detail: 'A resource name cannot be empty.' };
+  }
+  if (hasPattern) {
+    try {
+      // eslint-disable-next-line no-new
+      new RE2(policy.resource!.pattern as string);
+    } catch {
+      return {
+        status: 400,
+        title: 'Not a valid pattern',
+        detail:
+          `"${policy.resource!.pattern}" does not compile as a regular expression under RE2. RE2 is `
+          + 'used deliberately rather than the language\'s own engine, because RE2 guarantees linear-'
+          + 'time matching and a small number of Perl constructs (lookaheads among them) it refuses to '
+          + 'compile are exactly the ones that make that guarantee possible.',
+      };
+    }
   }
 
   const allowed = new Set<string>(POLICY_CONDITION_KEYS);
@@ -181,7 +211,6 @@ export class PolicyAdminService {
       permissionCount: (policy.permissions ?? []).length,
       conditionCount: (policy.conditions ?? []).length,
       inEffect: isInEffect(policy),
-      attachedTo: policy.attachedTo ?? [],
       ...(policy.meta?.created ? { created: policy.meta.created } : {}),
       ...(policy.meta?.lastModified ? { lastModified: policy.meta.lastModified } : {}),
     };
@@ -236,7 +265,7 @@ export class PolicyAdminService {
       effect: 'allow' | 'deny'; permissions: string[]; resource: PolicyRecord['resource'];
       principals?: string[]; conditions?: PolicyCondition[];
       obligations?: PolicyRecord['obligations']; approvedBy?: string; effectiveFrom?: string;
-      reason?: string; attachedTo?: string[];
+      reason?: string;
     },
   ): Promise<PolicyDetail | PolicyRefusal> {
     const clash = await this.policies.findOne({ realmId, name: input.name }, { projection: { _id: 0, policyId: 1 } });
@@ -273,7 +302,6 @@ export class PolicyAdminService {
       ...(input.approvedBy ? { approvedBy: input.approvedBy } : {}),
       ...(input.effectiveFrom ? { effectiveFrom: input.effectiveFrom } : {}),
       ...(input.reason ? { reason: input.reason } : {}),
-      ...(input.attachedTo?.length ? { attachedTo: input.attachedTo } : {}),
       meta: newMeta('Policy'),
     });
     return await this.detail(realmId, policyId) as PolicyDetail;
@@ -295,7 +323,7 @@ export class PolicyAdminService {
       version?: number; status?: PolicyRecord['status']; effect?: 'allow' | 'deny';
       permissions?: string[]; resource?: PolicyRecord['resource']; principals?: string[];
       conditions?: PolicyCondition[]; obligations?: PolicyRecord['obligations'];
-      approvedBy?: string; effectiveFrom?: string; reason?: string; attachedTo?: string[];
+      approvedBy?: string; effectiveFrom?: string; reason?: string;
     },
   ): Promise<PolicyDetail | PolicyRefusal | null> {
     const policy = await this.policies.findOne({ realmId, policyId }, { projection: { _id: 0 } });
@@ -304,7 +332,7 @@ export class PolicyAdminService {
     const changes: Partial<PolicyRecord> = {};
     for (const field of [
       'version', 'status', 'effect', 'permissions', 'resource', 'principals',
-      'obligations', 'approvedBy', 'effectiveFrom', 'reason', 'attachedTo', 'conditions',
+      'obligations', 'approvedBy', 'effectiveFrom', 'reason', 'conditions',
     ] as const) {
       if (patch[field] !== undefined) (changes as Record<string, unknown>)[field] = patch[field];
     }

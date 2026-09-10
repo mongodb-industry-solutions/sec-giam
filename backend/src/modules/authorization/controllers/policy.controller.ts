@@ -5,7 +5,7 @@ import { PolicyDecisionService } from '../services/policyDecision.service';
 import { RoleAdminService } from '../services/roleAdmin.service';
 import { authorityAccess, refusal } from '../services/authorityAccess';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
-import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
+import { requirePrincipal, requirePrincipalAtHome } from '../../../vendors/middleware/principalAuth';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -83,14 +83,21 @@ export async function policyController(fastify: FastifyInstance) {
     },
   } as const;
 
-  /** The resource a policy governs: the type, and the pattern an object must match within it. */
+  /**
+   * The resource a policy governs, by exact name or by pattern, never both.
+   *
+   * `names` is the fast path: named resources, matched by a plain indexed lookup. `pattern` is a
+   * regular expression, for the rare policy that describes a shape rather than listing every
+   * resource it covers; it is compiled with RE2, not the language's own regex engine, so an author's
+   * pattern is guaranteed linear-time and cannot make a decision hang the way a catastrophic-
+   * backtracking pattern could.
+   */
   const resourceSchema = {
     type: 'object',
     additionalProperties: false,
-    required: ['type', 'pattern'],
     properties: {
-      type: { type: 'string', minLength: 1 },
-      pattern: { type: 'string', minLength: 1, description: '`*` alone, or a trailing `*` for a prefix. Never a regular expression.' },
+      names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
+      pattern: { type: 'string', minLength: 1, description: 'A regular expression, compiled with RE2. Exclusive with `names`.' },
     },
   } as const;
 
@@ -118,7 +125,7 @@ export async function policyController(fastify: FastifyInstance) {
   const policySummary = {
     type: 'object',
     additionalProperties: false,
-    required: ['policyId', 'name', 'version', 'status', 'effect', 'permissionCount', 'conditionCount', 'inEffect', 'attachedTo'],
+    required: ['policyId', 'name', 'version', 'status', 'effect', 'permissionCount', 'conditionCount', 'inEffect'],
     properties: {
       policyId: { type: 'string' },
       name: { type: 'string' },
@@ -130,7 +137,6 @@ export async function policyController(fastify: FastifyInstance) {
       permissionCount: { type: 'integer' },
       conditionCount: { type: 'integer' },
       inEffect: { type: 'boolean', description: 'False while drafted, retired, or dated ahead.' },
-      attachedTo: { type: 'array', items: { type: 'string' } },
       created: { type: 'string' },
       lastModified: { type: 'string' },
     },
@@ -143,7 +149,6 @@ export async function policyController(fastify: FastifyInstance) {
       permissionCount: 1,
       conditionCount: 1,
       inEffect: true,
-      attachedTo: [],
     }],
   } as const;
 
@@ -164,7 +169,7 @@ export async function policyController(fastify: FastifyInstance) {
     examples: [{
       ...policySummary.examples[0],
       permissions: ['roles:manage'],
-      resource: { type: 'resource', pattern: 'roles' },
+      resource: { names: ['roles'] },
       conditions: [{ assuranceAtLeast: 'aal2' }],
       principals: ['*'],
       reason: 'Changing what a role grants requires a second factor.',
@@ -298,7 +303,6 @@ export async function policyController(fastify: FastifyInstance) {
         properties: {
           name: { type: 'string', minLength: 1, pattern: '^[a-zA-Z0-9._-]+$' },
           ...policyBody,
-          attachedTo: { type: 'array', items: { type: 'string' } },
           status: { type: 'string', enum: ['draft', 'active', 'retired'], default: 'active' },
           version: { type: 'integer', minimum: 1, default: 1 },
         },
@@ -348,7 +352,6 @@ export async function policyController(fastify: FastifyInstance) {
         additionalProperties: false,
         properties: {
           ...policyBody,
-          attachedTo: { type: 'array', items: { type: 'string' } },
           status: { type: 'string', enum: ['draft', 'active', 'retired'] },
           version: { type: 'integer', minimum: 1 },
         },
@@ -910,6 +913,217 @@ export async function policyController(fastify: FastifyInstance) {
     const allowed: string[] = [];
     // Sequential for the same reason the batch endpoint is: the oversight gate for a named subject
     // must run at most once conceptually, not race across N concurrent calls for one request.
+    for (const action of [...new Set(declared)].sort()) {
+      const outcome = await evaluateOne(realm, caller, { subject: body.subject, resource: body.resource, action: { name: action }, context: body.context });
+      if (isDecisionRefusal(outcome)) return reply.status(outcome.status as 403).send(problem(outcome.status, outcome.title, outcome.detail));
+      if (outcome.decision) allowed.push(action);
+    }
+
+    return reply.send({ actions: allowed.map((name) => ({ name })) });
+  });
+
+  /**
+   * Compatibility aliases for the three decision endpoints above, at a path shaped for a generic
+   * AuthZEN 1.0 client rather than this realm-scoped one, under this deployment's own `/api/v1`
+   * prefix rather than the specification's own `/access/v1`.
+   *
+   * AuthZEN's base spec has no realm concept, so these use `requirePrincipalAtHome` instead of
+   * `requirePrincipal`: the realm evaluated is always the caller's own, resolved from the token
+   * itself, never a realm named in a path segment because there is none here. A caller who needs to
+   * reach a SECOND realm still has to use the realm-scoped path above, where that crossing is
+   * explicit and the grant behind it is auditable; this alias exists for interoperability with
+   * clients that only know the specification's shape, not to offer a quieter way to cross realms.
+   *
+   * Everything else, request shape, response shape, evaluation, the audit record, is identical:
+   * each alias calls the exact same `evaluateOne` (or the same per-entry loop) the realm-scoped
+   * route above does, so a client that switched from one path to the other could not tell the
+   * difference in behaviour.
+   */
+  async function realmOfCaller(principalRealmId: string): Promise<{ realmId: string; tenantId: string } | null> {
+    const realm = await new RealmService(fastify.db).byId(principalRealmId);
+    return realm && realm.enabled !== false ? { realmId: realm.realmId, tenantId: realm.tenantId } : null;
+  }
+
+  fastify.post('/api/v1/access/evaluation', {
+    preHandler: requirePrincipalAtHome,
+    schema: {
+      operationId: 'evaluateDecisionAtHome',
+      tags: ['authorization'],
+      summary: 'Evaluate one authorization decision, at the AuthZEN-shaped compatibility path',
+      description:
+        'The same evaluation as `POST /realms/:realm/decision`, at a path shaped for a generic '
+        + 'AuthZEN 1.0 client rather than named to one realm. There is no realm segment because the '
+        + 'specification has none: the realm evaluated is always the caller\'s own, resolved from '
+        + 'the token that authenticated the request.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['resource', 'action'],
+        additionalProperties: false,
+        properties: {
+          subject: decisionSubjectSchema,
+          resource: decisionResourceSchema,
+          action: decisionActionSchema,
+          context: decisionContextSchema,
+        },
+        examples: [{ resource: { type: 'roles' }, action: { name: 'manage' } }],
+      },
+      response: {
+        200: { ...decisionResponseSchema, description: 'The decision, and how it was reached.' },
+        401: { $ref: 'Problem#', description: 'No valid access token, or the realm it belongs to is no longer enabled.' },
+        403: { $ref: 'Problem#', description: 'Asking about another subject without the tier that reads policies.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const realm = await realmOfCaller(caller.realmId);
+    if (!realm) return reply.status(401).send(problem(401, 'Unauthorized', 'The realm this token belongs to is no longer enabled.'));
+
+    const outcome = await evaluateOne(realm, caller, request.body as DecisionSpec);
+    if (isDecisionRefusal(outcome)) return reply.status(outcome.status as 403).send(problem(outcome.status, outcome.title, outcome.detail));
+    return reply.send(outcome);
+  });
+
+  fastify.post('/api/v1/access/evaluations', {
+    preHandler: requirePrincipalAtHome,
+    schema: {
+      operationId: 'evaluateDecisionsAtHome',
+      tags: ['authorization'],
+      summary: 'Evaluate several authorization decisions in one call, at the AuthZEN-shaped compatibility path',
+      description:
+        'The same batch evaluation as `POST /realms/:realm/decision/evaluations`, at the path shaped '
+        + 'for a generic AuthZEN 1.0 client. See that endpoint.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['evaluations'],
+        additionalProperties: false,
+        properties: {
+          subject: decisionSubjectSchema,
+          resource: decisionResourceSchema,
+          action: decisionActionSchema,
+          context: decisionContextSchema,
+          evaluations: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 50,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                subject: decisionSubjectSchema,
+                resource: decisionResourceSchema,
+                action: decisionActionSchema,
+                context: decisionContextSchema,
+              },
+            },
+          },
+        },
+        examples: [{ evaluations: [{ resource: { type: 'roles' }, action: { name: 'view' } }] }],
+      },
+      response: {
+        200: {
+          description: 'One decision per entry, in the order asked.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['evaluations'],
+          properties: { evaluations: { type: 'array', items: decisionResponseSchema } },
+          examples: [{ evaluations: [decisionResponseSchema.examples[0]] }],
+        },
+        400: { $ref: 'Problem#', description: 'An entry names no resource and action, and none is given as a default.' },
+        401: { $ref: 'Problem#', description: 'No valid access token, or the realm it belongs to is no longer enabled.' },
+        403: { $ref: 'Problem#', description: 'Asking about another subject without the tier that reads policies.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const realm = await realmOfCaller(caller.realmId);
+    if (!realm) return reply.status(401).send(problem(401, 'Unauthorized', 'The realm this token belongs to is no longer enabled.'));
+
+    const body = request.body as {
+      subject?: DecisionSpec['subject'];
+      resource?: DecisionSpec['resource'];
+      action?: DecisionSpec['action'];
+      context?: DecisionSpec['context'];
+      evaluations: Array<Partial<DecisionSpec>>;
+    };
+
+    const specs: Array<DecisionSpec | null> = body.evaluations.map((entry) => {
+      const resource = entry.resource ?? body.resource;
+      const action = entry.action ?? body.action;
+      if (!resource || !action) return null;
+      return {
+        subject: entry.subject ?? body.subject,
+        resource,
+        action,
+        context: { ...(body.context ?? {}), ...(entry.context ?? {}) },
+      };
+    });
+
+    const missing = specs.findIndex((spec) => spec === null);
+    if (missing !== -1) {
+      return reply.status(400).send(problem(
+        400,
+        'Incomplete evaluation',
+        `Entry ${missing} names no \`resource\` and \`action\`, and none is given as a default at the top level.`,
+      ));
+    }
+
+    const outcomes: Array<{ decision: boolean; context: Record<string, unknown> }> = [];
+    for (const spec of specs as DecisionSpec[]) {
+      const outcome = await evaluateOne(realm, caller, spec);
+      if (isDecisionRefusal(outcome)) return reply.status(outcome.status as 403).send(problem(outcome.status, outcome.title, outcome.detail));
+      outcomes.push(outcome);
+    }
+
+    return reply.send({ evaluations: outcomes });
+  });
+
+  fastify.post('/api/v1/access/search/action', {
+    preHandler: requirePrincipalAtHome,
+    schema: {
+      operationId: 'searchActionsAtHome',
+      tags: ['authorization'],
+      summary: 'Which actions a subject may take on a resource, at the AuthZEN-shaped compatibility path',
+      description:
+        'The same reverse search as `POST /realms/:realm/decision/search/action`, at the path shaped '
+        + 'for a generic AuthZEN 1.0 client. See that endpoint.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['resource'],
+        additionalProperties: false,
+        properties: { subject: decisionSubjectSchema, resource: decisionResourceSchema, context: decisionContextSchema },
+        examples: [{ resource: { type: 'roles' } }],
+      },
+      response: {
+        200: {
+          description: 'The actions this resource declares that the subject may currently take.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['actions'],
+          properties: {
+            actions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string' } } } },
+          },
+          examples: [{ actions: [{ name: 'view' }] }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token, or the realm it belongs to is no longer enabled.' },
+        403: { $ref: 'Problem#', description: 'Asking about another subject without the tier that reads policies.' },
+        404: { $ref: 'Problem#', description: 'No such resource type declared.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const realm = await realmOfCaller(caller.realmId);
+    if (!realm) return reply.status(401).send(problem(401, 'Unauthorized', 'The realm this token belongs to is no longer enabled.'));
+
+    const body = request.body as { subject?: DecisionSpec['subject']; resource: DecisionSpec['resource']; context?: DecisionSpec['context'] };
+
+    const catalog = await new RoleAdminService(fastify.db).catalog(realm.realmId);
+    const declared = catalog.filter((entry) => entry.resource === body.resource.type).map((entry) => entry.action);
+    if (declared.length === 0) return reply.status(404).send(problem(404, 'No such resource type declared'));
+
+    const allowed: string[] = [];
     for (const action of [...new Set(declared)].sort()) {
       const outcome = await evaluateOne(realm, caller, { subject: body.subject, resource: body.resource, action: { name: action }, context: body.context });
       if (isDecisionRefusal(outcome)) return reply.status(outcome.status as 403).send(problem(outcome.status, outcome.title, outcome.detail));
