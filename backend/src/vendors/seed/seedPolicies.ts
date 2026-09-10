@@ -10,10 +10,13 @@ import { readSeedFile } from './readSeedFile';
 /**
  * The example policies, chosen to demonstrate the mechanism rather than to flatter it.
  *
- * Three of them, and each earns its place. One allows, so the screen has something that grants. One
+ * Four of them, and each earns its place. One allows, so the screen has something that grants. One
  * DENIES what the first allows, because deny-wins is the rule the whole model rests on and a rule
- * nobody can see fire is a rule nobody has checked. One carries a condition, so the closed identity
- * vocabulary is visible as data instead of only as a form control.
+ * nobody can see fire is a rule nobody has checked. Two carry a condition, so the closed identity
+ * vocabulary is visible as data instead of only as a form control, and one of those two governs a
+ * business resource (`transactions`) rather than one of the authority's own (`sessions`, `roles`):
+ * without it, every seeded example would sit on the authority server, and a reader could reasonably
+ * wonder whether a policy on an application's own resource was ever actually exercised.
  *
  * Each is one policy stating one effect, per ADR section 7. The pair that disagree are two separate
  * records rather than two statements in one, which is what makes deny-wins a rule ACROSS policies

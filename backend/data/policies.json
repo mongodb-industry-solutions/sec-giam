@@ -33,5 +33,16 @@
     "resource": { "names": ["sessions"] },
     "conditions": [{ "assuranceAtLeast": "aal2" }],
     "reason": "Reading where an account is signed in is offered once the sign-in itself reached a second factor."
+  },
+  {
+    "realm": "leafypay",
+    "name": "sensitive-transaction-view-requires-elevated-assurance",
+    "version": 1,
+    "status": "active",
+    "effect": "allow",
+    "permissions": ["transactions:viewSensitive"],
+    "resource": { "names": ["transactions"] },
+    "conditions": [{ "assuranceAtLeast": "aal2" }],
+    "reason": "The role already gates this behind an elevation; the condition is a second, independent check that the sign-in itself also reached a second factor, on a business resource rather than on the authority's own."
   }
 ]

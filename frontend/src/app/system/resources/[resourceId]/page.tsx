@@ -166,6 +166,18 @@ export default function ResourceDetailPage() {
     if (!resource) return;
     const target = (allPolicies.data?.policies ?? []).find((policy) => policy.policyId === policyId);
     if (!target) return;
+
+    // `names` and `pattern` are exclusive on a policy: attaching by exact name to one that
+    // currently matches by pattern would have to give the pattern up, since it cannot keep
+    // matching a shape AND an explicit list at once. Asked outright rather than done quietly,
+    // because it can narrow what that policy governs everywhere else it already applied.
+    if (target.resource.pattern && !target.resource.names?.length) {
+      if (!window.confirm(
+        `"${target.name}" currently governs by pattern (${target.resource.pattern}), which may match other resources too. `
+        + `Attaching it here replaces that pattern with an exact list of names, starting with just "${resource.name}". Continue?`,
+      )) return;
+    }
+
     const names = [...new Set([...(target.resource.names ?? []), resource.name])];
     const done = await governing.run(
       `attach-${policyId}`,
@@ -198,9 +210,11 @@ export default function ResourceDetailPage() {
   // Computed from the FULL, unfiltered `allPolicies` fetch rather than the paginated/filtered
   // `governing` list: excluding only what the current search/status/page happens to show would
   // offer a policy that already governs this resource as though it did not, the moment a filter
-  // hid it from view.
+  // hid it from view. Every OTHER policy is offered, pattern-based ones included: `attachExisting`
+  // asks before converting one of those, rather than this list quietly deciding for the caller
+  // which policies are worth choosing from.
   const attachable = (allPolicies.data?.policies ?? [])
-    .filter((policy) => policy.resource.names?.length && !policy.resource.names.includes(resource?.name ?? ''));
+    .filter((policy) => !(policy.resource.names ?? []).includes(resource?.name ?? ''));
 
   return (
     <main className="space-y-5">
@@ -451,14 +465,16 @@ function AssignPolicy({ resourceName, attachable, busy, onAttach, onCreate, onCa
       ) : (
         <div className="space-y-3">
           {attachable.length === 0 ? (
-            <p className="text-sm text-gray-400">No other policy in this realm is named-resource based and free to attach.</p>
+            <p className="text-sm text-gray-400">No other policy in this realm is free to attach here.</p>
           ) : (
             <>
-              <Field label="Policy" hint="Its resource.names gains this resource, alongside whatever it already names.">
+              <Field label="Policy" hint="A policy already named-resource based gains this resource alongside what it already names. One that matches by pattern instead asks to replace that pattern with this exact name.">
                 <select value={existing} onChange={(e) => setExisting(e.target.value)} className={INPUT}>
                   <option value="">choose one</option>
                   {attachable.map((policy) => (
-                    <option key={policy.policyId} value={policy.policyId}>{policy.name}</option>
+                    <option key={policy.policyId} value={policy.policyId}>
+                      {policy.name}{policy.resource.pattern ? ' (currently by pattern)' : ''}
+                    </option>
                   ))}
                 </select>
               </Field>
