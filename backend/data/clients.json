@@ -7,11 +7,15 @@
     "redirectUris": [
       "http://localhost:8082/api/auth/callback",
       "http://127.0.0.1:8082/api/auth/callback",
-      "http://sec-fsi-pci-dss-merchant-web-app:80/api/auth/callback"
+      "http://sec-fsi-pci-dss-merchant-web-app:80/api/auth/callback",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "postLogoutRedirectUris": [
       "http://localhost:8082",
-      "http://127.0.0.1:8082"
+      "http://127.0.0.1:8082",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.staging.corp.mongodb.com",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.prod.corp.mongodb.com"
     ],
     "grantTypes": [
       "authorization_code",
@@ -108,7 +112,50 @@
     "redirectUris": [
       "http://localhost:8080/api/auth/callback",
       "http://127.0.0.1:8080/api/auth/callback",
-      "http://localhost:3000/api/auth/callback"
+      "http://localhost:3000/api/auth/callback",
+      "https://leafy-wallet-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://leafy-wallet-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
+    ],
+    "grantTypes": [
+      "authorization_code",
+      "refresh_token",
+      "urn:openid:params:grant-type:ciba"
+    ],
+    "scope": "openid profile email read:beneficiaries write:beneficiaries write:transfers read:accounts read:transactions read:rtp write:rtp",
+    "requirePkce": true,
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "applicationType": "web",
+    "status": "active",
+    "backchannel": {
+      "deliveryMode": "poll"
+    },
+    "owners": [
+      {
+        "kind": "merchant",
+        "ref": "m0000002-0000-4000-8000-000000000002",
+        "displayName": "Leafy Wallet"
+      },
+      {
+        "kind": "principal",
+        "ref": "a1000102-0000-4000-8000-000000000102",
+        "displayName": "Nina Berg"
+      }
+    ],
+    "demoRoster": [
+      "customer"
+    ],
+    "audience": [
+      "leafypay"
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "clientId": "leafy-wallet-kanopy",
+    "clientName": "Leafy Wallet",
+    "clientType": "confidential",
+    "redirectUris": [
+      "https://leafy-wallet-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://leafy-wallet-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "grantTypes": [
       "authorization_code",
@@ -359,11 +406,15 @@
     "clientType": "public",
     "redirectUris": [
       "http://localhost:8080/api/auth/callback",
-      "http://127.0.0.1:8080/api/auth/callback"
+      "http://127.0.0.1:8080/api/auth/callback",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "postLogoutRedirectUris": [
       "http://localhost:8080",
-      "http://127.0.0.1:8080"
+      "http://127.0.0.1:8080",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.staging.corp.mongodb.com",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.prod.corp.mongodb.com"
     ],
     "grantTypes": [
       "authorization_code",
