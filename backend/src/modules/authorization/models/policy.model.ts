@@ -1,5 +1,6 @@
 import RE2 from 're2';
 import { Meta, Scoped } from '../../../shared/models/base.model';
+import { appendLog } from '../../../shared/services/logBuffer';
 
 /**
  * Conditional authorization statements, evaluated after roles.
@@ -143,14 +144,32 @@ export function matchesPattern(pattern: string, value: string): boolean {
  * the cache key is the pattern text itself, so two policies that happen to write the same pattern
  * share one compiled matcher.
  */
-const compiledResourcePatterns = new Map<string, RE2>();
+const compiledResourcePatterns = new Map<string, RE2 | null>();
 
-function compiledPattern(pattern: string): RE2 {
-  let compiled = compiledResourcePatterns.get(pattern);
-  if (!compiled) {
+/**
+ * `null` is cached too, not only a successful compile: a pattern that fails once fails the same way
+ * every time, and retrying the same broken string on every request would repeat the cost AND the
+ * log line for nothing.
+ *
+ * A pattern reaching here that does not compile should not happen: `validatePolicy` already refuses
+ * one at every write path. It is caught anyway, because the one way it CAN still happen is a
+ * document written before that check existed, and a leftover record is not a reason a request
+ * naming an unrelated resource should fail with a 500.
+ */
+function compiledPattern(pattern: string): RE2 | null {
+  if (compiledResourcePatterns.has(pattern)) return compiledResourcePatterns.get(pattern)!;
+  let compiled: RE2 | null;
+  try {
     compiled = new RE2(pattern);
-    compiledResourcePatterns.set(pattern, compiled);
+  } catch (error) {
+    appendLog(
+      `[${new Date().toISOString()}] ERROR a policy's resource.pattern does not compile under RE2, `
+      + `treated as matching nothing until fixed: ${JSON.stringify(pattern)} `
+      + `(${error instanceof Error ? error.message : String(error)})`,
+    );
+    compiled = null;
   }
+  compiledResourcePatterns.set(pattern, compiled);
   return compiled;
 }
 
@@ -164,6 +183,6 @@ function compiledPattern(pattern: string): RE2 {
  */
 export function resourceApplies(resource: PolicyRecord['resource'], requested: string): boolean {
   if (resource.names?.length) return resource.names.includes(requested);
-  if (resource.pattern) return compiledPattern(resource.pattern).test(requested);
+  if (resource.pattern) return (compiledPattern(resource.pattern)?.test(requested)) ?? false;
   return false;
 }

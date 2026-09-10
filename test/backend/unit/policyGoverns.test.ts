@@ -67,6 +67,16 @@ const UNRELATED = {
   resource: { names: ['sessions'] }, conditions: [],
 };
 
+// The old glob sentinel for "matches everything", left over from before RE2 validation existed.
+// Not something `validatePolicy` would accept today, but a document written before it did is
+// exactly the case this guards: reading the list must not 500 because ONE candidate's pattern
+// happens not to compile.
+const BROKEN_PATTERN = {
+  realmId: 'r1', tenantId: 'default', policyId: 'p-broken', name: 'broken-pattern-policy', version: 1,
+  status: 'active', effect: 'deny', permissions: ['*'],
+  resource: { pattern: '*' }, conditions: [],
+};
+
 describe('listing policies that govern one resource', () => {
   it('finds a policy naming the resource exactly', async () => {
     const service = new PolicyAdminService(databaseHolding([NAMED, UNRELATED]));
@@ -105,5 +115,15 @@ describe('listing policies that govern one resource', () => {
     const service = new PolicyAdminService(databaseHolding([NAMED, { ...PATTERNED, policyId: 'p-retired', status: 'retired' }]));
     const { policies } = await service.list('r1', { governs: 'reports', status: 'retired' });
     expect(policies.map((p) => p.policyId)).toEqual(['p-retired']);
+  });
+
+  it('does not fail the whole read because one candidate\'s pattern does not compile', async () => {
+    const service = new PolicyAdminService(databaseHolding([NAMED, BROKEN_PATTERN, UNRELATED]));
+    await expect(service.list('r1', { governs: 'reports' })).resolves.not.toThrow();
+    const { policies } = await service.list('r1', { governs: 'reports' });
+    // The broken one is a candidate at the query level (it has SOME pattern), but `resourceApplies`
+    // resolves it to "does not match" rather than crashing, so it is silently excluded here, same as
+    // any other policy that genuinely does not govern this resource.
+    expect(policies.map((p) => p.policyId)).toEqual(['p-named']);
   });
 });
