@@ -227,16 +227,18 @@ export class PolicyAdminService {
   ): Promise<{ policies: PolicySummary[]; total: number }> {
     const skip = Math.max(0, options.skip ?? 0);
     const limit = Math.min(200, Math.max(1, options.limit ?? 20));
-    const filter: Record<string, unknown> = { realmId };
-    if (options.status) filter.status = options.status;
+    // Every independent condition collected as its own clause and combined with `$and`, rather than
+    // each one assigning its own `$or` onto one shared object: two clauses that both happen to need
+    // `$or` (the name/version search, and the `governs` candidate filter below) would otherwise have
+    // the second silently overwrite the first, and a search box that quietly stopped narrowing
+    // anything is worse than one that was never offered.
+    const clauses: Record<string, unknown>[] = [{ realmId }];
+    if (options.status) clauses.push({ status: options.status });
     if (options.q) {
       // Anchored on the two fields a person would search by. Escaped, because a search box is not a
       // place to accept an expression the database will then run.
       const escaped = options.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [
-        { name: { $regex: escaped, $options: 'i' } },
-        { version: { $regex: escaped, $options: 'i' } },
-      ];
+      clauses.push({ $or: [{ name: { $regex: escaped, $options: 'i' } }, { version: { $regex: escaped, $options: 'i' } }] });
     }
 
     if (options.governs) {
@@ -245,8 +247,9 @@ export class PolicyAdminService {
       // so a policy using one is a candidate here and `resourceApplies` decides for real below. This
       // is a screen a human reads, not the decision path, so filtering candidates in memory rather
       // than pushing every last bit of it into the query is the right trade here.
+      clauses.push({ $or: [{ 'resource.names': options.governs }, { 'resource.pattern': { $exists: true } }] });
       const candidates = await this.policies
-        .find({ ...filter, $or: [{ 'resource.names': options.governs }, { 'resource.pattern': { $exists: true } }] }, { projection: { _id: 0 } })
+        .find({ $and: clauses }, { projection: { _id: 0 } })
         .sort({ name: 1 })
         .toArray();
       const matching = candidates.filter((policy) => resourceApplies(policy.resource, options.governs!));
@@ -256,6 +259,7 @@ export class PolicyAdminService {
       };
     }
 
+    const filter = { $and: clauses };
     const [found, total] = await Promise.all([
       this.policies.find(filter, { projection: { _id: 0 } }).sort({ name: 1 }).skip(skip).limit(limit).toArray(),
       this.policies.countDocuments(filter),

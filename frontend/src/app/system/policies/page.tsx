@@ -203,7 +203,7 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
   );
   const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
   const readResources = useCallback(
-    () => callApi<{ resourceServers: Array<{ resources: Array<{ name: string }> }> }>('/resource-servers', { subject: 'the resource server catalog' }),
+    () => callApi<{ resourceServers: Array<{ resources: Array<{ name: string }> }> }>('/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' }),
     [],
   );
   const resourceServers = useConsoleResource(readResources, 'The resource server catalog could not be read.');

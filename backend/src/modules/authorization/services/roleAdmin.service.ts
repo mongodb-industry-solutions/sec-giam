@@ -589,10 +589,35 @@ export class RoleAdminService {
       .sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
   }
 
-  /** Who holds a role, lapsed ones included: "who used to have this" is the question after an incident. */
-  async assignmentsFor(realmId: string, roleId: string): Promise<AssignmentView[]> {
+  /**
+   * Who holds a role, lapsed ones included: "who used to have this" is the question after an
+   * incident.
+   *
+   * `q` narrows at the Mongo level (fewer principal documents to join in memory below); the sort
+   * that matters, most recently granted first, and the paging, both happen after the join, because
+   * "most recent" is a property of the ASSIGNMENT (`grantedAt`), not of the principal document
+   * Mongo would otherwise sort by.
+   */
+  async assignmentsFor(
+    realmId: string,
+    roleId: string,
+    options: { q?: string; skip?: number; limit?: number } = {},
+  ): Promise<{ assignments: AssignmentView[]; total: number }> {
+    const skip = Math.max(0, options.skip ?? 0);
+    const limit = Math.min(200, Math.max(1, options.limit ?? 20));
+    const filter: Record<string, unknown> = { realmId, 'roles.roleId': roleId };
+    if (options.q) {
+      // Escaped, because a search box is not a place to accept an expression the database will
+      // then run.
+      const escaped = options.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { subjectId: { $regex: escaped, $options: 'i' } },
+        { userName: { $regex: escaped, $options: 'i' } },
+      ];
+    }
+
     const holders = await this.principals
-      .find({ realmId, 'roles.roleId': roleId }, { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } })
+      .find(filter, { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } })
       .toArray();
     const now = new Date();
     const views: AssignmentView[] = [];
@@ -602,7 +627,8 @@ export class RoleAdminService {
         views.push(RoleAdminService.view(holder.subjectId, holding, now, holder.userName));
       }
     }
-    return views.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
+    const sorted = views.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
+    return { assignments: sorted.slice(skip, skip + limit), total: sorted.length };
   }
 
   async grant(
@@ -758,6 +784,7 @@ export class RoleAdminService {
    */
   async catalog(realmId: string): Promise<Array<{
     permission: string; resource: string; action: string; description: string; resourceServer: string;
+    resourceServerAudience?: string;
   }>> {
     const resources = await this.db
       .collection<ResourceRecord>(RESOURCE_COLLECTION)
@@ -768,6 +795,7 @@ export class RoleAdminService {
 
     const catalog = new Map<string, {
       permission: string; resource: string; action: string; description: string; resourceServer: string;
+      resourceServerAudience?: string;
     }>();
     for (const resource of resources) {
       const parent = resource.parentResourceId ? byId.get(resource.parentResourceId) : undefined;
@@ -785,6 +813,10 @@ export class RoleAdminService {
             action,
             description: resource.description ?? '',
             resourceServer: parent?.name ?? resource.name,
+            // Carried so a caller adding one more action to this resource can re-register its
+            // server without guessing the audience, which `registerCatalog` would otherwise
+            // overwrite with whatever the caller happened to send.
+            resourceServerAudience: parent?.audience ?? resource.audience,
           });
         }
       }

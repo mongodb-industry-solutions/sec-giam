@@ -22,9 +22,16 @@ function databaseHolding(documents: Array<Record<string, unknown>>): Db {
         if (key === '$or') {
           return (value as Array<Record<string, unknown>>).some((clause) => matches(doc, clause));
         }
+        if (key === '$and') {
+          return (value as Array<Record<string, unknown>>).every((clause) => matches(doc, clause));
+        }
         const actual = at(doc, key);
         if (value && typeof value === 'object' && '$exists' in (value as Record<string, unknown>)) {
           return (actual !== undefined) === (value as { $exists: boolean }).$exists;
+        }
+        if (value && typeof value === 'object' && '$regex' in (value as Record<string, unknown>)) {
+          const { $regex, $options } = value as { $regex: string; $options?: string };
+          return new RegExp($regex, $options).test(String(actual ?? ''));
         }
         if (Array.isArray(actual)) return actual.includes(value);
         return actual === value;
@@ -84,5 +91,19 @@ describe('listing policies that govern one resource', () => {
     const service = new PolicyAdminService(databaseHolding([NAMED]));
     const { policies } = await service.list('r1', { governs: 'reports' });
     expect(policies[0].resource).toEqual({ names: ['reports'] });
+  });
+
+  it('combines with a name search instead of the search silently losing to governs', async () => {
+    // The regression this guards: `governs` and `q` both used to assign their own `$or` onto the
+    // same filter object, so asking for both together silently dropped whichever assigned second.
+    const service = new PolicyAdminService(databaseHolding([NAMED, PATTERNED]));
+    const { policies } = await service.list('r1', { governs: 'reports', q: 'named' });
+    expect(policies.map((p) => p.policyId)).toEqual(['p-named']);
+  });
+
+  it('combines with a status filter the same way', async () => {
+    const service = new PolicyAdminService(databaseHolding([NAMED, { ...PATTERNED, policyId: 'p-retired', status: 'retired' }]));
+    const { policies } = await service.list('r1', { governs: 'reports', status: 'retired' });
+    expect(policies.map((p) => p.policyId)).toEqual(['p-retired']);
   });
 });

@@ -6,6 +6,8 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, Boxes, Plus, Power, Scale, Trash2, X } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Fact } from '../../../../components/Fact';
+import { Pagination } from '../../../../components/Pagination';
+import { ListToolbar } from '../../../../components/ListToolbar';
 import { EmptyState, ErrorState, LoadingState, StatusBadge as CatalogStatusBadge } from '../../../../components/ResultState';
 import { ActionButton, Fact as RecordFact, RecordCard } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
@@ -13,6 +15,8 @@ import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { Field, INPUT } from '../../roles/parts';
 import { EffectBadge, StatusBadge as PolicyStatusBadge } from '../../policies/parts';
 import type { PolicySummary } from '../../policies/types';
+
+type PolicyStatusFilter = 'all' | 'active' | 'draft' | 'retired';
 
 interface CatalogResource {
   resourceId: string;
@@ -52,7 +56,7 @@ export default function ResourceDetailPage() {
   const mayManagePolicies = can(claims, 'policies', 'manage');
 
   const readCatalog = useCallback(
-    () => callApi<{ resourceServers: ResourceServer[] }>('/resource-servers', { subject: 'the resource server catalog' }),
+    () => callApi<{ resourceServers: ResourceServer[] }>('/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' }),
     [],
   );
   const catalog = useConsoleResource(readCatalog, 'The resource server catalog could not be read.');
@@ -68,13 +72,24 @@ export default function ResourceDetailPage() {
     return null;
   }, [catalog.data, resourceId]);
 
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<PolicyStatusFilter>('all');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
   const readGoverning = useCallback(async () => {
     if (!resource) return { policies: [] as PolicySummary[], total: 0 };
     return callApi<{ policies: PolicySummary[]; total: number }>('/policies', {
-      query: { governs: resource.name, limit: 200 },
+      query: {
+        governs: resource.name,
+        q: query || undefined,
+        status: status === 'all' ? undefined : status,
+        skip: (page - 1) * limit,
+        limit,
+      },
       subject: 'the policies that govern this resource',
     });
-  }, [resource]);
+  }, [resource, query, status, page, limit]);
   const governing = useConsoleResource(readGoverning, 'The policies for this resource could not be read.');
 
   const readOthers = useCallback(async () => {
@@ -155,8 +170,12 @@ export default function ResourceDetailPage() {
     if (done) setAssigning(false);
   }
 
-  const governedNames = new Set((governing.data?.policies ?? []).map((policy) => policy.policyId));
-  const attachable = (allPolicies.data?.policies ?? []).filter((policy) => policy.resource.names?.length && !governedNames.has(policy.policyId));
+  // Computed from the FULL, unfiltered `allPolicies` fetch rather than the paginated/filtered
+  // `governing` list: excluding only what the current search/status/page happens to show would
+  // offer a policy that already governs this resource as though it did not, the moment a filter
+  // hid it from view.
+  const attachable = (allPolicies.data?.policies ?? [])
+    .filter((policy) => policy.resource.names?.length && !policy.resource.names.includes(resource?.name ?? ''));
 
   return (
     <main className="space-y-5">
@@ -217,6 +236,21 @@ export default function ResourceDetailPage() {
               />
             )}
 
+            <ListToolbar
+              search={{ value: query, onChange: (next) => { setQuery(next); setPage(1); }, placeholder: 'Search by name' }}
+              filter={{
+                label: 'Filter by status',
+                value: status,
+                onChange: (next) => { setStatus(next); setPage(1); },
+                options: [
+                  { key: 'all', label: 'All' },
+                  { key: 'active', label: 'Active' },
+                  { key: 'draft', label: 'Draft' },
+                  { key: 'retired', label: 'Retired' },
+                ],
+              }}
+            />
+
             {governing.error && <ErrorState message={governing.error} onRetry={() => void governing.reload()} />}
             {governing.loading && <LoadingState label="Reading the policies that govern this resource…" />}
 
@@ -268,6 +302,18 @@ export default function ResourceDetailPage() {
                   );
                 })}
               </ul>
+            )}
+
+            {!governing.loading && (governing.data?.total ?? 0) > 0 && (
+              <Pagination
+                page={page}
+                totalPages={Math.max(1, Math.ceil((governing.data?.total ?? 0) / limit))}
+                total={governing.data?.total ?? 0}
+                limit={limit}
+                noun="policies"
+                onPageChange={setPage}
+                onLimitChange={(next) => { setLimit(next); setPage(1); }}
+              />
             )}
           </section>
         </>

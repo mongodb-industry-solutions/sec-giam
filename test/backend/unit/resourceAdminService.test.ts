@@ -26,30 +26,46 @@ function record(overrides: Partial<ResourceRecord>): ResourceRecord {
 
 /** A `resource` collection holding exactly the records handed to it. */
 function dbOf(records: ResourceRecord[]): Db {
+  function matches(candidate: ResourceRecord, filter: Record<string, unknown>): boolean {
+    if (filter.kind && typeof filter.kind === 'object' && '$ne' in (filter.kind as object)) {
+      if (candidate.kind === (filter.kind as { $ne: string }).$ne) return false;
+    }
+    if (filter.parentResourceId && typeof filter.parentResourceId === 'object'
+      && '$in' in (filter.parentResourceId as object)) {
+      const allowed = (filter.parentResourceId as { $in: string[] }).$in;
+      if (!candidate.parentResourceId || !allowed.includes(candidate.parentResourceId)) return false;
+    }
+    if (filter.status && candidate.status !== filter.status) return false;
+    if (filter.$or) {
+      const clauses = filter.$or as Array<Record<string, { $regex: string; $options?: string }>>;
+      const hit = clauses.some((clause) => Object.entries(clause).some(([field, cond]) => {
+        const value = (candidate as unknown as Record<string, unknown>)[field];
+        return new RegExp(cond.$regex, cond.$options).test(String(value ?? ''));
+      }));
+      if (!hit) return false;
+    }
+    return candidate.realmId === filter.realmId;
+  }
+
   return {
     collection: () => ({
-      find: (filter: Record<string, unknown>) => ({
-        sort: () => ({
-          toArray: async () => records.filter((candidate) => {
-            if (filter.kind && typeof filter.kind === 'object' && '$ne' in (filter.kind as object)) {
-              if (candidate.kind === (filter.kind as { $ne: string }).$ne) return false;
-            }
-            if (filter.parentResourceId && typeof filter.parentResourceId === 'object'
-              && '$in' in (filter.parentResourceId as object)) {
-              const allowed = (filter.parentResourceId as { $in: string[] }).$in;
-              if (!candidate.parentResourceId || !allowed.includes(candidate.parentResourceId)) return false;
-            }
-            return candidate.realmId === filter.realmId;
+      find: (filter: Record<string, unknown>) => {
+        const found = records.filter((candidate) => matches(candidate, filter));
+        return {
+          sort: () => ({
+            toArray: async () => found,
+            skip: (n: number) => ({ limit: (m: number) => ({ toArray: async () => found.slice(n, n + m) }) }),
           }),
-        }),
-      }),
+        };
+      },
+      countDocuments: async (filter: Record<string, unknown>) => records.filter((candidate) => matches(candidate, filter)).length,
     }),
   } as unknown as Db;
 }
 
 describe('ResourceAdminService.list', () => {
   it('returns nothing for a realm with no registered resource server', async () => {
-    expect(await new ResourceAdminService(dbOf([])).list(REALM_ID)).toEqual([]);
+    expect(await new ResourceAdminService(dbOf([])).list(REALM_ID)).toEqual({ resourceServers: [], total: 0 });
   });
 
   it('joins a server to its own children, and excludes object-kind records from the top level', async () => {
@@ -60,11 +76,12 @@ describe('ResourceAdminService.list', () => {
       resourceId: 'res-1', kind: 'object', name: 'orders', parentResourceId: 'srv-1',
       actions: ['view', 'manage'], catalogVersion: 1,
     });
-    const list = await new ResourceAdminService(dbOf([server, child])).list(REALM_ID);
+    const { resourceServers, total } = await new ResourceAdminService(dbOf([server, child])).list(REALM_ID);
 
-    expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ resourceId: 'srv-1', name: 'orders-api', audience: 'orders-api' });
-    expect(list[0].resources).toEqual([
+    expect(total).toBe(1);
+    expect(resourceServers).toHaveLength(1);
+    expect(resourceServers[0]).toMatchObject({ resourceId: 'srv-1', name: 'orders-api', audience: 'orders-api' });
+    expect(resourceServers[0].resources).toEqual([
       { resourceId: 'res-1', name: 'orders', actions: ['view', 'manage'], status: 'active', catalogVersion: 1 },
     ]);
   });
@@ -74,17 +91,33 @@ describe('ResourceAdminService.list', () => {
     const child = record({
       resourceId: 'res-1', kind: 'object', name: 'legacy', parentResourceId: 'srv-1', status: 'withdrawn',
     });
-    const list = await new ResourceAdminService(dbOf([server, child])).list(REALM_ID);
+    const { resourceServers } = await new ResourceAdminService(dbOf([server, child])).list(REALM_ID);
 
-    expect(list[0].status).toBe('withdrawn');
-    expect(list[0].resources[0].status).toBe('withdrawn');
+    expect(resourceServers[0].status).toBe('withdrawn');
+    expect(resourceServers[0].resources[0].status).toBe('withdrawn');
   });
 
   it('never crosses realms: a server from another realm is invisible', async () => {
     const own = record({ resourceId: 'srv-1', kind: 'api', name: 'mine' });
     const other = record({ resourceId: 'srv-2', kind: 'api', name: 'theirs', realmId: 'realm-2' });
-    const list = await new ResourceAdminService(dbOf([own, other])).list(REALM_ID);
+    const { resourceServers } = await new ResourceAdminService(dbOf([own, other])).list(REALM_ID);
 
-    expect(list.map((server) => server.name)).toEqual(['mine']);
+    expect(resourceServers.map((server) => server.name)).toEqual(['mine']);
+  });
+
+  it('narrows by name or audience, case-insensitively', async () => {
+    const orders = record({ resourceId: 'srv-1', kind: 'api', name: 'orders-api', audience: 'orders' });
+    const payments = record({ resourceId: 'srv-2', kind: 'api', name: 'payments-api', audience: 'payments' });
+    const { resourceServers } = await new ResourceAdminService(dbOf([orders, payments])).list(REALM_ID, { q: 'PAY' });
+
+    expect(resourceServers.map((server) => server.name)).toEqual(['payments-api']);
+  });
+
+  it('pages the top-level servers', async () => {
+    const servers = ['a', 'b', 'c'].map((name, index) => record({ resourceId: `srv-${index}`, kind: 'api', name }));
+    const { resourceServers, total } = await new ResourceAdminService(dbOf(servers)).list(REALM_ID, { skip: 1, limit: 1 });
+
+    expect(total).toBe(3);
+    expect(resourceServers.map((server) => server.name)).toEqual(['b']);
   });
 });

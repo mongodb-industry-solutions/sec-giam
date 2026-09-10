@@ -48,7 +48,6 @@ const NOT_YET_RECORDING: Record<string, string> = {
   // PCI DSS 10.2.1.x names changes to identification and authentication credentials
   // specifically, so this one is the highest-value debt in the list.
   'modules/directory/services/credentialStores.ts': 'DEBT: credential material changes, not diffed',
-  'modules/authorization/controllers/resource.controller.ts': 'DEBT: replaces an action catalog wholesale, unrecorded',
   'modules/realm/controllers/domain.controller.ts': 'DEBT: records the change, not the previous value',
   'modules/oauth/controllers/registration.controller.ts': 'DEBT: client registration changes, not diffed',
   'modules/directory/controllers/registration.controller.ts': 'DEBT: principal creation, not diffed',

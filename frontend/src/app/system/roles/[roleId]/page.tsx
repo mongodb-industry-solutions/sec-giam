@@ -6,6 +6,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, Minus, Plus, Power, Save, ShieldHalf, Trash2, UserMinus, UserPlus } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
+import { Pagination } from '../../../../components/Pagination';
+import { ListToolbar } from '../../../../components/ListToolbar';
 import { EmptyState, ErrorState, LoadingState } from '../../../../components/ResultState';
 import { ActionButton, Fact, RecordCard } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
@@ -36,6 +38,7 @@ export default function RoleDetailPage() {
   const mayViewAssignments = can(claims, 'assignments', 'view');
   const mayManageAssignments = can(claims, 'assignments', 'manage');
   const mayReadCatalog = can(claims, 'permissions', 'view');
+  const mayManagePermissions = can(claims, 'permissions', 'manage');
 
   const read = useCallback(
     () => callApi<RoleDetail>(`/roles/${encodeURIComponent(roleId)}`, { subject: 'that role' }),
@@ -98,6 +101,48 @@ export default function RoleDetailPage() {
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
+  }
+
+  /**
+   * Declares one more action on a resource this realm already has, straight from this screen.
+   *
+   * `registerCatalog` replaces a server's WHOLE declared catalog per call, not one resource at a
+   * time, so every other resource type that server already declares has to be resent unchanged
+   * alongside the new action, or it would be read as "no longer declared" and withdrawn. The catalog
+   * already fetched for this page carries every entry, so no second read is needed to reconstruct it.
+   */
+  async function addNewAction(resource: string, action: string) {
+    const entries = catalog.data?.permissions ?? [];
+    const target = entries.find((entry) => entry.resource === resource);
+    if (!target) return;
+    const sameServer = entries.filter((entry) => entry.resourceServer === target.resourceServer);
+
+    const grouped = new Map<string, Set<string>>();
+    for (const entry of sameServer) {
+      const actions = grouped.get(entry.resource) ?? new Set<string>();
+      actions.add(entry.action);
+      grouped.set(entry.resource, actions);
+    }
+    const targetActions = grouped.get(resource) ?? new Set<string>();
+    targetActions.add(action);
+    grouped.set(resource, targetActions);
+
+    const permissions = [...grouped.entries()].flatMap(
+      ([res, actions]) => [...actions].map((a) => ({ resource: res, action: a })),
+    );
+
+    const done = await catalog.run(
+      'add-action',
+      () => callApi(`/resource-servers/${encodeURIComponent(target.resourceServer)}/permissions`, {
+        method: 'PUT',
+        body: { audience: target.resourceServerAudience ?? target.resourceServer, permissions },
+        subject: 'that resource server',
+      }),
+      'That action could not be added to the catalog.',
+    );
+    // Granting it to THIS role is still the ordinary draft-then-Save this whole screen already
+    // uses: added to `held`, which is what makes the page dirty, not saved until Save is pressed.
+    if (done) toggle(`${resource}:${action}`);
   }
 
   async function save() {
@@ -271,6 +316,9 @@ export default function RoleDetailPage() {
                 held={held}
                 onToggle={toggle}
                 catalog={mayManageRoles ? (catalog.data?.permissions ?? []) : []}
+                mayAddAction={mayManagePermissions}
+                addBusy={catalog.busy === 'add-action'}
+                onAddAction={addNewAction}
               />
 
               {detail.denialRationale && detail.denialRationale.length > 0 && (
@@ -318,7 +366,7 @@ export default function RoleDetailPage() {
  * does not require leaving the page that already shows everything else this role does.
  */
 function PermissionMatrix({
-  permissions, roleName, editable, held, onToggle, catalog,
+  permissions, roleName, editable, held, onToggle, catalog, mayAddAction, addBusy, onAddAction,
 }: {
   permissions: ResolvedPermission[];
   roleName: string;
@@ -326,6 +374,9 @@ function PermissionMatrix({
   held: Set<string>;
   onToggle: (key: string) => void;
   catalog: CatalogPermission[];
+  mayAddAction: boolean;
+  addBusy: boolean;
+  onAddAction: (resource: string, action: string) => Promise<void>;
 }) {
   const { actions, resources, cells, catalogSet } = useMemo(() => {
     const actionSet = new Set<string>();
@@ -453,7 +504,70 @@ function PermissionMatrix({
         <Legend className="bg-gray-100 text-gray-500" label="inherited from a parent" />
         <Legend className="bg-amber-100 text-amber-700" label="nothing enforces it" />
       </div>
+
+      {mayAddAction && (
+        <AddAction resourceNames={resources.map(([resource]) => resource)} busy={addBusy} onAdd={onAddAction} />
+      )}
     </section>
+  );
+}
+
+/**
+ * One more action on a resource this realm already declares, registered through the same catalog
+ * write `/system/resources` itself uses. Deliberately not a way to declare a brand new resource
+ * TYPE: that needs an audience picked first, and already has a full home on that screen; this is
+ * the narrower, common case of "one more verb on something that already exists".
+ */
+function AddAction({ resourceNames, busy, onAdd }: {
+  resourceNames: string[];
+  busy: boolean;
+  onAdd: (resource: string, action: string) => Promise<void>;
+}) {
+  const [resource, setResource] = useState(resourceNames[0] ?? '');
+  const [action, setAction] = useState('');
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!resource.trim() || !action.trim()) return;
+        void onAdd(resource, action.trim()).then(() => setAction(''));
+      }}
+      className="flex flex-wrap items-end gap-2 border-t border-gray-100 px-4 py-3"
+    >
+      <label className="block">
+        <span className="text-[10px] uppercase tracking-wider text-gray-400">Resource</span>
+        <select
+          value={resource}
+          onChange={(e) => setResource(e.target.value)}
+          className="mt-1 block h-9 rounded-lg border border-gray-200 px-2.5 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+        >
+          {resourceNames.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase tracking-wider text-gray-400">New action</span>
+        <input
+          value={action}
+          onChange={(e) => setAction(e.target.value)}
+          placeholder="archive"
+          className="mt-1 block h-9 w-40 rounded-lg border border-gray-200 px-2.5 font-mono text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+        />
+      </label>
+      <button
+        type="submit"
+        disabled={busy || !resource.trim() || !action.trim()}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#001E2B] bg-[#001E2B] px-3 text-xs font-medium text-[#00ED64] disabled:opacity-50"
+      >
+        <Plus size={12} aria-hidden />
+        {busy ? 'Adding…' : 'Add to the catalog'}
+      </button>
+      <p className="w-full text-[11px] text-gray-400">
+        Declares this action on an existing resource, the same registration a resource server's own
+        deployment would make, and checks it for this role. Declaring a brand new resource lives at{' '}
+        <code>/system/resources</code>.
+      </p>
+    </form>
   );
 }
 
@@ -483,11 +597,16 @@ function Assignments({ roleId, mayManage, onChanged }: {
   mayManage: boolean;
   onChanged: () => void;
 }) {
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
   const read = useCallback(
-    () => callApi<{ assignments: Assignment[] }>(`/roles/${encodeURIComponent(roleId)}/assignments`, {
+    () => callApi<{ assignments: Assignment[]; total: number }>(`/roles/${encodeURIComponent(roleId)}/assignments`, {
+      query: { q: query || undefined, skip: (page - 1) * limit, limit },
       subject: 'who holds this role',
     }),
-    [roleId],
+    [roleId, query, page, limit],
   );
   const assignments = useConsoleResource(read, 'The holders of this role could not be read.');
   const [granting, setGranting] = useState(false);
@@ -580,12 +699,19 @@ function Assignments({ roleId, mayManage, onChanged }: {
         </form>
       )}
 
+      <ListToolbar
+        search={{ value: query, onChange: (next) => { setQuery(next); setPage(1); }, placeholder: 'Search by subject id or user name' }}
+      />
+
       {assignments.error && <ErrorState message={assignments.error} onRetry={() => void assignments.reload()} />}
 
       {assignments.loading
         ? <LoadingState label="Reading who holds this role…" />
         : rows.length === 0
-          ? <EmptyState title="Nobody holds this role" description="It grants nothing to anyone until it is assigned." />
+          ? <EmptyState
+              title={query ? 'No holder matches that' : 'Nobody holds this role'}
+              description={query ? 'Nothing matches that search.' : 'It grants nothing to anyone until it is assigned.'}
+            />
           : (
             <ul className="space-y-3">
               {rows.map((assignment) => (
@@ -637,6 +763,18 @@ function Assignments({ roleId, mayManage, onChanged }: {
               ))}
             </ul>
           )}
+
+      {!assignments.loading && (assignments.data?.total ?? 0) > 0 && (
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil((assignments.data?.total ?? 0) / limit))}
+          total={assignments.data?.total ?? 0}
+          limit={limit}
+          noun="holders"
+          onPageChange={setPage}
+          onLimitChange={(next) => { setLimit(next); setPage(1); }}
+        />
+      )}
     </section>
   );
 }

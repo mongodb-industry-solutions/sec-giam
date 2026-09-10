@@ -62,5 +62,7 @@ export interface CatalogPermission {
   action: string;
   description?: string;
   resourceServer: string;
+  /** What a token must name in `aud` for that server. Needed to re-register it without guessing. */
+  resourceServerAudience?: string;
   deprecated?: boolean;
 }

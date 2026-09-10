@@ -289,7 +289,11 @@ export async function seedAuthorization(
   const ADMINISTRATOR_PERMISSIONS: Record<string, string[]> = {
     roles: ['view', 'manage'],
     assignments: ['view', 'manage'],
-    permissions: ['view'],
+    // `manage` declares or edits a resource server's own catalog from the console (the same write
+    // `PUT /admin/resource-servers/:name/permissions` already offers admin-token callers); `view` is
+    // reading what is already declared, the tier `/permissions` and the read side of the resource
+    // catalog both ask for.
+    permissions: ['view', 'manage'],
     // Reading a policy and writing one are separate authorities, because a statement that DENIES is
     // withdrawn by the same verb that adds one, and reviewing the rules is not the same standing as
     // changing them.

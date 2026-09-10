@@ -1,28 +1,24 @@
 import { FastifyInstance } from 'fastify';
-import { v5 as uuidv5 } from 'uuid';
-import { RESOURCE_COLLECTION, REALM_COLLECTION } from '../../../shared/models/collections';
-import { newMeta, touchMeta, DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
+import { REALM_COLLECTION } from '../../../shared/models/collections';
 import { requireAdmin } from '../../../vendors/middleware/adminAuth';
 import { problem } from '../../../shared/models/problem';
 import { ResourceRecord } from '../models/resource.model';
 import { ResourceAdminService } from '../services/resourceAdmin.service';
 import { resourceServerView } from './resourceCatalog.controller';
 
-// The same namespace the seeders use, so a catalog registered at boot and one seeded resolve to one
-// record rather than two that look alike.
-const AUTHORIZATION_NAMESPACE = 'a1c4e7b2-5d9f-4a3c-8e6b-2f7d1c9a4b83';
-
 /**
- * Where a protected application declares what it enforces.
+ * Where a protected application declares what it enforces, admin-token gated for its own deployment.
  *
  * The direction is the whole arrangement: the application ships its enforcement points in its own
  * code and PUTs them here, because only the code containing a guard can say the permission exists.
  * The authority then decides who holds them. Neither side can invent the other's half, and an
  * application that tried to grant itself something would be writing to a collection it cannot reach.
  *
- * Idempotent by construction: the same catalog registered twice is one registration. A permission
- * that disappears from a catalog is marked DEPRECATED rather than deleted, because grants already
- * reference it and deleting it would leave those grants unexplainable.
+ * The write itself lives in `ResourceAdminService.registerCatalog`, shared with the RBAC-gated
+ * equivalent in `resourceCatalog.controller.ts`: one caller is a resource server's own deployment
+ * script running with no realm session at all, the other is a signed-in operator with
+ * `permissions:manage`, and both must reach the identical, idempotent write rather than two that
+ * could drift apart.
  */
 export async function resourceController(fastify: FastifyInstance) {
   fastify.put('/admin/resource-servers/:name/permissions', {
@@ -103,119 +99,8 @@ export async function resourceController(fastify: FastifyInstance) {
       { realmId: string; tenantId: string } | null;
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm', realmName));
 
-    const resourceId = uuidv5(`resource-server:${realm.realmId}:${name}`, AUTHORIZATION_NAMESPACE);
-    const servers = fastify.db.collection<ResourceRecord>(RESOURCE_COLLECTION);
-
-    const existing = await servers.findOne({ resourceId });
-    // A NUMBER now, not a string: it is compared and incremented, and '10' < '9' as a string is the
-    // kind of ordering bug that only shows up on the tenth deploy.
-    const version = Number(body.catalogVersion ?? 1);
-    if (existing) {
-      await servers.updateOne({ resourceId }, {
-        $set: {
-          name,
-          audience: body.audience,
-          catalogVersion: version,
-          ...(body.validationMode ? { validationMode: body.validationMode } : {}),
-          meta: touchMeta(existing.meta),
-        },
-      });
-    } else {
-      await servers.insertOne({
-        realmId: realm.realmId,
-        tenantId: realm.tenantId ?? DEFAULT_TENANT_ID,
-        resourceId,
-        name,
-        audience: body.audience,
-        // An API is one kind of resource among several. A tool and a Model Context Protocol server
-        // are the others, and they go through the same decision function.
-        kind: 'api',
-        catalogVersion: version,
-        actions: [],
-        status: 'active',
-        validationMode: body.validationMode ?? 'hybrid',
-        registeredAt: new Date().toISOString(),
-        meta: newMeta('Resource'),
-      });
-    }
-
-    /**
-     * The catalog is replaced as a BLOCK, per resource type, and the version is bumped.
-     *
-     * P5.2. Row by row edits were how a catalog drifted: a permission removed from the application
-     * but left in the database looked exactly like one that still worked, and reviving it needed a
-     * `deprecated` flag to be flipped back. Declaring the whole set means the database says what the
-     * application says, and nothing else.
-     *
-     * Each resource TYPE the application declares becomes a resource of its own, parented to the
-     * API. That is what lets a permission stay the single string `type:action` while the audience
-     * still knows which types it enforces.
-     */
-    const actionsByType = new Map<string, Set<string>>();
-    for (const permission of body.permissions) {
-      const held = actionsByType.get(permission.resource) ?? new Set<string>();
-      held.add(permission.action);
-      actionsByType.set(permission.resource, held);
-    }
-
-    let registered = 0;
-    for (const [type, actions] of actionsByType) {
-      const childId = uuidv5(`resource:${realm.realmId}:${name}:${type}`, AUTHORIZATION_NAMESPACE);
-      const declaredActions = [...actions].sort();
-      const child = await servers.findOne({ resourceId: childId });
-      if (child) {
-        await servers.updateOne({ resourceId: childId }, {
-          $set: {
-            name: type,
-            actions: declaredActions,
-            // Bumped whenever the set changes, so drift is visible rather than silent.
-            catalogVersion: JSON.stringify(child.actions ?? []) === JSON.stringify(declaredActions)
-              ? child.catalogVersion
-              : child.catalogVersion + 1,
-            status: 'active',
-            meta: touchMeta(child.meta),
-          },
-        });
-      } else {
-        await servers.insertOne({
-          realmId: realm.realmId,
-          tenantId: realm.tenantId ?? DEFAULT_TENANT_ID,
-          resourceId: childId,
-          name: type,
-          // An object the API protects, reached through it rather than addressed by an audience of
-          // its own.
-          kind: 'object',
-          parentResourceId: resourceId,
-          actions: declaredActions,
-          catalogVersion: 1,
-          status: 'active',
-          registeredAt: new Date().toISOString(),
-          meta: newMeta('Resource'),
-        });
-      }
-      registered += declaredActions.length;
-    }
-
-    // A type the application no longer declares at all. Marked withdrawn, never deleted: a role may
-    // still grant something over it, and removing the resource would leave that grant referring to
-    // nothing with no way to find out what it once meant.
-    const children = await servers
-      .find({ realmId: realm.realmId, parentResourceId: resourceId }, { projection: { _id: 0 } })
-      .toArray();
-    let withdrawn = 0;
-    for (const child of children) {
-      if (actionsByType.has(child.name)) continue;
-      if (child.status === 'withdrawn') continue;
-      await servers.updateOne({ resourceId: child.resourceId }, { $set: { status: 'withdrawn' } });
-      withdrawn += 1;
-    }
-
-    return reply.send({
-      resourceId,
-      registered,
-      deprecated: withdrawn,
-      catalogVersion: version,
-    });
+    const outcome = await new ResourceAdminService(fastify.db).registerCatalog(realm.realmId, realm.tenantId, name, body);
+    return reply.send(outcome);
   });
 
   /**
@@ -264,6 +149,7 @@ export async function resourceController(fastify: FastifyInstance) {
       .findOne({ name: realmName }, { projection: { _id: 0, realmId: 1 } }) as { realmId: string } | null;
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm', realmName));
 
-    return reply.send({ resourceServers: await new ResourceAdminService(fastify.db).list(realm.realmId) });
+    const { resourceServers } = await new ResourceAdminService(fastify.db).list(realm.realmId, { limit: 200 });
+    return reply.send({ resourceServers });
   });
 }

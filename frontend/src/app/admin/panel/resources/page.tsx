@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { API_BASE_URL, SIMULATOR_REALM } from '../../../../lib/constants';
 import { getAdminToken, readJsonSafe } from '../../../../lib/adminHelpers';
+import {
+  type CatalogResourceDraft, type ResourceServerResponse, type ServerDraft,
+  draftFromResponse, draftToRegisterBody, emptyServerDraft, serializeDraft,
+} from '../../../system/resources/shared';
 
 /**
  * Registering and editing a resource server's own catalog, from the console.
@@ -23,63 +27,6 @@ import { getAdminToken, readJsonSafe } from '../../../../lib/adminHelpers';
  * already call it at that address.
  */
 
-interface CatalogResourceDraft {
-  resourceId?: string;
-  name: string;
-  actionsText: string;
-}
-
-interface ServerDraft {
-  resourceId?: string;
-  name: string;
-  audience: string;
-  catalogVersion: number;
-  validationMode: string;
-  status?: string;
-  resources: CatalogResourceDraft[];
-}
-
-interface ResourceServerResponse {
-  resourceId: string;
-  name: string;
-  audience?: string;
-  catalogVersion: number;
-  validationMode?: string;
-  status: string;
-  resources: Array<{ resourceId: string; name: string; actions: string[]; status: string }>;
-}
-
-function emptyServer(): ServerDraft {
-  return { name: '', audience: '', catalogVersion: 1, validationMode: 'hybrid', resources: [{ name: '', actionsText: '' }] };
-}
-
-function fromResponse(server: ResourceServerResponse): ServerDraft {
-  return {
-    resourceId: server.resourceId,
-    name: server.name,
-    audience: server.audience ?? '',
-    catalogVersion: server.catalogVersion,
-    validationMode: server.validationMode ?? 'hybrid',
-    status: server.status,
-    resources: server.resources.map((resource) => ({
-      resourceId: resource.resourceId,
-      name: resource.name,
-      actionsText: resource.actions.join(', '),
-    })),
-  };
-}
-
-function serialize(draft: ServerDraft) {
-  return JSON.stringify({
-    audience: draft.audience,
-    validationMode: draft.validationMode,
-    resources: draft.resources
-      .map((r) => ({ name: r.name.trim(), actions: r.actionsText.split(',').map((a) => a.trim()).filter(Boolean).sort() }))
-      .filter((r) => r.name)
-      .sort((a, b) => a.name.localeCompare(b.name)),
-  });
-}
-
 export default function ResourcesAdminPage() {
   const [realm, setRealm] = useState(SIMULATOR_REALM);
   const [loading, setLoading] = useState(false);
@@ -87,7 +34,7 @@ export default function ResourcesAdminPage() {
   const [loaded, setLoaded] = useState<ServerDraft[]>([]);
   const [drafts, setDrafts] = useState<ServerDraft[]>([]);
   const [adding, setAdding] = useState(false);
-  const [newServer, setNewServer] = useState<ServerDraft>(emptyServer());
+  const [newServer, setNewServer] = useState<ServerDraft>(emptyServerDraft());
   const [busyName, setBusyName] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -103,7 +50,7 @@ export default function ResourcesAdminPage() {
       });
       const { data, text } = await readJsonSafe<{ resourceServers: ResourceServerResponse[] }>(res);
       if (!res.ok || !data) throw new Error(text.trim().slice(0, 200) || res.statusText);
-      const asDrafts = data.resourceServers.map(fromResponse);
+      const asDrafts = data.resourceServers.map(draftFromResponse);
       setLoaded(asDrafts);
       setDrafts(asDrafts);
     } catch (failure) {
@@ -148,19 +95,12 @@ export default function ResourcesAdminPage() {
       const res = await fetch(`${API_BASE_URL}/admin/resource-servers/${encodeURIComponent(draft.name)}/permissions`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          realm,
-          audience: draft.audience || draft.name,
-          catalogVersion: draft.catalogVersion,
-          validationMode: draft.validationMode,
-          permissions: draft.resources.flatMap((row) => row.actionsText.split(',').map((a) => a.trim()).filter(Boolean)
-            .map((action) => ({ resource: row.name.trim(), action }))).filter((p) => p.resource),
-        }),
+        body: JSON.stringify({ realm, ...draftToRegisterBody(draft) }),
       });
       const { data, text } = await readJsonSafe<{ registered: number; deprecated: number }>(res);
       if (!res.ok || !data) throw new Error(text.trim().slice(0, 200) || res.statusText);
       setNotice(`${draft.name}: ${data.registered} permission(s) registered, ${data.deprecated} withdrawn.`);
-      if (draft === newServer) { setAdding(false); setNewServer(emptyServer()); }
+      if (draft === newServer) { setAdding(false); setNewServer(emptyServerDraft()); }
       await load();
     } catch (failure) {
       setError((failure as Error).message);
@@ -221,7 +161,7 @@ export default function ResourcesAdminPage() {
           }))}
           onAddRow={() => setNewServer((current) => ({ ...current, resources: [...current.resources, { name: '', actionsText: '' }] }))}
           onRemoveRow={(rowIndex) => setNewServer((current) => ({ ...current, resources: current.resources.filter((_, i) => i !== rowIndex) }))}
-          onCancel={() => { setAdding(false); setNewServer(emptyServer()); }}
+          onCancel={() => { setAdding(false); setNewServer(emptyServerDraft()); }}
           onRegister={() => void register(newServer)}
           busy={busyName === newServer.name}
         />
@@ -257,7 +197,7 @@ function ServerBlock({ draft, original, isNew, onChange, onRowChange, onAddRow, 
   busy: boolean;
 }) {
   const dirty = useMemo(
-    () => isNew || !original || serialize(draft) !== serialize(original),
+    () => isNew || !original || serializeDraft(draft) !== serializeDraft(original),
     [draft, original, isNew],
   );
   const inputClass = 'mt-1 block h-9 w-full rounded-lg border border-gray-700 bg-gray-900 px-2.5 text-sm text-gray-200 focus:border-gray-500 focus:outline-none';

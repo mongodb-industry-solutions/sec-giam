@@ -10160,8 +10160,49 @@
         "tags": [
           "authorization"
         ],
-        "description": "No applicable standard. What `PUT /admin/resource-servers/:name/permissions` has registered: each application, tool or MCP server that declared enforcement points, and the resources and actions each one currently offers. Readable by any authenticated principal, the same reasoning `/permissions` already applies: this is the authorization MODEL, not personal data or a secret, and it exists to be looked up rather than guarded.",
+        "description": "No applicable standard. What `PUT /admin/resource-servers/:name/permissions` (or its RBAC-gated equivalent below) has registered: each application, tool or MCP server that declared enforcement points, and the resources and actions each one currently offers. Readable by any authenticated principal, the same reasoning `/permissions` already applies: this is the authorization MODEL, not personal data or a secret, and it exists to be looked up rather than guarded.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Case-insensitive match on name or audience."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "deprecated",
+                "withdrawn"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "in": "query",
+            "name": "skip",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -10179,15 +10220,16 @@
         ],
         "responses": {
           "200": {
-            "description": "Every resource server this realm has registered.",
+            "description": "The resource servers this realm has registered.",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Every resource server this realm has registered.",
+                  "description": "The resource servers this realm has registered.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "resourceServers"
+                    "resourceServers",
+                    "total"
                   ],
                   "properties": {
                     "resourceServers": {
@@ -10285,6 +10327,9 @@
                           }
                         }
                       }
+                    },
+                    "total": {
+                      "type": "integer"
                     }
                   }
                 },
@@ -10312,13 +10357,176 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "total": 1
                 }
               }
             }
           },
           "401": {
             "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/resource-servers/{name}/permissions": {
+      "put": {
+        "operationId": "registerResourceServer",
+        "summary": "Declare a resource server's catalog, from the console",
+        "tags": [
+          "authorization"
+        ],
+        "description": "No applicable standard. Identical to `PUT /admin/resource-servers/:name/permissions`, reached by a signed-in operator instead of an admin token: both call the same `ResourceAdminService.registerCatalog`. Idempotent and versioned: registering the same catalog twice is one registration, and a permission that disappears from the declared set is marked withdrawn rather than deleted, because a role may already grant it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "audience",
+                  "permissions"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "audience": {
+                    "type": "string",
+                    "example": "orders-api"
+                  },
+                  "catalogVersion": {
+                    "type": "integer",
+                    "example": 3
+                  },
+                  "validationMode": {
+                    "type": "string",
+                    "enum": [
+                      "local-jwks",
+                      "introspection",
+                      "hybrid"
+                    ]
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "resource",
+                        "action"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "resource": {
+                          "type": "string"
+                        },
+                        "action": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "orders-api",
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The catalog as the authority now holds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The catalog as the authority now holds it.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resourceId",
+                    "registered",
+                    "deprecated",
+                    "catalogVersion"
+                  ],
+                  "properties": {
+                    "resourceId": {
+                      "type": "string"
+                    },
+                    "registered": {
+                      "type": "integer",
+                      "description": "Permissions in the catalog after this call."
+                    },
+                    "deprecated": {
+                      "type": "integer",
+                      "description": "Permissions no longer declared, kept for existing grants."
+                    },
+                    "catalogVersion": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "resourceId": "a1c4…",
+                  "registered": 27,
+                  "deprecated": 0,
+                  "catalogVersion": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No role held administers this realm's permissions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11824,6 +12032,10 @@
                           },
                           "resourceServer": {
                             "type": "string"
+                          },
+                          "resourceServerAudience": {
+                            "type": "string",
+                            "description": "What a token must name in `aud` for that server. Needed to re-register it without guessing."
                           }
                         }
                       }
@@ -12648,6 +12860,34 @@
             "schema": {
               "type": "string"
             },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Case-insensitive match on subject id or user name."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "in": "query",
+            "name": "skip",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "realm",
             "required": true
@@ -12676,7 +12916,8 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "assignments"
+                    "assignments",
+                    "total"
                   ],
                   "properties": {
                     "assignments": {
@@ -12728,6 +12969,9 @@
                           "live": true
                         }
                       }
+                    },
+                    "total": {
+                      "type": "integer"
                     }
                   }
                 },
@@ -12740,7 +12984,8 @@
                       "grantedAt": "2026-08-30T09:12:00.000Z",
                       "live": true
                     }
-                  ]
+                  ],
+                  "total": 1
                 }
               }
             }
