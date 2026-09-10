@@ -5,9 +5,8 @@
     "version": 1,
     "status": "active",
     "effect": "allow",
-    "permissions": ["roles:view", "roles:manage"],
-    "resource": { "names": ["roles"] },
-    "principals": ["*"],
+    "resource": { "ids": ["roles"] },
+    "permission": { "ids": ["roles:view", "roles:manage"] },
     "conditions": [],
     "reason": "Reading and editing the role catalogue is what administering a realm consists of."
   },
@@ -17,8 +16,8 @@
     "version": 1,
     "status": "active",
     "effect": "deny",
-    "permissions": ["roles:manage"],
-    "resource": { "names": ["roles"] },
+    "resource": { "ids": ["roles"] },
+    "permission": { "ids": ["roles:manage"] },
     "conditions": [],
     "obligations": [{ "type": "AUDIT", "severity": "high" }],
     "reason": "Editing what a role grants is withheld while this policy stands, whatever else allows it. Withdraw the policy deliberately, so widening the authority is a decision somebody made rather than one nobody noticed."
@@ -29,8 +28,8 @@
     "version": 1,
     "status": "active",
     "effect": "allow",
-    "permissions": ["sessions:view"],
-    "resource": { "names": ["sessions"] },
+    "resource": { "ids": ["sessions"] },
+    "permission": { "ids": ["sessions:view"] },
     "conditions": [{ "assuranceAtLeast": "aal2" }],
     "reason": "Reading where an account is signed in is offered once the sign-in itself reached a second factor."
   },
@@ -40,8 +39,8 @@
     "version": 1,
     "status": "active",
     "effect": "allow",
-    "permissions": ["transactions:viewSensitive"],
-    "resource": { "names": ["transactions"] },
+    "resource": { "ids": ["transactions"] },
+    "permission": { "ids": ["transactions:viewSensitive"] },
     "conditions": [{ "assuranceAtLeast": "aal2" }],
     "reason": "The role already gates this behind an elevation; the condition is a second, independent check that the sign-in itself also reached a second factor, on a business resource rather than on the authority's own."
   }

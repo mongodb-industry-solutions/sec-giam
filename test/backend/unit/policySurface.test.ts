@@ -18,7 +18,7 @@ import {
   bindPolicyEvaluators, abacEvaluator, rbacEvaluator, combineDecisions,
 } from '../../../backend/src/modules/authorization/services/policyEvaluators';
 import { PolicyDecisionService } from '../../../backend/src/modules/authorization/services/policyDecision.service';
-import { validatePolicy } from '../../../backend/src/modules/authorization/services/policyAdmin.service';
+import { validatePolicy, resolvePermissions, isPolicyRefusal } from '../../../backend/src/modules/authorization/services/policyAdmin.service';
 import { POLICY_CONDITION_KEYS } from '../../../backend/src/modules/authorization/models/policy.model';
 import {
   POLICY_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION, RESOURCE_COLLECTION,
@@ -60,9 +60,8 @@ const ALLOW_ROLES = {
   version: 1,
   status: 'active',
   effect: 'allow',
-  permissions: ['roles:view', 'roles:manage'],
-  resource: { names: ['roles'] },
-  principals: ['*'],
+  resolvedPermissions: ['roles:view', 'roles:manage'],
+  resource: { ids: ['roles'] },
   conditions: [],
   reason: 'administering the realm',
 };
@@ -75,8 +74,8 @@ const DENY_ROLE_CHANGE = {
   version: 1,
   status: 'active',
   effect: 'deny',
-  permissions: ['roles:manage'],
-  resource: { names: ['roles'] },
+  resolvedPermissions: ['roles:manage'],
+  resource: { ids: ['roles'] },
   conditions: [],
   reason: 'withheld while this policy stands',
 };
@@ -130,8 +129,8 @@ const ELEVATED_SESSIONS = {
   version: 2,
   status: 'active',
   effect: 'allow',
-  permissions: ['sessions:view'],
-  resource: { names: ['sessions'] },
+  resolvedPermissions: ['sessions:view'],
+  resource: { ids: ['sessions'] },
   conditions: [{ assuranceAtLeast: 'aal2' }],
   reason: 'offered once the sign-in reached a second factor',
 };
@@ -238,8 +237,8 @@ describe('a condition can require what the subject already holds, not only the r
   const ALLOW_EXPORT_FOR_AUDITORS = {
     realmId: 'r1', tenantId: 'default', policyId: 'p-role', name: 'export-allowed-for-auditors',
     version: 1, status: 'active', effect: 'allow',
-    permissions: ['reports:export'],
-    resource: { names: ['reports'] },
+    resolvedPermissions: ['reports:export'],
+    resource: { ids: ['reports'] },
     // Any ONE of the named roles, membership rather than an exhaustive list.
     conditions: [{ heldRole: ['auditor', 'compliance-officer'] }],
     reason: 'export requires holding one of the roles that reviews it',
@@ -266,8 +265,8 @@ describe('a condition can require what the subject already holds, not only the r
   const ALLOW_ARCHIVE_WITH_BOTH_PERMISSIONS = {
     realmId: 'r1', tenantId: 'default', policyId: 'p-perm', name: 'archive-allowed-with-both-permissions',
     version: 1, status: 'active', effect: 'allow',
-    permissions: ['reports:archive'],
-    resource: { names: ['reports'] },
+    resolvedPermissions: ['reports:archive'],
+    resource: { ids: ['reports'] },
     // EVERY named permission, the narrower half: naming several is "all of these specifically".
     conditions: [{ heldPermission: ['reports:export', 'reports:redact'] }],
     reason: 'archiving requires already holding both of the permissions it combines',
@@ -368,8 +367,8 @@ describe('the condition vocabulary is closed, in the service', () => {
   /** A policy that is valid apart from whatever one test is trying to break. */
   const wellFormed = {
     effect: 'deny' as const,
-    permissions: ['transfers:create'],
-    resource: { names: ['transfers'] },
+    permission: { ids: ['transfers:create'] },
+    resource: { ids: ['transfers'] },
     conditions: [] as never[],
   };
 
@@ -413,38 +412,30 @@ describe('the condition vocabulary is closed, in the service', () => {
     }
   });
 
-  it('refuses a policy that governs nothing at all', () => {
-    // A policy with no permission decides nothing and would sit in the list looking as though it
-    // did, which is worse than not having written it.
-    const refused = validatePolicy({ ...wellFormed, permissions: [] });
-    expect(refused?.status).toBe(400);
-    expect(refused?.title).toMatch(/governs nothing/i);
-  });
-
   it('refuses a permission that is not resource:action', () => {
     // One spelling everywhere. A policy written another way matches nothing, however the request
     // that reaches it happens to be spelled.
-    expect(validatePolicy({ ...wellFormed, permissions: ['transfers'] })?.status).toBe(400);
-    expect(validatePolicy({ ...wellFormed, permissions: ['transfers:'] })?.status).toBe(400);
-    expect(validatePolicy({ ...wellFormed, permissions: [':create'] })?.status).toBe(400);
-    // `*` is the one exception: it governs everything on purpose.
-    expect(validatePolicy({ ...wellFormed, permissions: ['*'] })).toBeNull();
+    expect(validatePolicy({ ...wellFormed, permission: { ids: ['transfers'] } })?.status).toBe(400);
+    expect(validatePolicy({ ...wellFormed, permission: { ids: ['transfers:'] } })?.status).toBe(400);
+    expect(validatePolicy({ ...wellFormed, permission: { ids: [':create'] } })?.status).toBe(400);
+    // "Matches everything" is a `pattern`, not a magic id: `ids` is exact membership only.
+    expect(validatePolicy({ ...wellFormed, permission: { pattern: '.*' } })).toBeNull();
   });
 
-  it('refuses a policy that names no resource, neither by name nor by pattern', () => {
+  it('refuses a policy that names no resource, neither by id nor by pattern', () => {
     expect(validatePolicy({ ...wellFormed, resource: undefined })?.status).toBe(400);
     expect(validatePolicy({ ...wellFormed, resource: {} })?.status).toBe(400);
   });
 
-  it('refuses naming a resource both ways at once, since only one could have decided', () => {
+  it('accepts naming a resource both ways at once: ids silently wins rather than being refused', () => {
     expect(validatePolicy({
       ...wellFormed,
-      resource: { names: ['transfers'], pattern: 'transfers.*' },
-    })?.status).toBe(400);
+      resource: { ids: ['transfers'], pattern: 'transfers.*' },
+    })).toBeNull();
   });
 
-  it('refuses an empty name in the list, which would match nothing', () => {
-    expect(validatePolicy({ ...wellFormed, resource: { names: [''] } })?.status).toBe(400);
+  it('refuses an empty id in the list, which would match nothing', () => {
+    expect(validatePolicy({ ...wellFormed, resource: { ids: [''] } })?.status).toBe(400);
   });
 
   it('refuses a pattern that does not compile under RE2', () => {
@@ -453,8 +444,14 @@ describe('the condition vocabulary is closed, in the service', () => {
     expect(validatePolicy({ ...wellFormed, resource: { pattern: '(?=foo)bar' } })?.status).toBe(400);
   });
 
+  it('refuses a pattern on any section that does not compile, not only on resource', () => {
+    expect(validatePolicy({ ...wellFormed, permission: { pattern: '(?=foo)bar' } })?.status).toBe(400);
+    expect(validatePolicy({ ...wellFormed, principal: { pattern: '(?=foo)bar' } })?.status).toBe(400);
+    expect(validatePolicy({ ...wellFormed, role: { pattern: '(?=foo)bar' } })?.status).toBe(400);
+  });
+
   it('accepts a resource named exactly, or a resource matched by pattern, on their own', () => {
-    expect(validatePolicy({ ...wellFormed, resource: { names: ['transfers'] } })).toBeNull();
+    expect(validatePolicy({ ...wellFormed, resource: { ids: ['transfers'] } })).toBeNull();
     expect(validatePolicy({ ...wellFormed, resource: { pattern: '^transfers.*' } })).toBeNull();
   });
 
@@ -486,6 +483,61 @@ describe('the condition vocabulary is closed, in the service', () => {
       ...wellFormed,
       conditions: [{ heldRole: ['auditor'], heldPermission: ['reports:export'] }],
     })).toBeNull();
+  });
+});
+
+/** A role collection that answers only the projected `find().toArray()` `effectivePermissionsFor` needs. */
+function databaseWithRoles(roles: Array<{ roleId: string; name: string; permissions: string[]; parentRoleIds?: string[] }>): Db {
+  return {
+    collection(name: string) {
+      if (name !== ROLE_COLLECTION) throw new Error(`unexpected collection ${name}`);
+      return { find: () => ({ toArray: async () => roles }) };
+    },
+  } as unknown as Db;
+}
+
+describe('resolvePermissions: what permission and role together resolve to', () => {
+  it('refuses a policy that governs nothing at all', async () => {
+    // A policy with no permission decides nothing and would sit in the list looking as though it
+    // did, which is worse than not having written it.
+    const refused = await resolvePermissions(databaseWithRoles([]), 'r1', { permission: {} });
+    expect(isPolicyRefusal(refused) && refused.status).toBe(400);
+    expect(isPolicyRefusal(refused) && refused.title).toMatch(/governs nothing/i);
+  });
+
+  it('resolves to exactly the explicit permission ids when no role is named', async () => {
+    const resolved = await resolvePermissions(databaseWithRoles([]), 'r1', { permission: { ids: ['roles:view'] } });
+    expect(isPolicyRefusal(resolved)).toBe(false);
+    expect(!isPolicyRefusal(resolved) && resolved.resolvedPermissions).toEqual(['roles:view']);
+  });
+
+  it('unions in everything a named role currently grants, parents included', async () => {
+    const resolved = await resolvePermissions(
+      databaseWithRoles([
+        { roleId: 'r-child', name: 'auditor', permissions: ['reports:view'], parentRoleIds: ['r-parent'] },
+        { roleId: 'r-parent', name: 'reader', permissions: ['sessions:view'] },
+      ]),
+      'r1',
+      { permission: { ids: ['reports:export'] }, role: { ids: ['auditor'] } },
+    );
+    expect(isPolicyRefusal(resolved)).toBe(false);
+    expect(!isPolicyRefusal(resolved) && resolved.resolvedPermissions.sort()).toEqual(
+      ['reports:export', 'reports:view', 'sessions:view'].sort(),
+    );
+  });
+
+  it('refuses a role that does not exist in this realm, rather than silently granting nothing', async () => {
+    const refused = await resolvePermissions(databaseWithRoles([]), 'r1', { role: { ids: ['ghost'] } });
+    expect(isPolicyRefusal(refused) && refused.status).toBe(400);
+    expect(isPolicyRefusal(refused) && refused.title).toMatch(/unknown role/i);
+  });
+
+  it('governs something through a permission pattern alone, with nothing pre-expanded for it', async () => {
+    // Checked live at decision time (`permissionApplies`), the same way `resource.pattern` already
+    // is, so it is not an error for nothing to have been resolvable ahead of time here.
+    const resolved = await resolvePermissions(databaseWithRoles([]), 'r1', { permission: { pattern: 'roles:.*' } });
+    expect(isPolicyRefusal(resolved)).toBe(false);
+    expect(!isPolicyRefusal(resolved) && resolved.resolvedPermissions).toEqual([]);
   });
 });
 

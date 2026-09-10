@@ -152,8 +152,8 @@ export default function ResourceDetailPage() {
 
   async function detach(policy: PolicySummary) {
     if (!resource) return;
-    const names = (policy.resource.names ?? []).filter((name) => name !== resource.name);
-    if (names.length === 0) {
+    const ids = (policy.resource.ids ?? []).filter((id) => id !== resource.name);
+    if (ids.length === 0) {
       if (!(await confirm(
         `${resource.name} is the only resource "${policy.name}" governs. Removing it here would leave the policy `
         + 'governing nothing, so it is removed outright instead. Continue?',
@@ -168,7 +168,7 @@ export default function ResourceDetailPage() {
     await governing.run(
       `detach-${policy.policyId}`,
       () => callApi(`/policies/${encodeURIComponent(policy.policyId)}`, {
-        method: 'PATCH', body: { resource: { names } }, subject: 'that policy',
+        method: 'PATCH', body: { resource: { ids } }, subject: 'that policy',
       }),
       'That policy could not be changed.',
     );
@@ -179,21 +179,21 @@ export default function ResourceDetailPage() {
     const target = (allPolicies.data?.policies ?? []).find((policy) => policy.policyId === policyId);
     if (!target) return;
 
-    // `names` and `pattern` are exclusive on a policy: attaching by exact name to one that
-    // currently matches by pattern would have to give the pattern up, since it cannot keep
-    // matching a shape AND an explicit list at once. Asked outright rather than done quietly,
-    // because it can narrow what that policy governs everywhere else it already applied.
-    if (target.resource.pattern && !target.resource.names?.length) {
+    // `ids` and `pattern` are exclusive on a policy: attaching by exact id to one that currently
+    // matches by pattern would have to give the pattern up, since it cannot keep matching a shape
+    // AND an explicit list at once. Asked outright rather than done quietly, because it can narrow
+    // what that policy governs everywhere else it already applied.
+    if (target.resource.pattern && !target.resource.ids?.length) {
       if (!(await confirm(
         `"${target.name}" currently governs by pattern (${target.resource.pattern}), which may match other resources too. `
-        + `Attaching it here replaces that pattern with an exact list of names, starting with just "${resource.name}". Continue?`,
+        + `Attaching it here replaces that pattern with an exact list of ids, starting with just "${resource.name}". Continue?`,
       ))) return;
     }
 
-    const names = [...new Set([...(target.resource.names ?? []), resource.name])];
+    const ids = [...new Set([...(target.resource.ids ?? []), resource.name])];
     const done = await governing.run(
       `attach-${policyId}`,
-      () => callApi(`/policies/${encodeURIComponent(policyId)}`, { method: 'PATCH', body: { resource: { names } }, subject: 'that policy' }),
+      () => callApi(`/policies/${encodeURIComponent(policyId)}`, { method: 'PATCH', body: { resource: { ids } }, subject: 'that policy' }),
       'That policy could not be attached.',
     );
     if (done) setAssigning(false);
@@ -208,8 +208,8 @@ export default function ResourceDetailPage() {
         body: {
           name: input.name,
           effect: input.effect,
-          resource: { names: [resource.name] },
-          permissions: input.permissions.split(',').map((value) => value.trim()).filter(Boolean),
+          resource: { ids: [resource.name] },
+          permission: { ids: input.permissions.split(',').map((value) => value.trim()).filter(Boolean) },
           ...(input.reason ? { reason: input.reason } : {}),
         },
         subject: 'that policy',
@@ -226,7 +226,7 @@ export default function ResourceDetailPage() {
   // asks before converting one of those, rather than this list quietly deciding for the caller
   // which policies are worth choosing from.
   const attachable = (allPolicies.data?.policies ?? [])
-    .filter((policy) => !(policy.resource.names ?? []).includes(resource?.name ?? ''));
+    .filter((policy) => !(policy.resource.ids ?? []).includes(resource?.name ?? ''));
 
   return (
     <main className="space-y-5">
@@ -340,7 +340,7 @@ export default function ResourceDetailPage() {
             {!governing.loading && (governing.data?.policies.length ?? 0) > 0 && (
               <ul className="space-y-3">
                 {governing.data!.policies.map((policy) => {
-                  const byName = (policy.resource.names ?? []).includes(resource.name);
+                  const byId = (policy.resource.ids ?? []).includes(resource.name);
                   return (
                     <RecordCard
                       key={policy.policyId}
@@ -349,7 +349,7 @@ export default function ResourceDetailPage() {
                       badges={<><EffectBadge effect={policy.effect} /><PolicyStatusBadge status={policy.status} /></>}
                       facts={
                         <>
-                          <RecordFact label="Governs by" value={byName ? 'exact name' : `pattern: ${policy.resource.pattern}`} />
+                          <RecordFact label="Governs by" value={byId ? 'exact id' : `pattern: ${policy.resource.pattern}`} />
                           <RecordFact label="In effect" value={policy.inEffect ? 'yes' : 'no'} />
                           <RecordFact label="Last changed" value={when(policy.lastModified)} />
                         </>
@@ -362,7 +362,7 @@ export default function ResourceDetailPage() {
                             busy={governing.busy === `toggle-${policy.policyId}`}
                             onClick={() => void toggleStatus(policy)}
                           />
-                          {byName && (
+                          {byId && (
                             <ActionButton
                               icon={Trash2}
                               tone="danger"

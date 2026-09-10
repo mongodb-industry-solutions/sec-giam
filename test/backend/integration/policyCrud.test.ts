@@ -44,21 +44,21 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
       body: JSON.stringify({
         name,
         effect: 'deny',
-        resource: { names: ['sessions'] },
-        permissions: ['sessions:manage'],
+        resource: { ids: ['sessions'] },
+        permission: { ids: ['sessions:manage'] },
         reason: 'v43 CRUD test',
       }),
       signal: AbortSignal.timeout(20000),
     });
     expect(created.status).toBe(201);
     const policy = await created.json() as {
-      policyId: string; effect: string; status: string; permissions: string[]; resource: { names: string[] };
+      policyId: string; effect: string; status: string; resolvedPermissions: string[]; resource: { ids: string[] };
     };
     // The exact shape the console reads: no `statements` array anywhere.
     expect(policy.effect).toBe('deny');
     expect(policy.status).toBe('active');
-    expect(policy.permissions).toEqual(['sessions:manage']);
-    expect(policy.resource.names).toEqual(['sessions']);
+    expect(policy.resolvedPermissions).toEqual(['sessions:manage']);
+    expect(policy.resource.ids).toEqual(['sessions']);
     expect((policy as unknown as Record<string, unknown>).statements).toBeUndefined();
 
     const listedActive = await fetch(`${GIAM}/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });

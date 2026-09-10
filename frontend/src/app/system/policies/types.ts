@@ -33,14 +33,15 @@ export interface PolicyCondition {
 }
 
 /**
- * What a policy governs, by exact name or by pattern, never both.
- *
- * `names` is the fast path, matched by a plain indexed lookup. `pattern` is a regular expression
- * (compiled with RE2, so it is guaranteed linear-time and cannot hang a decision), for the rare
- * policy that describes a shape rather than listing every resource it covers.
+ * One way of naming "one or several things", used identically by every section of a policy:
+ * `resource`, `permission`, `principal` and `role`. `ids` is the fast path, matched by a plain
+ * indexed lookup. `pattern` is a regular expression (compiled with RE2, so it is guaranteed
+ * linear-time and cannot hang a decision), for the rare policy that describes a shape rather than
+ * listing every member it covers. `ids` wins when both are given, rather than the write being
+ * refused.
  */
-export interface PolicyResource {
-  names?: string[];
+export interface Selector {
+  ids?: string[];
   pattern?: string;
 }
 
@@ -65,7 +66,8 @@ export interface PolicySummary {
   effect: 'allow' | 'deny';
   /** Carried on the summary, not only the detail: a resource's own screen asks "which policies
    * govern me" and needs this to decide, without a round trip per policy to find out. */
-  resource: PolicyResource;
+  resource: Selector;
+  /** `resolvedPermissions.length`: what this policy concretely covers right now, roles expanded. */
   permissionCount: number;
   conditionCount: number;
   /** False while drafted, retired, or dated ahead, so a list shows what actually decides today. */
@@ -75,10 +77,16 @@ export interface PolicySummary {
 }
 
 export interface PolicyDetail extends PolicySummary {
-  /** Full permission strings, `resource:action`. The same spelling a role and a token use. */
-  permissions: string[];
-  /** Subject patterns. `*` alone, or a trailing `*` for a prefix. Absent matches anyone. */
-  principals?: string[];
+  /** What an author added directly, `resource:action`. Never mutated by a role reference. */
+  permission: Selector;
+  /** Roles whose current, expanded grants are folded into `resolvedPermissions`. Provenance only:
+   * the decision engine never reads this, only what it already resolved to. */
+  role?: Selector;
+  /** Who this governs, by subject id or by pattern. Absent matches anyone. */
+  principal?: Selector;
+  /** The actual, flat set this policy is evaluated against: `permission` union every permission
+   * every role in `role` currently grants. */
+  resolvedPermissions: string[];
   conditions: PolicyCondition[];
   obligations?: PolicyObligation[];
   approvedBy?: string;

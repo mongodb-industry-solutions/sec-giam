@@ -11,8 +11,8 @@ function databaseHolding(documents: Array<Record<string, unknown>>): Db {
     collection(name: string) {
       if (name !== POLICY_COLLECTION) throw new Error(`unexpected collection ${name}`);
       // Dot notation resolves through nested objects, exactly as Mongo does, and a value found on an
-      // ARRAY field matches when any element equals it: `resource.names` is an array, and `{
-      // 'resource.names': 'reports' }` is asking "does this array contain reports", not "does the
+      // ARRAY field matches when any element equals it: `resource.ids` is an array, and `{
+      // 'resource.ids': 'reports' }` is asking "does this array contain reports", not "does the
       // whole array equal the string", which is what a naive `===` would otherwise test.
       const at = (doc: unknown, path: string): unknown => path.split('.').reduce(
         (value, key) => (value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined),
@@ -51,20 +51,20 @@ function databaseHolding(documents: Array<Record<string, unknown>>): Db {
 
 const NAMED = {
   realmId: 'r1', tenantId: 'default', policyId: 'p-named', name: 'named-policy', version: 1,
-  status: 'active', effect: 'deny', permissions: ['reports:export'],
-  resource: { names: ['reports'] }, conditions: [],
+  status: 'active', effect: 'deny', resolvedPermissions: ['reports:export'],
+  resource: { ids: ['reports'] }, conditions: [],
 };
 
 const PATTERNED = {
   realmId: 'r1', tenantId: 'default', policyId: 'p-pattern', name: 'patterned-policy', version: 1,
-  status: 'active', effect: 'allow', permissions: ['*:export'],
+  status: 'active', effect: 'allow', resolvedPermissions: [], permission: { pattern: '.*:export' },
   resource: { pattern: '^report' }, conditions: [],
 };
 
 const UNRELATED = {
   realmId: 'r1', tenantId: 'default', policyId: 'p-other', name: 'unrelated-policy', version: 1,
-  status: 'active', effect: 'allow', permissions: ['sessions:view'],
-  resource: { names: ['sessions'] }, conditions: [],
+  status: 'active', effect: 'allow', resolvedPermissions: ['sessions:view'],
+  resource: { ids: ['sessions'] }, conditions: [],
 };
 
 // The old glob sentinel for "matches everything", left over from before RE2 validation existed.
@@ -73,7 +73,7 @@ const UNRELATED = {
 // happens not to compile.
 const BROKEN_PATTERN = {
   realmId: 'r1', tenantId: 'default', policyId: 'p-broken', name: 'broken-pattern-policy', version: 1,
-  status: 'active', effect: 'deny', permissions: ['*'],
+  status: 'active', effect: 'deny', resolvedPermissions: [],
   resource: { pattern: '*' }, conditions: [],
 };
 
@@ -100,7 +100,7 @@ describe('listing policies that govern one resource', () => {
   it('carries the resource selector on the summary, not only the detail', async () => {
     const service = new PolicyAdminService(databaseHolding([NAMED]));
     const { policies } = await service.list('r1', { governs: 'reports' });
-    expect(policies[0].resource).toEqual({ names: ['reports'] });
+    expect(policies[0].resource).toEqual({ ids: ['reports'] });
   });
 
   it('combines with a name search instead of the search silently losing to governs', async () => {

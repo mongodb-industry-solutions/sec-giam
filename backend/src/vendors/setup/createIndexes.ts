@@ -148,14 +148,23 @@ export function plannedIndexes(): IndexPlan[] {
     // was the pre-v40 field; `status` replaced it and this index had not caught up.
     { collection: POLICY_COLLECTION, keys: { realmId: 1, tenantId: 1, status: 1 }, options: { name: 'realm_tenant_status' } },
     // The fast path: a resource named exactly, a plain multikey equality lookup.
-    { collection: POLICY_COLLECTION, keys: { realmId: 1, 'resource.names': 1 }, options: { name: 'realm_resource_names' } },
+    { collection: POLICY_COLLECTION, keys: { realmId: 1, 'resource.ids': 1 }, options: { name: 'realm_resource_ids' } },
     // Existence only, sparse: a `pattern` policy cannot be excluded by an index (it is a regular
     // expression, not a value to compare against), so this only needs to answer "does this policy use
-    // the slower form at all", cheaply, without touching the far more common `names` policies.
+    // the slower form at all", cheaply, without touching the far more common `ids` policies.
     {
       collection: POLICY_COLLECTION,
       keys: { realmId: 1, 'resource.pattern': 1 },
       options: { name: 'realm_resource_pattern', sparse: true },
+    },
+    // The role-triggered resync (`PolicyAdminService.resyncRoleReferences`) finds every policy
+    // naming a changed role by this field; a `role.pattern` policy is caught the sparse way, same
+    // reasoning as `resource.pattern` just above.
+    { collection: POLICY_COLLECTION, keys: { realmId: 1, 'role.ids': 1 }, options: { name: 'realm_role_ids', sparse: true } },
+    {
+      collection: POLICY_COLLECTION,
+      keys: { realmId: 1, 'role.pattern': 1 },
+      options: { name: 'realm_role_pattern', sparse: true },
     },
 
     // Sessions and consent.

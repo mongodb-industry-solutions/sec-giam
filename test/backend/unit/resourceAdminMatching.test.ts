@@ -29,7 +29,7 @@ describe('ResourceAdminService.matching', () => {
       { realmId: REALM_ID, kind: 'object', resourceId: 'res-1', name: 'reports', status: 'active' },
       { realmId: REALM_ID, kind: 'object', resourceId: 'res-2', name: 'invoices', status: 'active' },
     ]));
-    const matches = await service.matching(REALM_ID, { names: ['reports'] });
+    const matches = await service.matching(REALM_ID, { ids: ['reports'] });
     expect(matches).toEqual([{ resourceId: 'res-1', name: 'reports', status: 'active' }]);
   });
 
@@ -49,7 +49,7 @@ describe('ResourceAdminService.matching', () => {
       { realmId: 'r2', kind: 'object', resourceId: 'res-2', name: 'reports', status: 'active' },
       { realmId: REALM_ID, kind: 'api', resourceId: 'srv-1', name: 'reports', status: 'active' },
     ]));
-    const matches = await service.matching(REALM_ID, { names: ['reports'] });
+    const matches = await service.matching(REALM_ID, { ids: ['reports'] });
     expect(matches.map((m) => m.resourceId)).toEqual(['res-1']);
   });
 });

@@ -85,33 +85,44 @@ export async function policyController(fastify: FastifyInstance) {
   } as const;
 
   /**
-   * The resource a policy governs, by exact name or by pattern, never both.
-   *
-   * `names` is the fast path: named resources, matched by a plain indexed lookup. `pattern` is a
-   * regular expression, for the rare policy that describes a shape rather than listing every
-   * resource it covers; it is compiled with RE2, not the language's own regex engine, so an author's
-   * pattern is guaranteed linear-time and cannot make a decision hang the way a catastrophic-
-   * backtracking pattern could.
+   * One way of naming "one or several things", used identically for `resource`, `permission`,
+   * `principal` and `role`. `ids` is the fast path: named exactly, matched by a plain indexed
+   * lookup. `pattern` is a regular expression, for the rare policy that describes a shape rather
+   * than listing every member it covers; it is compiled with RE2, not the language's own regex
+   * engine, so an author's pattern is guaranteed linear-time and cannot make a decision hang the
+   * way a catastrophic-backtracking pattern could. `ids` wins when both are given, rather than the
+   * write being refused: a pattern left beside a more specific `ids` list is dead weight, not a
+   * contradiction worth rejecting.
    */
-  const resourceSchema = {
+  const selectorSchema = {
     type: 'object',
     additionalProperties: false,
     properties: {
-      names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
-      pattern: { type: 'string', minLength: 1, description: 'A regular expression, compiled with RE2. Exclusive with `names`.' },
+      ids: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
+      pattern: { type: 'string', minLength: 1, description: 'A regular expression, compiled with RE2. `ids` wins if both are given.' },
     },
   } as const;
 
   const policyBody = {
     effect: { type: 'string', enum: ['allow', 'deny'], description: 'Deny wins over every allow, absolutely.' },
-    permissions: {
-      type: 'array',
-      minItems: 1,
-      items: { type: 'string' },
-      description: 'Full permission strings, `resource:action`. The same spelling a role and a token use.',
+    resource: { ...selectorSchema, description: 'What this policy governs, by resource id or by pattern.' },
+    permission: {
+      ...selectorSchema,
+      description:
+        'The permissions this author added directly, `resource:action` (the same spelling a role and '
+        + 'a token use). Combined with what `role` below grants, if anything does, into what this '
+        + 'policy actually covers.',
     },
-    resource: resourceSchema,
-    principals: { type: 'array', items: { type: 'string' }, description: 'Subject patterns. `*` alone, or a trailing `*` for a prefix.' },
+    role: {
+      ...selectorSchema,
+      description:
+        'Roles whose CURRENT, expanded permissions (parents included) are folded into what this '
+        + 'policy covers, resolved once when this policy is saved and again whenever a named role '
+        + 'changes shape. A convenience for building a permission set out of what a role already '
+        + 'grants, not a second targeting axis: the decision engine never reads this field, only the '
+        + 'permissions it resolved to.',
+    },
+    principal: { ...selectorSchema, description: 'Who this governs, by subject id or by pattern. Absent matches anyone.' },
     conditions: {
       type: 'array',
       items: conditionSchema,
@@ -135,8 +146,8 @@ export async function policyController(fastify: FastifyInstance) {
       version: { type: 'integer' },
       status: { type: 'string', enum: ['draft', 'active', 'retired'] },
       effect: { type: 'string', enum: ['allow', 'deny'], description: 'Whether this policy prohibits. The first thing a reviewer wants to know.' },
-      resource: resourceSchema,
-      permissionCount: { type: 'integer' },
+      resource: selectorSchema,
+      permissionCount: { type: 'integer', description: '`resolvedPermissions.length`: what this policy concretely covers right now, roles expanded.' },
       conditionCount: { type: 'integer' },
       inEffect: { type: 'boolean', description: 'False while drafted, retired, or dated ahead.' },
       created: { type: 'string' },
@@ -148,7 +159,7 @@ export async function policyController(fastify: FastifyInstance) {
       version: 1,
       status: 'active',
       effect: 'deny',
-      resource: { names: ['roles'] },
+      resource: { ids: ['roles'] },
       permissionCount: 1,
       conditionCount: 1,
       inEffect: true,
@@ -158,23 +169,34 @@ export async function policyController(fastify: FastifyInstance) {
   const policyDetail = {
     type: 'object',
     additionalProperties: false,
-    required: [...policySummary.required, 'permissions', 'conditions'],
-    properties: { ...policySummary.properties, ...policyBody },
+    required: [...policySummary.required, 'permission', 'resolvedPermissions', 'conditions'],
+    properties: {
+      ...policySummary.properties,
+      ...policyBody,
+      resolvedPermissions: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'The actual, flat set of `resource:action` strings this policy is evaluated against: '
+          + '`permission.ids` union every permission every role in `role` currently grants. Read-only: '
+          + 'computed from `permission` and `role`, never accepted directly.',
+      },
+    },
     /**
      * The FLAT shape, which is what the endpoint returns.
      *
      * This was the v39 `statements: [{ actions, resources, condition }]` form, so it satisfied
-     * neither the required members (`permissions`, `resource`, `conditions`) nor
+     * neither the required members (`permission`, `resource`, `conditions`) nor
      * `additionalProperties: false`. Showing a shape v40 removed is worse than showing none:
      * somebody reads the contract, writes a client against `statements`, and finds out at
      * integration time.
      */
     examples: [{
       ...policySummary.examples[0],
-      permissions: ['roles:manage'],
-      resource: { names: ['roles'] },
+      permission: { ids: ['roles:manage'] },
+      resolvedPermissions: ['roles:manage'],
+      resource: { ids: ['roles'] },
       conditions: [{ assuranceAtLeast: 'aal2' }],
-      principals: ['*'],
       reason: 'Changing what a role grants requires a second factor.',
     }],
   } as const;
@@ -371,7 +393,7 @@ export async function policyController(fastify: FastifyInstance) {
       params: realmParam,
       body: {
         type: 'object',
-        required: ['name', 'effect', 'permissions', 'resource'],
+        required: ['name', 'effect', 'resource'],
         additionalProperties: false,
         properties: {
           name: { type: 'string', minLength: 1, pattern: '^[a-zA-Z0-9._-]+$' },

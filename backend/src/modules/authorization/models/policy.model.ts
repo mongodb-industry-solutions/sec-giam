@@ -25,6 +25,10 @@ export interface PolicyCondition {
    * 800-162 names role among the subject attributes ABAC narrows on, and as AWS Cedar expresses it
    * (`principal in Role::X`): not a second decision engine, one more thing this one may ask about
    * who is asking.
+   *
+   * Distinct from the policy's own `role` selector below: this asks what the REQUESTING subject
+   * already holds. `role` asks what permissions a NAMED role grants, to fold into what this policy
+   * itself governs. The two answer different questions and neither replaces the other.
    */
   heldRole?: string[];
   /**
@@ -67,20 +71,31 @@ export interface PolicyObligation {
 }
 
 /**
- * One policy: one effect, over one resource pattern, under conditions.
+ * One way of naming "one or several things", used identically by every section of a policy:
+ * `resource`, `permission`, `principal` and `role`. `ids` is the fast path, a plain indexed
+ * membership check. `pattern` is the slow path, a regular expression compiled with RE2 (so it is
+ * guaranteed linear-time and cannot hang a decision), for the rare policy that describes a shape
+ * rather than listing every member it covers.
+ *
+ * `ids` wins when both are given, rather than the write being refused: a pattern left behind
+ * alongside a later, more specific `ids` list is dead weight, not a contradiction worth rejecting.
+ */
+export interface Selector {
+  ids?: string[];
+  pattern?: string;
+}
+
+/**
+ * One policy: one effect, over one resource selector, under conditions.
  *
  * FLAT, per ADR section 7, rather than a list of statements. Every policy in the seed carried
  * exactly one statement, so the nesting bought nothing and cost the obvious question of what it
  * means when two statements in one policy disagree. Two rules are now two policies, which is also
  * what makes each one separately versionable and separately approvable.
  *
- * Two fields go BEYOND the ADR's shape, because dropping each would remove a capability rather
- * than simplify one:
- *
- * - `principals`, because a policy that cannot name who it applies to can only be global, and
- *   "this rule, for these subjects" is the ordinary case for a prohibition.
- * - `reason`, because a decision a log cannot explain is not auditable, and the reason is the
- *   difference between "denied" and "denied by this policy, because the assurance was too low".
+ * Every targeting section (`resource`, `permission`, `principal`, `role`) is the same `Selector`
+ * shape, which is what lets one console screen present all four identically: a searchable,
+ * paginated list, each entry linking to what it names.
  */
 export interface PolicyRecord extends Scoped {
   policyId: string;
@@ -91,21 +106,41 @@ export interface PolicyRecord extends Scoped {
   status: 'draft' | 'active' | 'retired';
 
   effect: 'allow' | 'deny';
-  /** Full permission strings this policy governs, `resource:action`. */
-  permissions: string[];
-  /**
-   * What it governs, by identity or by shape, never both at once.
-   *
-   * `names` is the fast path: one or several resources named exactly, matched by a plain indexed
-   * equality lookup. `pattern` is the slow path: a regular expression, for the rare policy that
-   * needs to describe a shape rather than list every resource it covers, evaluated in memory
-   * against the (typically small) set of policies that chose it rather than against the whole
-   * realm. Combining them would be ambiguous about which one actually decided, so exactly one is
-   * required.
-   */
-  resource: { names?: string[]; pattern?: string };
 
-  principals?: string[];
+  /** What it governs, by resource id or by pattern. */
+  resource: Selector;
+
+  /**
+   * The permissions an author added directly, `resource:action`. Never touched by anything but an
+   * edit to this policy itself: the role-derived contribution lives in `resolvedPermissions`
+   * instead, so a role changing shape elsewhere can never silently rewrite what this field says an
+   * author asked for.
+   */
+  permission: Selector;
+
+  /**
+   * Roles whose CURRENT, expanded permissions (parents included, exactly as RBAC itself resolves
+   * them) are unioned into `resolvedPermissions`. Provenance, not something the decision engine
+   * reads: naming a role here is a convenience for building a permission set out of what that role
+   * already grants, not a second targeting axis alongside `permission`.
+   */
+  role?: Selector;
+
+  /** Who this governs. Absent matches anyone. */
+  principal?: Selector;
+
+  /**
+   * The actual, flat set of `resource:action` strings this policy is evaluated against: `permission`
+   * (its `ids`, or, absent those, every permission its `pattern` matches at decision time) UNION
+   * every permission every role in `role` currently grants.
+   *
+   * Resolved once, when this policy is saved, and again whenever a role it names changes shape
+   * (`PolicyAdminService.resyncRoleReferences`, called from role administration) — never resolved
+   * live, mid-decision, which is what keeps the decision path free of an extra database read the
+   * way token verification already is.
+   */
+  resolvedPermissions: string[];
+
   /** ALL must hold. An empty list is a policy with no conditions, which is not a policy that never applies. */
   conditions: PolicyCondition[];
   obligations?: PolicyObligation[];
@@ -126,25 +161,12 @@ export function isInEffect(policy: Pick<PolicyRecord, 'status' | 'effectiveFrom'
 }
 
 /**
- * Matches a pattern against a value.
- *
- * `*` alone matches anything; a trailing `*` matches a prefix. Deliberately not a full glob or a
- * regular expression: a policy pattern that can express arbitrary matching is a policy nobody can
- * review, and review is the point of writing one down.
- */
-export function matchesPattern(pattern: string, value: string): boolean {
-  if (pattern === '*') return true;
-  if (pattern.endsWith('*')) return value.startsWith(pattern.slice(0, -1));
-  return pattern === value;
-}
-
-/**
  * Compiled once per distinct pattern string, never per request. A policy's pattern does not change
  * between decisions, so recompiling it on every evaluation would pay a fixed cost for no reason;
- * the cache key is the pattern text itself, so two policies that happen to write the same pattern
- * share one compiled matcher.
+ * the cache key is the pattern text itself, so two policies (or two sections of the same kind) that
+ * happen to write the same pattern share one compiled matcher.
  */
-const compiledResourcePatterns = new Map<string, RE2 | null>();
+const compiledPatterns = new Map<string, RE2 | null>();
 
 /**
  * `null` is cached too, not only a successful compile: a pattern that fails once fails the same way
@@ -154,35 +176,58 @@ const compiledResourcePatterns = new Map<string, RE2 | null>();
  * A pattern reaching here that does not compile should not happen: `validatePolicy` already refuses
  * one at every write path. It is caught anyway, because the one way it CAN still happen is a
  * document written before that check existed, and a leftover record is not a reason a request
- * naming an unrelated resource should fail with a 500.
+ * naming an unrelated value should fail with a 500.
  */
 function compiledPattern(pattern: string): RE2 | null {
-  if (compiledResourcePatterns.has(pattern)) return compiledResourcePatterns.get(pattern)!;
+  if (compiledPatterns.has(pattern)) return compiledPatterns.get(pattern)!;
   let compiled: RE2 | null;
   try {
     compiled = new RE2(pattern);
   } catch (error) {
     appendLog(
-      `[${new Date().toISOString()}] ERROR a policy's resource.pattern does not compile under RE2, `
+      `[${new Date().toISOString()}] ERROR a policy selector's pattern does not compile under RE2, `
       + `treated as matching nothing until fixed: ${JSON.stringify(pattern)} `
       + `(${error instanceof Error ? error.message : String(error)})`,
     );
     compiled = null;
   }
-  compiledResourcePatterns.set(pattern, compiled);
+  compiledPatterns.set(pattern, compiled);
   return compiled;
 }
 
 /**
- * Whether a policy's `resource` selector covers the resource a request names.
+ * Whether a selector covers a value: `resource` against a resource name, `principal` against a
+ * subject id, `role` against a role name. The one function every section shares, which is the
+ * point: `ids` wins when present (a plain membership check), `pattern` only decides when `ids` is
+ * absent or empty, and an absent selector entirely matches nothing here (a caller deciding "absent
+ * means anyone", as `principal` does, checks that before calling this).
  *
  * RE2, not the engine built into the language: it guarantees linear-time matching for any pattern
  * that compiles, so a policy author's regular expression can never make a decision hang the way a
- * catastrophic-backtracking pattern would with `RegExp`. That guarantee is the reason a real
- * regular expression is safe to accept here at all.
+ * catastrophic-backtracking pattern would with `RegExp`.
  */
-export function resourceApplies(resource: PolicyRecord['resource'], requested: string): boolean {
-  if (resource.names?.length) return resource.names.includes(requested);
-  if (resource.pattern) return (compiledPattern(resource.pattern)?.test(requested)) ?? false;
+export function selectorApplies(selector: Selector | undefined, value: string): boolean {
+  if (!selector) return false;
+  if (selector.ids?.length) return selector.ids.includes(value);
+  if (selector.pattern) return (compiledPattern(selector.pattern)?.test(value)) ?? false;
+  return false;
+}
+
+/**
+ * Whether a policy's permission targeting covers a requested `resource:action`.
+ *
+ * `resolvedPermissions` is the pre-resolved union of explicit `permission.ids` and every permission
+ * every role in `role` currently grants (see `PolicyRecord.resolvedPermissions`), checked first as a
+ * plain membership test. `permission.pattern` is checked live, exactly like `resource.pattern`,
+ * only when `permission.ids` is absent (ids wins): a pattern reaching over the realm's permission
+ * space is not pre-expanded into a fixed list the way a role's grants are, since a role's grants
+ * change by an administrative act this system already hooks (`resyncRoleReferences`), while a
+ * pattern's reach changes the moment ANY resource server registers a new action.
+ */
+export function permissionApplies(policy: Pick<PolicyRecord, 'resolvedPermissions' | 'permission'>, asked: string): boolean {
+  if (policy.resolvedPermissions?.includes(asked)) return true;
+  if (!policy.permission?.ids?.length && policy.permission?.pattern) {
+    return (compiledPattern(policy.permission.pattern)?.test(asked)) ?? false;
+  }
   return false;
 }

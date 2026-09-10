@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Boxes, Code2, ListChecks, Play, Plus, Power, Save, Scale, Trash2, X } from 'lucide-react';
+import {
+  ArrowLeft, Boxes, Code2, ListChecks, Play, Power, Save, Scale, Trash2, X,
+} from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
 import { Pagination } from '../../../../components/Pagination';
@@ -18,21 +20,27 @@ import { useConfirm } from '../../../../components/ConfirmProvider';
 import { Field, INPUT } from '../../roles/parts';
 import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import {
-  EffectBadge, PatternList, PermissionChecklist, ResourceFields, StatusBadge,
-  describeCondition, describeResource, splitPatterns,
+  EffectBadge, SelectorFields, StatusBadge,
+  describeCondition, describeSelector, permissionCatalogIds, splitPatterns,
 } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
-  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail, type PolicyResource,
+  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail, type Selector,
 } from '../types';
 
 /**
- * One policy: what it states, and what it actually decides.
+ * One policy: what it states, panel by panel, and what it actually decides.
  *
- * The simulator is why this screen is worth having. A policy editor with no way to test a rule is
- * exactly how a deny gets written wrong and stays wrong: the rule looks right, nothing appears to
- * break, and the first time anybody finds out is when somebody is refused something they needed or
- * granted something they should not have had. Writing and testing belong on one screen.
+ * Every targeting section (resource, permission, role, principal) is a `Selector`, so every one of
+ * them is shown the same way: a searchable, paginated list, each row linking to what it names. View
+ * and edit are the SAME body, not two screens: the JSON⇄UI choice is offered in both, because a
+ * viewer choosing to read the raw document is not a different need from an editor choosing to write
+ * one directly.
+ *
+ * The simulator is why this screen is worth having beyond the panels. A policy editor with no way to
+ * test a rule is exactly how a deny gets written wrong and stays wrong: the rule looks right, nothing
+ * appears to break, and the first time anybody finds out is when somebody is refused something they
+ * needed or granted something they should not have had.
  */
 
 export default function PolicyDetailPage() {
@@ -50,6 +58,38 @@ export default function PolicyDetailPage() {
   );
   const policy = useConsoleResource(read, 'That policy could not be read.');
   const [editing, setEditing] = useState(false);
+
+  // Fetched here, unconditionally, rather than only while editing: the READ-ONLY panels need these
+  // catalogs too, to turn a bare id into a link (a resource's name into its resourceId, a role's
+  // name into its roleId) exactly the way `GovernedResources` already resolves a resource's own id.
+  const readCatalog = useCallback(
+    () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
+    [],
+  );
+  const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
+  const readResources = useCallback(
+    () => callApi<{ resourceServers: Array<{ resources: Array<{ resourceId: string; name: string }> }> }>(
+      '/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' },
+    ),
+    [],
+  );
+  const resourceServers = useConsoleResource(readResources, 'The resource server catalog could not be read.');
+  const readRoles = useCallback(
+    () => callApi<{ roles: RoleSummary[] }>('/roles', { query: { limit: 200 }, subject: 'the roles in this realm' }),
+    [],
+  );
+  const allRoles = useConsoleResource(readRoles, 'The roles could not be read.');
+  useEffect(() => {
+    void catalog.reload(); void resourceServers.reload(); void allRoles.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const resourceIdByName = new Map(
+    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((r) => [r.name, r.resourceId] as const)),
+  );
+  const roleIdByName = new Map((allRoles.data?.roles ?? []).map((role) => [role.name, role.roleId] as const));
+  const resourceCatalogNames = [...resourceIdByName.keys()].sort();
+  const roleCatalogNames = [...roleIdByName.keys()].sort();
 
   async function save(patch: Record<string, unknown>) {
     const done = await policy.run(
@@ -136,11 +176,31 @@ export default function PolicyDetailPage() {
                     that: it asks the authority rather than reading this document.
                   </p>
                 )}
+                {detail.reason && (
+                  <p className="mt-3 border-l-2 border-gray-200 pl-2.5 text-sm italic text-gray-600">{detail.reason}</p>
+                )}
               </section>
 
               {editing && mayManage
-                ? <PolicyEditor detail={detail} busy={policy.busy === 'save'} onSave={save} onCancel={() => setEditing(false)} />
-                : <PolicyStatement detail={detail} />}
+                ? (
+                  <EditableBody
+                    detail={detail}
+                    busy={policy.busy === 'save'}
+                    onSave={save}
+                    onCancel={() => setEditing(false)}
+                    permissionCatalog={catalog.data?.permissions ?? []}
+                    resourceCatalog={resourceCatalogNames}
+                    roleCatalog={roleCatalogNames}
+                    allRoles={allRoles.data?.roles ?? []}
+                  />
+                )
+                : (
+                  <ReadOnlyBody
+                    detail={detail}
+                    resourceIdByName={resourceIdByName}
+                    roleIdByName={roleIdByName}
+                  />
+                )}
 
               {!editing && <GovernedResources policyId={detail.policyId} resourceSelector={detail.resource} />}
 
@@ -151,134 +211,218 @@ export default function PolicyDetailPage() {
   );
 }
 
-/** The rule as it will be read: effect first, then what it matches, then why. */
-function PolicyStatement({ detail }: { detail: PolicyDetail }) {
+/** The Form/JSON tabs, identical wherever they appear: viewing a policy or editing one. */
+function ModeTabs({ mode, onChange }: { mode: 'ui' | 'json'; onChange: (mode: 'ui' | 'json') => void }) {
   return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="font-semibold text-[#001E2B]">What it states</h2>
-        <p className="mt-0.5 text-sm text-gray-500">
-          Applies when every condition holds. A deny wins wherever else in the realm it sits.
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <EffectBadge effect={detail.effect} />
-          <span className="font-mono text-xs text-gray-500">{describeResource(detail.resource)}</span>
-        </div>
-
-        <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-          <PatternList label="Permissions" values={detail.permissions} />
-          <PatternList label="Principals" values={detail.principals} />
-        </dl>
-
-        {detail.conditions.length > 0 && detail.conditions.map((condition, index) => (
-          describeCondition(condition).length > 0 && (
-            <p key={index} className="mt-3 text-sm text-gray-600">
-              Only when {describeCondition(condition).join(', and ')}.
-            </p>
-          )
-        ))}
-
-        {detail.obligations?.length ? (
-          <PatternList label="Obligations" values={detail.obligations.map((o) => o.type)} />
-        ) : null}
-
-        {detail.reason && (
-          <p className="mt-3 border-l-2 border-gray-200 pl-2.5 text-sm italic text-gray-600">{detail.reason}</p>
-        )}
-      </div>
-    </section>
+    <div className="flex gap-1 text-xs">
+      <button
+        type="button"
+        onClick={() => onChange('ui')}
+        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium ${mode === 'ui' ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+      >
+        <ListChecks size={12} aria-hidden />
+        UI
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('json')}
+        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium ${mode === 'json' ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
+      >
+        <Code2 size={12} aria-hidden />
+        JSON
+      </button>
+    </div>
   );
 }
 
 /**
- * Which of this realm's own resources this policy actually governs, as an ordinary list: a name
- * on its own is not "visible" the way a link, a status and a search box are, and it was exactly
- * that flat one-line summary above (`describeResource`) that made it hard to tell which resources
- * were really affected once a policy named more than one, or matched by pattern instead of naming
- * any at all.
- *
- * `resource.names` and `resource.pattern` are exclusive in storage (the API refuses a policy naming
- * both), so there is nothing here to reconcile: whichever one is actually stored is the only one
- * this reads, and the read comes from the SAME `resourceApplies` the decision engine itself uses,
- * never a second, approximate idea of what either one means. Fetched once (a realm's catalog is
- * small enough to read whole, the same call `/permissions` and `/resource-servers` already make),
- * search and paging happen over what was already read.
+ * A plain, paginated list of ids, each linking to what it names when a link is known. Shared by
+ * Principals, Permissions and Roles, so the three panels the plan asks to look identical actually
+ * share ONE implementation rather than three copies of the same search-and-page scaffold.
  */
-function GovernedResources({ policyId, resourceSelector }: { policyId: string; resourceSelector: PolicyResource }) {
-  const read = useCallback(
-    () => callApi<{ resources: Array<{ resourceId: string; name: string; status: string }>; total: number }>(
-      `/policies/${encodeURIComponent(policyId)}/resources`,
-      { subject: 'the resources this policy governs' },
-    ),
-    [policyId],
-  );
-  const resources = useConsoleResource(read, 'The resources this policy governs could not be read.');
+function IdList({ title, description, rows, emptyTitle, emptyDescription }: {
+  title: string;
+  description: string;
+  rows: Array<{ key: string; href?: string }>;
+  emptyTitle: string;
+  emptyDescription: string;
+}) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
 
-  const all = resources.data?.resources ?? [];
-  const filtered = query ? all.filter((r) => r.name.toLowerCase().includes(query.toLowerCase())) : all;
+  const filtered = query ? rows.filter((row) => row.key.toLowerCase().includes(query.toLowerCase())) : rows;
   const total = filtered.length;
-  const rows = filtered.slice((page - 1) * limit, page * limit);
+  const pageRows = filtered.slice((page - 1) * limit, page * limit);
 
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="font-semibold text-[#001E2B]">Resources this policy governs</h2>
-        <p className="mt-0.5 text-sm text-gray-500">
-          {resourceSelector.pattern
-            ? `Every resource in this realm's catalog the pattern (${resourceSelector.pattern}) currently matches. A pattern names no resource directly, so this is the only place to see which ones it actually reaches.`
-            : 'Named exactly: this policy attaches to each of these directly, and to nothing this pattern alone might otherwise have matched.'}
-        </p>
+        <h2 className="font-semibold text-[#001E2B]">{title}</h2>
+        <p className="mt-0.5 text-sm text-gray-500">{description}</p>
       </div>
 
-      <ListToolbar search={{ value: query, onChange: (next) => { setQuery(next); setPage(1); }, placeholder: 'Search by name' }} />
+      <ListToolbar search={{ value: query, onChange: (next) => { setQuery(next); setPage(1); }, placeholder: 'Search' }} />
 
-      {resources.error && <ErrorState message={resources.error} onRetry={() => void resources.reload()} />}
-      {resources.loading && <LoadingState label="Reading the resources this policy governs…" />}
-
-      {!resources.loading && !resources.error && total === 0 && (
-        <EmptyState
-          icon={Boxes}
-          title={query ? 'No resource matches that' : 'This policy governs no resource yet'}
-          description={query
-            ? 'Nothing in the current match set matches that search.'
-            : resourceSelector.pattern
-              ? 'Nothing in this realm\'s resource catalog matches this pattern right now.'
-              : 'The names on this policy do not (or no longer) correspond to a registered resource.'}
-        />
+      {total === 0 && (
+        <EmptyState title={query ? 'Nothing matches that' : emptyTitle} description={query ? 'Nothing in this list matches that search.' : emptyDescription} />
       )}
 
-      {!resources.loading && rows.length > 0 && (
+      {pageRows.length > 0 && (
         <ul className="space-y-2">
-          {rows.map((resource) => (
+          {pageRows.map((row) => (
             <RecordCard
-              key={resource.resourceId}
-              title={(
-                <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
-                  {resource.name}
-                </Link>
-              )}
-              badges={<CatalogStatusBadge status={resource.status} />}
+              key={row.key}
+              title={row.href
+                ? <Link href={row.href} className="hover:underline">{row.key}</Link>
+                : <span className="font-mono">{row.key}</span>}
             />
           ))}
         </ul>
       )}
 
-      {!resources.loading && total > 0 && (
+      {total > 0 && (
         <Pagination
           page={page}
           totalPages={Math.max(1, Math.ceil(total / limit))}
           total={total}
           limit={limit}
-          noun="resources"
+          noun="entries"
           onPageChange={setPage}
           onLimitChange={(next) => { setLimit(next); setPage(1); }}
         />
+      )}
+    </section>
+  );
+}
+
+function PrincipalsPanel({ selector }: { selector?: Selector }) {
+  if (selector?.ids?.length) {
+    return (
+      <IdList
+        title="Principals"
+        description="Named exactly: this policy applies to each of these subjects, and to nobody else."
+        rows={selector.ids.map((id) => ({ key: id, href: `/system/identities/${encodeURIComponent(id)}` }))}
+        emptyTitle="No principal named"
+        emptyDescription="Nothing here."
+      />
+    );
+  }
+  return (
+    <section className="space-y-1">
+      <h2 className="font-semibold text-[#001E2B]">Principals</h2>
+      <p className="text-sm text-gray-500">
+        {selector?.pattern
+          ? `Matches by pattern: subjects whose id matches ${selector.pattern}. Checked live at decision time, so this cannot be listed here; a realm's whole identity directory has no fixed size the way a resource or role catalog does.`
+          : 'Not set. Absent matches anyone: this policy applies to every subject.'}
+      </p>
+    </section>
+  );
+}
+
+function PermissionsPanel({ detail, resourceIdByName }: { detail: PolicyDetail; resourceIdByName: Map<string, string> }) {
+  const rows = detail.resolvedPermissions.map((permission) => {
+    const [resourceName] = permission.split(':');
+    const resourceId = resourceIdByName.get(resourceName);
+    return { key: permission, href: resourceId ? `/system/resources/${encodeURIComponent(resourceId)}` : undefined };
+  });
+  const foldedFromRole = Boolean(detail.role?.ids?.length || detail.role?.pattern);
+  const livePattern = detail.permission.pattern && !detail.permission.ids?.length;
+  return (
+    <IdList
+      title="Permissions"
+      description={[
+        'What this policy actually covers right now, resource expanded into action.',
+        foldedFromRole ? 'Includes every permission the role(s) below currently grant.' : null,
+        livePattern ? `Also matches ${detail.permission.pattern} live, at decision time; a pattern names no fixed set, so nothing for it is listed here.` : null,
+      ].filter(Boolean).join(' ')}
+      rows={rows}
+      emptyTitle={livePattern ? 'Nothing pre-resolved; this policy governs only through its pattern' : 'This policy governs no permission'}
+      emptyDescription={livePattern
+        ? 'Expected: a pattern-only permission selector resolves nothing ahead of time and is checked live instead.'
+        : 'Nothing is listed under Permission or Role.'}
+    />
+  );
+}
+
+function RolesPanel({ selector }: { selector?: Selector }) {
+  if (selector?.ids?.length) {
+    return (
+      <IdList
+        title="Roles"
+        description="Every permission these roles currently grant (parents included) is folded into Permissions above. Naming one here is a convenience, not a second targeting axis: only the resolved permissions are ever checked."
+        rows={selector.ids.map((id) => ({ key: id, href: `/system/roles/${encodeURIComponent(id)}` }))}
+        emptyTitle="No role named"
+        emptyDescription="Nothing here."
+      />
+    );
+  }
+  return (
+    <section className="space-y-1">
+      <h2 className="font-semibold text-[#001E2B]">Roles</h2>
+      <p className="text-sm text-gray-500">
+        {selector?.pattern
+          ? `Folds in every role in this realm whose name matches ${selector.pattern}, resolved when this policy was last saved. See Permissions above for what that resolved to.`
+          : 'No role folded in. This policy\'s permissions come only from what is listed explicitly under Permissions.'}
+      </p>
+    </section>
+  );
+}
+
+function ConditionsPanel({ conditions }: { conditions: PolicyCondition[] }) {
+  const described = conditions.map((condition) => describeCondition(condition)).filter((parts) => parts.length > 0);
+  return (
+    <section className="space-y-1">
+      <h2 className="font-semibold text-[#001E2B]">Conditions</h2>
+      {described.length === 0
+        ? <p className="text-sm text-gray-500">None. This policy applies whenever its resource, permission and principal match, with no further requirement.</p>
+        : described.map((parts, index) => (
+          <p key={index} className="text-sm text-gray-600">Only when {parts.join(', and ')}.</p>
+        ))}
+      {conditions.some((c) => c.heldRole?.length || c.heldPermission?.length) && (
+        <p className="text-xs text-gray-400">
+          A condition asking what the subject already holds is a REQUIREMENT on the requester, distinct
+          from the Roles panel above, which builds what THIS policy covers out of what a role grants.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** The policy read-only, panel by panel, with the same JSON⇄UI choice editing offers. */
+function ReadOnlyBody({ detail, resourceIdByName, roleIdByName }: {
+  detail: PolicyDetail;
+  resourceIdByName: Map<string, string>;
+  roleIdByName: Map<string, string>;
+}) {
+  const [mode, setMode] = useState<'ui' | 'json'>('ui');
+  return (
+    <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold text-[#001E2B]">What it states</h2>
+        <ModeTabs mode={mode} onChange={setMode} />
+      </div>
+
+      {mode === 'json' ? (
+        <pre className="w-full overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-xs text-gray-800">
+          {JSON.stringify(detail, null, 2)}
+        </pre>
+      ) : (
+        <div className="space-y-5">
+          <div className="text-sm text-gray-600">
+            <span className="font-mono text-xs text-gray-500">{describeSelector(detail.resource)}</span>
+          </div>
+          <PrincipalsPanel selector={detail.principal} />
+          <PermissionsPanel detail={detail} resourceIdByName={resourceIdByName} />
+          <RolesPanel selector={detail.role} />
+          <ConditionsPanel conditions={detail.conditions} />
+          {detail.obligations?.length ? (
+            <section className="space-y-1">
+              <h2 className="font-semibold text-[#001E2B]">Obligations</h2>
+              <p className="text-sm text-gray-600">{detail.obligations.map((o) => o.type).join(', ')}</p>
+            </section>
+          ) : null}
+        </div>
       )}
     </section>
   );
@@ -293,18 +437,34 @@ function GovernedResources({ policyId, resourceSelector }: { policyId: string; r
  * about inputs this service cannot see. The API refuses one too, so the constraint holds even for a
  * caller that never opens this page.
  */
-function PolicyEditor({ detail, busy, onSave, onCancel }: {
+function EditableBody({ detail, busy, onSave, onCancel, permissionCatalog, resourceCatalog, roleCatalog, allRoles }: {
   detail: PolicyDetail;
   busy: boolean;
   onSave: (patch: Record<string, unknown>) => void;
   onCancel: () => void;
+  permissionCatalog: CatalogPermission[];
+  resourceCatalog: string[];
+  roleCatalog: string[];
+  allRoles: RoleSummary[];
 }) {
   const [effect, setEffect] = useState(detail.effect);
-  const [resourceMode, setResourceMode] = useState<'names' | 'pattern'>(detail.resource.pattern ? 'pattern' : 'names');
-  const [resourceNames, setResourceNames] = useState((detail.resource.names ?? []).join(', '));
+
+  const [resourceMode, setResourceMode] = useState<'ids' | 'pattern'>(detail.resource.pattern && !detail.resource.ids?.length ? 'pattern' : 'ids');
+  const [resourceIds, setResourceIds] = useState((detail.resource.ids ?? []).join(', '));
   const [resourcePattern, setResourcePattern] = useState(detail.resource.pattern ?? '');
-  const [permissions, setPermissions] = useState((detail.permissions ?? []).join(', '));
-  const [principals, setPrincipals] = useState((detail.principals ?? []).join(', '));
+
+  const [permissionMode, setPermissionMode] = useState<'ids' | 'pattern'>(detail.permission.pattern && !detail.permission.ids?.length ? 'pattern' : 'ids');
+  const [permissionIds, setPermissionIds] = useState((detail.permission.ids ?? []).join(', '));
+  const [permissionPattern, setPermissionPattern] = useState(detail.permission.pattern ?? '');
+
+  const [roleMode, setRoleMode] = useState<'ids' | 'pattern'>(detail.role?.pattern && !detail.role?.ids?.length ? 'pattern' : 'ids');
+  const [roleIds, setRoleIds] = useState((detail.role?.ids ?? []).join(', '));
+  const [rolePattern, setRolePattern] = useState(detail.role?.pattern ?? '');
+
+  const [principalMode, setPrincipalMode] = useState<'ids' | 'pattern'>(detail.principal?.pattern && !detail.principal?.ids?.length ? 'pattern' : 'ids');
+  const [principalIds, setPrincipalIds] = useState((detail.principal?.ids ?? []).join(', '));
+  const [principalPattern, setPrincipalPattern] = useState(detail.principal?.pattern ?? '');
+
   const [reason, setReason] = useState(detail.reason ?? '');
   const [condition, setCondition] = useState<PolicyCondition | undefined>(detail.conditions[0]);
 
@@ -312,86 +472,79 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
     setCondition(patch === undefined || Object.keys(patch).length === 0 ? undefined : patch);
   }
 
-  // Fetched here rather than at the page level: only an editing screen needs a role, a permission
-  // and a resource to pick from, and this component only exists while one is open.
-  const readCatalog = useCallback(
-    () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
-    [],
-  );
-  const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
-  const readRoles = useCallback(
-    () => callApi<{ roles: RoleSummary[] }>('/roles', { query: { limit: 200 }, subject: 'the roles in this realm' }),
-    [],
-  );
-  const allRoles = useConsoleResource(readRoles, 'The roles could not be read.');
-  const readResources = useCallback(
-    () => callApi<{ resourceServers: Array<{ resources: Array<{ name: string }> }> }>('/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' }),
-    [],
-  );
-  const resourceServers = useConsoleResource(readResources, 'The resource server catalog could not be read.');
-  useEffect(() => {
-    void catalog.reload(); void allRoles.reload(); void resourceServers.reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const resourceCatalog = [...new Set(
-    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((entry) => entry.name)),
-  )].sort();
-
   function buildPatch(): Record<string, unknown> {
-    // A role or permission checkbox toggled on and then fully unchecked leaves an empty array
-    // behind rather than removing the key; stripped here so the request never carries a condition
-    // that could never hold.
     const sent = condition
       ? Object.fromEntries(Object.entries(condition).filter(([, value]) => !(Array.isArray(value) && value.length === 0)))
       : undefined;
+    const permission: Selector = permissionMode === 'ids' ? { ids: splitPatterns(permissionIds) } : { pattern: permissionPattern };
+    const role: Selector = roleMode === 'ids' ? { ids: splitPatterns(roleIds) } : { pattern: rolePattern };
+    const principal: Selector = principalMode === 'ids' ? { ids: splitPatterns(principalIds) } : { pattern: principalPattern };
     return {
       effect,
-      resource: resourceMode === 'names' ? { names: splitPatterns(resourceNames) } : { pattern: resourcePattern },
-      permissions: splitPatterns(permissions),
-      ...(principals.trim() ? { principals: splitPatterns(principals) } : { principals: [] }),
+      resource: resourceMode === 'ids' ? { ids: splitPatterns(resourceIds) } : { pattern: resourcePattern },
+      permission,
+      role,
+      principal,
       conditions: sent && Object.keys(sent).length > 0 ? [sent] : [],
-      ...(reason.trim() ? { reason: reason.trim() } : {}),
+      ...(reason.trim() ? { reason: reason.trim() } : { reason: '' }),
     };
   }
 
-  const [mode, setMode] = useState<'form' | 'json'>('form');
+  const [mode, setMode] = useState<'ui' | 'json'>('ui');
   const [json, setJson] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const previousMode = useRef<'ui' | 'json'>('ui');
 
-  function enterJsonMode() {
-    setJson(JSON.stringify(buildPatch(), null, 2));
-    setJsonError(null);
-    setMode('json');
-  }
-
-  /** Best-effort: what was typed becomes the form's own fields, so switching back loses nothing. */
-  function enterFormMode() {
-    try {
-      const parsed = JSON.parse(json) as {
-        effect?: 'allow' | 'deny'; resource?: { names?: string[]; pattern?: string };
-        permissions?: string[]; principals?: string[]; reason?: string; conditions?: PolicyCondition[];
-      };
-      if (parsed.effect === 'allow' || parsed.effect === 'deny') setEffect(parsed.effect);
-      const resource = parsed.resource ?? {};
-      if (resource.pattern) { setResourceMode('pattern'); setResourcePattern(resource.pattern); } else {
-        setResourceMode('names');
-        setResourceNames((resource.names ?? []).join(', '));
-      }
-      setPermissions((parsed.permissions ?? []).join(', '));
-      setPrincipals((parsed.principals ?? []).join(', '));
-      setReason(parsed.reason ?? '');
-      setCondition(parsed.conditions?.[0]);
+  function changeMode(next: 'ui' | 'json') {
+    if (next === previousMode.current) return;
+    if (next === 'json') {
+      setJson(JSON.stringify(buildPatch(), null, 2));
       setJsonError(null);
-      setMode('form');
-    } catch {
-      setJsonError('This is not valid JSON. Fix it, or cancel to discard these changes.');
+    } else {
+      try {
+        const parsed = JSON.parse(json) as {
+          effect?: 'allow' | 'deny'; resource?: Selector; permission?: Selector; role?: Selector;
+          principal?: Selector; reason?: string; conditions?: PolicyCondition[];
+        };
+        if (parsed.effect === 'allow' || parsed.effect === 'deny') setEffect(parsed.effect);
+        const resource = parsed.resource ?? {};
+        if (resource.pattern && !resource.ids?.length) { setResourceMode('pattern'); setResourcePattern(resource.pattern); } else {
+          setResourceMode('ids'); setResourceIds((resource.ids ?? []).join(', '));
+        }
+        const permission = parsed.permission ?? {};
+        if (permission.pattern && !permission.ids?.length) { setPermissionMode('pattern'); setPermissionPattern(permission.pattern); } else {
+          setPermissionMode('ids'); setPermissionIds((permission.ids ?? []).join(', '));
+        }
+        const role = parsed.role ?? {};
+        if (role.pattern && !role.ids?.length) { setRoleMode('pattern'); setRolePattern(role.pattern); } else {
+          setRoleMode('ids'); setRoleIds((role.ids ?? []).join(', '));
+        }
+        const principal = parsed.principal ?? {};
+        if (principal.pattern && !principal.ids?.length) { setPrincipalMode('pattern'); setPrincipalPattern(principal.pattern); } else {
+          setPrincipalMode('ids'); setPrincipalIds((principal.ids ?? []).join(', '));
+        }
+        setReason(parsed.reason ?? '');
+        setCondition(parsed.conditions?.[0]);
+        setJsonError(null);
+      } catch {
+        setJsonError('This is not valid JSON. Fix it, or switch back to JSON to keep editing it.');
+        previousMode.current = next;
+        setMode(next);
+        return;
+      }
     }
+    previousMode.current = next;
+    setMode(next);
   }
 
   let jsonParseError: string | null = null;
   if (mode === 'json') {
     try { JSON.parse(json); } catch { jsonParseError = 'This is not valid JSON.'; }
   }
+
+  const resourceGiven = resourceMode === 'ids' ? resourceIds.trim() : resourcePattern.trim();
+  const governsSomething = permissionMode === 'ids' ? Boolean(permissionIds.trim()) : Boolean(permissionPattern.trim());
+  const rolesSomething = roleMode === 'ids' ? Boolean(roleIds.trim()) : Boolean(rolePattern.trim());
 
   return (
     <form
@@ -411,36 +564,19 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold text-[#001E2B]">Edit what it states</h2>
-        <div className="flex gap-1 text-xs">
-          <button
-            type="button"
-            onClick={() => { if (mode === 'json') enterFormMode(); }}
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium ${mode === 'form' ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
-          >
-            <ListChecks size={12} aria-hidden />
-            Form
-          </button>
-          <button
-            type="button"
-            onClick={() => { if (mode === 'form') enterJsonMode(); }}
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium ${mode === 'json' ? 'border-[#001E2B] bg-[#001E2B] text-[#00ED64]' : 'border-gray-200 text-gray-500 hover:text-gray-700'}`}
-          >
-            <Code2 size={12} aria-hidden />
-            JSON
-          </button>
-        </div>
+        <ModeTabs mode={mode} onChange={changeMode} />
       </div>
 
       {mode === 'json' ? (
         <div className="space-y-2">
           <p className="text-xs text-gray-500">
             The same document `PATCH /realms/:realm/policies/:policyId` accepts, edited directly.
-            Switching back to the form parses this; an invalid document stays here until it is valid JSON.
+            Switching back to UI parses this; an invalid document stays here until it is valid JSON.
           </p>
           <textarea
             value={json}
             onChange={(e) => { setJson(e.target.value); setJsonError(null); }}
-            rows={16}
+            rows={18}
             spellCheck={false}
             className="w-full rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-xs text-gray-800 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
           />
@@ -455,31 +591,53 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
                 <option value="deny">Deny</option>
               </select>
             </Field>
-            <Field label="Principals" hint="Comma separated. Empty matches anyone. A trailing * matches a prefix.">
-              <input value={principals} onChange={(e) => setPrincipals(e.target.value)} className={INPUT} />
-            </Field>
           </div>
 
-          <Field label="Permissions" hint="Comma separated, full resource:action strings. Or check them below; a wildcard has no box to check, so typing stays the way to reach one.">
-            <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} />
-          </Field>
-          <PermissionChecklist value={permissions} onChange={setPermissions} catalog={catalog.data?.permissions ?? []} />
-
-          <ResourceFields
-            mode={resourceMode}
-            onModeChange={setResourceMode}
-            names={resourceNames}
-            onNamesChange={setResourceNames}
-            pattern={resourcePattern}
-            onPatternChange={setResourcePattern}
+          <SelectorFields
+            noun="Resource"
+            mode={resourceMode} onModeChange={setResourceMode}
+            ids={resourceIds} onIdsChange={setResourceIds}
+            pattern={resourcePattern} onPatternChange={setResourcePattern}
             catalog={resourceCatalog}
           />
+
+          <SelectorFields
+            noun="Permission"
+            mode={permissionMode} onModeChange={setPermissionMode}
+            ids={permissionIds} onIdsChange={setPermissionIds}
+            pattern={permissionPattern} onPatternChange={setPermissionPattern}
+            catalog={permissionCatalogIds(permissionCatalog)}
+            required={false}
+          />
+
+          <SelectorFields
+            noun="Role"
+            mode={roleMode} onModeChange={setRoleMode}
+            ids={roleIds} onIdsChange={setRoleIds}
+            pattern={rolePattern} onPatternChange={setRolePattern}
+            catalog={roleCatalog}
+            required={false}
+          />
+          <p className="text-[11px] text-gray-400">
+            A role's current permissions (parents included) are folded into what this policy covers,
+            alongside whatever permission ids are given above. At least one of Permission or Role must
+            resolve to something.
+          </p>
+
+          <SelectorFields
+            noun="Principal"
+            mode={principalMode} onModeChange={setPrincipalMode}
+            ids={principalIds} onIdsChange={setPrincipalIds}
+            pattern={principalPattern} onPatternChange={setPrincipalPattern}
+            required={false}
+          />
+          <p className="text-[11px] text-gray-400">Empty matches anyone.</p>
 
           <ConditionEditor
             condition={condition}
             onChange={changeCondition}
-            roles={allRoles.data?.roles ?? []}
-            permissions={catalog.data?.permissions ?? []}
+            roles={allRoles}
+            permissions={permissionCatalog}
           />
 
           <Field label="Reason" hint="Carried into the decision. Write what a reader should understand months from now.">
@@ -493,7 +651,7 @@ function PolicyEditor({ detail, busy, onSave, onCancel }: {
           type="submit"
           disabled={busy || (mode === 'json'
             ? Boolean(jsonParseError)
-            : !permissions.trim() || !(resourceMode === 'names' ? resourceNames.trim() : resourcePattern.trim()))}
+            : !resourceGiven || !(governsSomething || rolesSomething))}
           className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
         >
           <Save size={12} aria-hidden />
@@ -675,6 +833,94 @@ function ConditionEditor({ condition, onChange, roles, permissions }: {
         })}
       </div>
     </fieldset>
+  );
+}
+
+/**
+ * Which of this realm's own resources this policy actually governs, as an ordinary list: a name
+ * on its own is not "visible" the way a link, a status and a search box are.
+ *
+ * `resource.ids` and `resource.pattern` are exclusive in effect (ids wins when both are stored), so
+ * there is nothing here to reconcile: whichever one actually decides is the only one this reads, and
+ * the read comes from the SAME `selectorApplies` the decision engine itself uses, never a second,
+ * approximate idea of what either one means. Fetched once (a realm's catalog is small enough to read
+ * whole, the same call `/permissions` and `/resource-servers` already make), search and paging
+ * happen over what was already read.
+ */
+function GovernedResources({ policyId, resourceSelector }: { policyId: string; resourceSelector: Selector }) {
+  const read = useCallback(
+    () => callApi<{ resources: Array<{ resourceId: string; name: string; status: string }>; total: number }>(
+      `/policies/${encodeURIComponent(policyId)}/resources`,
+      { subject: 'the resources this policy governs' },
+    ),
+    [policyId],
+  );
+  const resources = useConsoleResource(read, 'The resources this policy governs could not be read.');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
+  const all = resources.data?.resources ?? [];
+  const filtered = query ? all.filter((r) => r.name.toLowerCase().includes(query.toLowerCase())) : all;
+  const total = filtered.length;
+  const rows = filtered.slice((page - 1) * limit, page * limit);
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="font-semibold text-[#001E2B]">Resources this policy governs</h2>
+        <p className="mt-0.5 text-sm text-gray-500">
+          {resourceSelector.pattern && !resourceSelector.ids?.length
+            ? `Every resource in this realm's catalog the pattern (${resourceSelector.pattern}) currently matches. A pattern names no resource directly, so this is the only place to see which ones it actually reaches.`
+            : 'Named exactly: this policy attaches to each of these directly, and to nothing a pattern alone might otherwise have matched.'}
+        </p>
+      </div>
+
+      <ListToolbar search={{ value: query, onChange: (next) => { setQuery(next); setPage(1); }, placeholder: 'Search by name' }} />
+
+      {resources.error && <ErrorState message={resources.error} onRetry={() => void resources.reload()} />}
+      {resources.loading && <LoadingState label="Reading the resources this policy governs…" />}
+
+      {!resources.loading && !resources.error && total === 0 && (
+        <EmptyState
+          icon={Boxes}
+          title={query ? 'No resource matches that' : 'This policy governs no resource yet'}
+          description={query
+            ? 'Nothing in the current match set matches that search.'
+            : resourceSelector.pattern
+              ? 'Nothing in this realm\'s resource catalog matches this pattern right now.'
+              : 'The ids on this policy do not (or no longer) correspond to a registered resource.'}
+        />
+      )}
+
+      {!resources.loading && rows.length > 0 && (
+        <ul className="space-y-2">
+          {rows.map((resource) => (
+            <RecordCard
+              key={resource.resourceId}
+              title={(
+                <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
+                  {resource.name}
+                </Link>
+              )}
+              badges={<CatalogStatusBadge status={resource.status} />}
+            />
+          ))}
+        </ul>
+      )}
+
+      {!resources.loading && total > 0 && (
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(total / limit))}
+          total={total}
+          limit={limit}
+          noun="resources"
+          onPageChange={setPage}
+          onLimitChange={(next) => { setLimit(next); setPage(1); }}
+        />
+      )}
+    </section>
   );
 }
 
