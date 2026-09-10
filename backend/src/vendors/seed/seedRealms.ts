@@ -34,6 +34,8 @@ interface RealmFixture {
   tokenPolicy?: Partial<RealmRecord['tokenPolicy']>;
   /** Overrides for the realm's own directory, which is a domain now rather than realm config. */
   localAuthentication?: Partial<NonNullable<DomainRecord['authentication']>>;
+  /** Overrides the generic `"{realm} directory"` label the local domain otherwise gets. */
+  localDomainDisplayName?: string;
   branding?: Partial<RealmRecord['branding']>;
   providers?: Array<{
     domainId: string;
@@ -97,6 +99,7 @@ export async function seedRealms(db: Db): Promise<void> {
         realmId: fixture.realmId,
         tenantId: DEFAULT_TENANT_ID,
         realmDisplayName: fixture.displayName,
+        domainDisplayName: fixture.localDomainDisplayName,
         authentication: fixture.localAuthentication,
         registration: fixture.registration && { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
       }),
