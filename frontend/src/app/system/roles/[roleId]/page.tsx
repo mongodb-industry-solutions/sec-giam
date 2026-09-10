@@ -12,6 +12,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../../../components/Res
 import { ActionButton, Fact, RecordCard } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
+import { useConfirm } from '../../../../components/ConfirmProvider';
 import { BuiltinBadge, DisabledBadge, Field, INPUT, ScopeBadge } from '../parts';
 import type { Assignment, CatalogPermission, ResolvedPermission, RoleDetail, RoleSummary } from '../types';
 
@@ -31,6 +32,7 @@ import type { Assignment, CatalogPermission, ResolvedPermission, RoleDetail, Rol
 export default function RoleDetailPage() {
   const params = useParams<{ roleId: string }>();
   const router = useRouter();
+  const confirm = useConfirm();
   const roleId = decodeURIComponent(String(params.roleId));
 
   const claims = currentClaims();
@@ -167,7 +169,7 @@ export default function RoleDetailPage() {
   }
 
   async function remove() {
-    if (!window.confirm('Remove this role? It is refused while anything still depends on it.')) return;
+    if (!(await confirm('Remove this role? It is refused while anything still depends on it.'))) return;
     const done = await role.run(
       'delete',
       () => callApi(`/roles/${encodeURIComponent(roleId)}`, { method: 'DELETE', subject: 'that role' }),
@@ -597,6 +599,7 @@ function Assignments({ roleId, mayManage, onChanged }: {
   mayManage: boolean;
   onChanged: () => void;
 }) {
+  const confirm = useConfirm();
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
@@ -638,7 +641,7 @@ function Assignments({ roleId, mayManage, onChanged }: {
   }
 
   async function revoke(assignment: Assignment) {
-    if (!window.confirm('Take this role back? The holder loses it at their next token.')) return;
+    if (!(await confirm('Take this role back? The holder loses it at their next token.'))) return;
     const done = await assignments.run(
       assignment.subjectId,
       // A holding lives on the subject and has no identifier of its own (role.controller.ts's own

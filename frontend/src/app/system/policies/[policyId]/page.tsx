@@ -10,6 +10,7 @@ import { ErrorState, LoadingState } from '../../../../components/ResultState';
 import { ActionButton, Fact } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
+import { useConfirm } from '../../../../components/ConfirmProvider';
 import { Field, INPUT } from '../../roles/parts';
 import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import {
@@ -33,6 +34,7 @@ import {
 export default function PolicyDetailPage() {
   const params = useParams<{ policyId: string }>();
   const router = useRouter();
+  const confirm = useConfirm();
   const policyId = decodeURIComponent(String(params.policyId));
 
   const claims = currentClaims();
@@ -55,7 +57,7 @@ export default function PolicyDetailPage() {
   }
 
   async function remove() {
-    if (!window.confirm('Remove this policy? Removing one that denies widens access immediately, and this cannot be undone. Retiring it is reversible.')) return;
+    if (!(await confirm('Remove this policy? Removing one that denies widens access immediately, and this cannot be undone. Retiring it is reversible.'))) return;
     const done = await policy.run(
       'delete',
       () => callApi(`/policies/${encodeURIComponent(policyId)}`, { method: 'DELETE', subject: 'that policy' }),

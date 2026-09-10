@@ -11,6 +11,7 @@ import { ApiError, callApi, can, currentClaims, when } from '../../../lib/consol
 import { paginate } from '../../../lib/useConsoleResource';
 import { useRealmChange } from '../../../lib/realms';
 import { usePermissions } from '../../../lib/profile';
+import { useConfirm } from '../../../components/ConfirmProvider';
 
 /**
  * Who holds temporary authority right now, and which requests are waiting.
@@ -39,6 +40,7 @@ interface Elevation {
 type State = 'in-force' | 'pending';
 
 export default function ElevationsPage() {
+  const confirm = useConfirm();
   const [state, setState] = useState<State>('in-force');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -95,7 +97,7 @@ export default function ElevationsPage() {
   }
 
   async function end(elevation: Elevation) {
-    if (!window.confirm('End this elevation now? The authority it grants stops immediately.')) return;
+    if (!(await confirm('End this elevation now? The authority it grants stops immediately.'))) return;
     setBusy(elevation.assignmentId);
     try {
       await callApi(`/elevations/${encodeURIComponent(elevation.assignmentId)}`, {

@@ -10,6 +10,7 @@ import { Fact } from '../../../../components/RecordCard';
 import { ErrorState, LoadingState } from '../../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/console';
 import { usePermissions } from '../../../../lib/profile';
+import { useConfirm } from '../../../../components/ConfirmProvider';
 import { Field, INPUT } from '../../roles/parts';
 
 /**
@@ -42,6 +43,7 @@ interface Domain {
 export default function DomainDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const confirm = useConfirm();
   const id = decodeURIComponent(String(params.id ?? ''));
 
   const [domain, setDomain] = useState<Domain | null>(null);
@@ -125,7 +127,7 @@ export default function DomainDetailPage() {
 
   async function remove() {
     if (!domain) return;
-    if (!window.confirm(`Delete "${domain.displayName}"? Anybody who signs in only through this path loses their way in.`)) return;
+    if (!(await confirm(`Delete "${domain.displayName}"? Anybody who signs in only through this path loses their way in.`))) return;
     setBusy(true);
     try {
       await callApi(`/domains/${encodeURIComponent(id)}`, { method: 'DELETE', subject: 'that authentication path' });

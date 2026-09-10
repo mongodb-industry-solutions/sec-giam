@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../comp
 import { Tooltip } from '../../../components/Tooltip';
 import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
 import { usePermissions } from '../../../lib/profile';
+import { useConfirm } from '../../../components/ConfirmProvider';
 import {
   FilterAttribute, ScimList, ScimUser, extensionOf, primaryEmail, scimFilter, useDomainNames,
 } from '../../../lib/identities';
@@ -35,6 +36,7 @@ export default function IdentitiesPage() {
 }
 
 function IdentitiesInner() {
+  const confirm = useConfirm();
   // Read once from the address so a link from a domain's own screen still lands pre-filtered, but
   // also offered as an ordinary picker below: arriving only by URL meant the same question asked
   // from this screen directly had no way to be asked at all.
@@ -97,7 +99,7 @@ function IdentitiesInner() {
           body: { schemas: [PATCH_SCHEMA], Operations: [{ op: 'replace', value: { active: true } }] },
         });
       } else {
-        if (!window.confirm(`Reject ${user.userName}? The account is retired rather than deleted, so the record it left survives.`)) {
+        if (!(await confirm(`Reject ${user.userName}? The account is retired rather than deleted, so the record it left survives.`))) {
           setDecisionBusy(null);
           return;
         }

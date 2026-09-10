@@ -14,6 +14,7 @@ import { Pagination } from '../../../../../components/Pagination';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../../components/ResultState';
 import { ApiError, callApi, when } from '../../../../../lib/console';
 import { useConsoleResource } from '../../../../../lib/useConsoleResource';
+import { useConfirm } from '../../../../../components/ConfirmProvider';
 import {
   ClientOwner, RegisteredClient, SELF_SERVICE_SCOPES, firstRedirectProblem, linesToUris,
 } from '../../../../../lib/clients';
@@ -37,6 +38,7 @@ const FIELD_INPUT_MONO = `${FIELD_INPUT} font-mono text-xs`;
 export default function ClientDetailPage() {
   const params = useParams<{ clientId: string }>();
   const router = useRouter();
+  const confirm = useConfirm();
   const clientId = decodeURIComponent(String(params.clientId ?? ''));
 
   const [client, setClient] = useState<RegisteredClient | null>(null);
@@ -105,8 +107,8 @@ export default function ClientDetailPage() {
   }, [dirty]);
 
   /** In-app navigation away, for the one link this page itself offers. */
-  function confirmLeave(): boolean {
-    return !dirty || window.confirm('Leave without saving? Your changes to this application will be lost.');
+  async function confirmLeave(): Promise<boolean> {
+    return !dirty || confirm('Leave without saving? Your changes to this application will be lost.');
   }
 
   async function save() {
@@ -140,9 +142,9 @@ export default function ClientDetailPage() {
   }
 
   async function rotate() {
-    if (!window.confirm(
+    if (!(await confirm(
       'Issue a new secret? The current one stops working immediately, and there is no overlap window.',
-    )) return;
+    ))) return;
     setBusy(true);
     try {
       const answer = await callApi<RegisteredClient>(`/clients/${encodeURIComponent(clientId)}/rotate-secret`, {
@@ -178,10 +180,10 @@ export default function ClientDetailPage() {
 
   async function removeOwner(owner: ClientOwner) {
     const self = Boolean(owner.is_caller);
-    if (!window.confirm(self
+    if (!(await confirm(self
       ? 'Remove yourself as an owner? You lose the ability to read, change, rotate and withdraw this '
         + 'application, and you will be taken back to the list.'
-      : `Remove ${owner.display_name || owner.ref} as an owner? They lose all authority over this application.`)) return;
+      : `Remove ${owner.display_name || owner.ref} as an owner? They lose all authority over this application.`))) return;
 
     setBusy(true);
     try {
@@ -201,9 +203,9 @@ export default function ClientDetailPage() {
   }
 
   async function withdraw() {
-    if (!window.confirm(
+    if (!(await confirm(
       'Withdraw this application? Its credential stops authenticating immediately. The record is kept, marked withdrawn.',
-    )) return;
+    ))) return;
     setBusy(true);
     try {
       await callApi(`/clients/${encodeURIComponent(clientId)}`, {
@@ -221,7 +223,10 @@ export default function ClientDetailPage() {
     <main className="space-y-5">
       <Link
         href="/system/credentials/applications"
-        onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}
+        onClick={(event) => {
+          event.preventDefault();
+          void confirmLeave().then((leave) => { if (leave) router.push('/system/credentials/applications'); });
+        }}
         className="inline-flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-[#001E2B] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]"
       >
         <ArrowLeft size={13} aria-hidden />
@@ -547,6 +552,7 @@ interface ApplicationGrant {
  * `subjectId` so the authority resolves it as somebody else's rather than the caller's.
  */
 function AuthorizedPrincipals({ clientId }: { clientId: string }) {
+  const confirm = useConfirm();
   const read = useCallback(
     () => callApi<{ grants: ApplicationGrant[] }>('/grants', {
       query: { clientId, status: 'all' },
@@ -558,7 +564,7 @@ function AuthorizedPrincipals({ clientId }: { clientId: string }) {
   const rows = grants.data?.grants ?? [];
 
   async function withdraw(grant: ApplicationGrant) {
-    if (!window.confirm(`Withdraw ${grant.subjectName ?? grant.subjectId}'s authorization of this application?`)) return;
+    if (!(await confirm(`Withdraw ${grant.subjectName ?? grant.subjectId}'s authorization of this application?`))) return;
     await grants.run(grant.grantId, () => callApi(`/grants/${encodeURIComponent(grant.grantId)}`, {
       method: 'DELETE',
       query: { subjectId: grant.subjectId },

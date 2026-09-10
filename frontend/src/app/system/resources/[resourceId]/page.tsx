@@ -17,6 +17,7 @@ import { EffectBadge, StatusBadge as PolicyStatusBadge } from '../../policies/pa
 import type { PolicySummary } from '../../policies/types';
 import { ServerForm } from '../ServerForm';
 import { draftFromResponse, draftToRegisterBody } from '../shared';
+import { useConfirm } from '../../../../components/ConfirmProvider';
 
 type PolicyStatusFilter = 'all' | 'active' | 'draft' | 'retired';
 
@@ -52,6 +53,7 @@ interface ResourceServer {
  */
 export default function ResourceDetailPage() {
   const params = useParams<{ resourceId: string }>();
+  const confirm = useConfirm();
   const resourceId = decodeURIComponent(String(params.resourceId));
 
   const claims = currentClaims();
@@ -142,10 +144,10 @@ export default function ResourceDetailPage() {
     if (!resource) return;
     const names = (policy.resource.names ?? []).filter((name) => name !== resource.name);
     if (names.length === 0) {
-      if (!window.confirm(
+      if (!(await confirm(
         `${resource.name} is the only resource "${policy.name}" governs. Removing it here would leave the policy `
         + 'governing nothing, so it is removed outright instead. Continue?',
-      )) return;
+      ))) return;
       await governing.run(
         `detach-${policy.policyId}`,
         () => callApi(`/policies/${encodeURIComponent(policy.policyId)}`, { method: 'DELETE', subject: 'that policy' }),
@@ -172,10 +174,10 @@ export default function ResourceDetailPage() {
     // matching a shape AND an explicit list at once. Asked outright rather than done quietly,
     // because it can narrow what that policy governs everywhere else it already applied.
     if (target.resource.pattern && !target.resource.names?.length) {
-      if (!window.confirm(
+      if (!(await confirm(
         `"${target.name}" currently governs by pattern (${target.resource.pattern}), which may match other resources too. `
         + `Attaching it here replaces that pattern with an exact list of names, starting with just "${resource.name}". Continue?`,
-      )) return;
+      ))) return;
     }
 
     const names = [...new Set([...(target.resource.names ?? []), resource.name])];

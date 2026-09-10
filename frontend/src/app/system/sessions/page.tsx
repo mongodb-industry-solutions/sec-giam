@@ -12,6 +12,7 @@ import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { clearSession } from '../../../lib/session';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
 import { usePermissions } from '../../../lib/profile';
+import { useConfirm } from '../../../components/ConfirmProvider';
 
 /**
  * Where an account is signed in, and ending it.
@@ -42,6 +43,7 @@ interface Session {
 type Scope = 'mine' | 'realm';
 
 export default function SessionsPage() {
+  const confirm = useConfirm();
   // Read fresh, not from the token: the token carries roles by default, not entitlements, so
   // `can()` needs the effective-permissions read this hook keeps warm to answer correctly.
   usePermissions();
@@ -69,9 +71,9 @@ export default function SessionsPage() {
   const total = sessions.data?.total ?? 0;
 
   async function terminate(session: Session) {
-    if (!window.confirm(session.current
+    if (!(await confirm(session.current
       ? 'End this session? It is the one you are signed in with, so you will be signed out.'
-      : 'End this session? Every application holding a token from it is told, and the tokens stop working.')) return;
+      : 'End this session? Every application holding a token from it is told, and the tokens stop working.'))) return;
 
     await sessions.run(
       session.sessionId,

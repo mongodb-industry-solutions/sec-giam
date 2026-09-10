@@ -5,6 +5,7 @@ import { KeyRound, Trash2 } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from './ResultState';
 import { Tooltip } from './Tooltip';
 import { ApiError, callApi, when } from '../lib/console';
+import { useConfirm } from './ConfirmProvider';
 
 /**
  * The authenticators a person has registered, and the ability to retire one.
@@ -28,6 +29,7 @@ export interface Credential {
 }
 
 export function CredentialsPanel({ onCount }: { onCount?: (active: number) => void }) {
+  const confirm = useConfirm();
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function CredentialsPanel({ onCount }: { onCount?: (active: number) => vo
   async function retire(credential: Credential) {
     // Confirmed, because it cannot be undone by the person who did it: a retired authenticator is
     // re-registered, not restored.
-    if (!window.confirm('Retire this authenticator? It will stop working immediately.')) return;
+    if (!(await confirm('Retire this authenticator? It will stop working immediately.'))) return;
     setBusy(credential.credentialId);
     try {
       await callApi(`/credentials/${encodeURIComponent(credential.credentialId)}`, {
