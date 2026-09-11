@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { SignInPanel, type SignedIn } from '../../../components/SignInPanel';
 import {
-  readPendingAuthorization, continueAuthorization, type PendingAuthorization,
+  readPendingAuthorization, readSignInPrefill, continueAuthorization,
+  type PendingAuthorization, type SignInPrefill,
 } from '../../../lib/authorizationRequest';
 import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
@@ -23,11 +24,15 @@ export default function LoginPage() {
   const [signedIn, setSignedIn] = useState<SignedIn | null>(null);
   const [pending, setPending] = useState<PendingAuthorization | null>(null);
   const [realm, setRealm] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<SignInPrefill>({});
   const [returning, setReturning] = useState(false);
 
   useEffect(() => {
     const search = window.location.search;
     setPending(readPendingAuthorization(search));
+    // `login_hint`, and the demo's `prefill_password`, as the authority passed them on. Form prefill
+    // only: what is authorized is the ticket's, so filling these cannot alter the request.
+    setPrefill(readSignInPrefill(search));
     // The authority names the realm when it sends somebody here. Guessing it from a client id would
     // work until two realms registered the same one.
     setRealm(new URLSearchParams(search).get('realm') ?? 'leafypay');
@@ -86,6 +91,7 @@ export default function LoginPage() {
       <SignInPanel
         defaultRealm={realm}
         requestId={pending?.requestId}
+        prefill={prefill}
         onSignedIn={handleSignedIn}
       />
     </AuthBackdrop>

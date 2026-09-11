@@ -4,11 +4,12 @@ import { createHash, randomBytes } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
 import { ClientAuthService, provisionalClient, recordSoftAdmission } from '../services/clientAuth.service';
 import { DirectoryService } from '../../directory/services/directory.service';
-import { TICKET_COLLECTION, SESSION_COLLECTION, RESOURCE_COLLECTION } from '../../../shared/models/collections';
+import { TICKET_COLLECTION, SESSION_COLLECTION } from '../../../shared/models/collections';
 import { TicketRecord } from '../models/ticket.model';
 import { SessionRecord, isLive } from '../../authentication/models/session.model';
 import { readSessionCookie } from '../../authentication/services/sessionCookie';
 import { scopesOf, OAuthClient } from '../models/client.model';
+import { scopeCatalogue } from '../services/scopeCatalogue';
 import { enforcementFor } from '../../realm/models/realm.model';
 import { newMeta } from '../../../shared/models/base.model';
 import { oauthError } from '../../../shared/models/problem';
@@ -53,33 +54,24 @@ export async function authorizeController(fastify: FastifyInstance) {
    * console lives and is already what CORS is configured against, so a second URL for the same thing
    * would be a second thing to get wrong.
    */
-  const page = (path: string, realm: string, requestId: string) => {
+  const page = (
+    path: string,
+    realm: string,
+    requestId: string,
+    hints: Record<string, string | undefined> = {},
+  ) => {
     const base = config.server.frontendUrl.replace(/\/$/, '');
-    return `${base}${path}?realm=${encodeURIComponent(realm)}&request_id=${encodeURIComponent(requestId)}`;
-  };
-
-  /**
-   * What each scope means, gathered from the resource servers that accept them.
-   *
-   * From the CATALOG rather than from a map in this file: a description like "See your payments" is
-   * one industry's vocabulary, and an authority that has to serve several cannot carry it. The
-   * deployment declares them through the seeder and this renders what it is given.
-   */
-  async function scopeCatalogue(realmId: string): Promise<Map<string, { description?: string; required?: boolean }>> {
-    const servers = await fastify.db
-      .collection<{ scopes?: Array<{ name: string; description: string; required?: boolean }> }>(RESOURCE_COLLECTION)
-      .find({ realmId, scopes: { $exists: true } }, { projection: { _id: 0, scopes: 1 } })
-      .toArray();
-    const catalogue = new Map<string, { description?: string; required?: boolean }>();
-    for (const server of servers) {
-      for (const scope of server.scopes ?? []) {
-        if (!catalogue.has(scope.name)) {
-          catalogue.set(scope.name, { description: scope.description, required: scope.required });
-        }
-      }
+    const url = new URL(`${base}${path}`);
+    url.searchParams.set('realm', realm);
+    url.searchParams.set('request_id', requestId);
+    // Form prefill only, and only onto this authority's OWN page. Nothing here reaches the client or
+    // widens the request: the parameters that decide what is authorized are read back from the
+    // ticket, never from the URL the person returns with.
+    for (const [key, value] of Object.entries(hints)) {
+      if (value) url.searchParams.set(key, value);
     }
-    return catalogue;
-  }
+    return url.toString();
+  };
 
   function redirectWith(reply: FastifyReply, redirectUri: string, values: Record<string, string | undefined>) {
     const url = new URL(redirectUri);
@@ -125,6 +117,24 @@ export async function authorizeController(fastify: FastifyInstance) {
             resource: {
               description: 'RFC 8707 resource indicators. Narrows the audience within the registration.',
               oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+            },
+            login_hint: {
+              type: 'string',
+              examples: ['luis.fernandez@back.es'],
+              description:
+                'OIDC 3.1.2.1. Who the client believes is signing in, used to prefill the login on '
+                + 'the sign-in page of this authority. A hint only: the credential still has to be given, '
+                + 'and nothing about the request changes if it is wrong.',
+            },
+            prefill_password: {
+              type: 'string',
+              description:
+                'NON-STANDARD, and optional. Prefills the password field on the sign-in page so a '
+                + 'demo can be walked in one click. Honoured because a simple integration is the '
+                + 'point of it; a deployment with a real security model simply does not send it, '
+                + 'since a credential in a query string reaches access logs, browser history and '
+                + 'the Referer header. It is passed to the sign-in page and nowhere else: never '
+                + 'stored on the request, never written to the trail.',
             },
             request_id: {
               type: 'string',
@@ -313,6 +323,9 @@ export async function authorizeController(fastify: FastifyInstance) {
         redirectUri,
         ...(state ? { state, stateHash: createHash('sha256').update(state).digest('hex').slice(0, 16) } : {}),
         ...(one('nonce') ? { nonce: one('nonce') as string } : {}),
+        // The standard hint is kept with the request, the way the backchannel flow already keeps it.
+        // `prefill_password` deliberately is NOT: a credential does not belong in a stored record.
+        ...(one('login_hint') ? { loginHint: one('login_hint') as string } : {}),
         ...(resources.length ? { resources } : {}),
         scope: requested.join(' '),
         attemptCount: 0,
@@ -339,7 +352,10 @@ export async function authorizeController(fastify: FastifyInstance) {
         if (one('prompt') === 'none') {
           return refuse('login_required', 'no live session and prompt=none was requested', 'no_live_session');
         }
-        return reply.redirect(page('/auth/login', realm.name, pending.requestId), 302);
+        return reply.redirect(page('/auth/login', realm.name, pending.requestId, {
+          login_hint: pending.loginHint ?? one('login_hint'),
+          prefill_password: one('prefill_password'),
+        }), 302);
       }
 
       const identity = await new DirectoryService(fastify.db).findBySubjectId(session.subjectId);
@@ -470,11 +486,13 @@ export async function authorizeController(fastify: FastifyInstance) {
             description: 'The application, and what it is asking for.',
             type: 'object',
             additionalProperties: false,
-            required: ['clientName', 'scopes'],
+            required: ['clientName', 'authorityName', 'scopes'],
             properties: {
               clientName: { type: 'string' },
               clientUri: { type: 'string' },
               logoUri: { type: 'string' },
+              /** This authority's own display name, so the screen can show who is being trusted to vouch. */
+              authorityName: { type: 'string' },
               scopes: {
                 type: 'array',
                 description:
@@ -542,7 +560,7 @@ export async function authorizeController(fastify: FastifyInstance) {
 
       const client = await new ClientAuthService(fastify.db).find(realm.realmId, pending.clientId);
       const asked = pending.scope.split(' ').filter(Boolean);
-      const catalogue = await scopeCatalogue(realm.realmId);
+      const catalogue = await scopeCatalogue(fastify.db, realm.realmId);
       const held = new Set(await new GrantService(fastify.db)
         .grantedScopesFor(realm.realmId, session.subjectId, pending.clientId));
 
@@ -550,6 +568,7 @@ export async function authorizeController(fastify: FastifyInstance) {
         clientName: client?.clientName ?? pending.clientId,
         ...(client?.clientUri ? { clientUri: client.clientUri } : {}),
         ...(client?.logoUri ? { logoUri: client.logoUri } : {}),
+        authorityName: realm.branding?.displayName ?? realm.displayName,
         scopes: asked.map((name) => ({
           name,
           ...(catalogue.get(name)?.description ? { description: catalogue.get(name)!.description } : {}),
@@ -698,7 +717,7 @@ export async function authorizeController(fastify: FastifyInstance) {
        * Without `openid` there is no identity to hand over, so a token missing it would satisfy
        * nothing the client asked for. Reported as `access_denied`, which is what declining is.
        */
-      const catalogue = await scopeCatalogue(realm.realmId);
+      const catalogue = await scopeCatalogue(fastify.db, realm.realmId);
       const withheldRequired = scopes.filter(
         (scope) => (catalogue.get(scope)?.required ?? scope === 'openid') && !granted.includes(scope),
       );
