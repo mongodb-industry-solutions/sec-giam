@@ -6,6 +6,7 @@ import { apiUrl } from '../lib/env';
 import { startConsoleAuthorization, rememberUserName } from '../lib/session';
 import { BRAND } from '../config/brand';
 import { Tooltip } from './Tooltip';
+import type { SignInPrefill } from '../lib/authorizationRequest';
 
 /**
  * THE sign-in form for the whole platform.
@@ -75,6 +76,7 @@ export function SignInPanel({
   heading,
   clientId,
   requestId,
+  prefill,
   onSignedIn,
 }: {
   defaultRealm?: string;
@@ -83,19 +85,40 @@ export function SignInPanel({
   clientId?: string;
   /** The pending authorization, which names the asking application on a hosted sign-in. */
   requestId?: string;
+  /** What the fields start out holding, when the authorization request named it. */
+  prefill?: SignInPrefill;
   onSignedIn?: (signedIn: SignedIn) => void;
 }) {
   const [context, setContext] = useState<LoginContext | null>(null);
   // Loading and unreachable are different situations and must look different. Collapsing both into an
   // absent context is what makes a slow answer look like an empty realm or a broken screen.
   const [contextState, setContextState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
-  const [realm, setRealm] = useState(defaultRealm);
-  const [login, setLogin] = useState('');
-  const [password, setPassword] = useState('');
+  // One realm per panel for its whole lifetime: every domain in the picker below belongs to this
+  // same realm, so nothing in this component ever needs to change it.
+  const realm = defaultRealm;
+  // Which domain is shown as selected. Cosmetic today: sign-in still only takes a login and a
+  // password, and the domain a credential belongs to is resolved server side regardless of what is
+  // picked here. This is what makes the picker show ONE path per entry rather than every option
+  // collapsing onto the realm itself.
+  const [selectedProvider, setSelectedProvider] = useState('');
+  const [login, setLogin] = useState(prefill?.login ?? '');
+  const [password, setPassword] = useState(prefill?.password ?? '');
   const [showPassword, setShowPassword] = useState(false);
   const [debugMode, setDebugMode] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Applied when it arrives, not only at first render.
+   *
+   * The page above reads the URL in an effect, so this panel mounts once with no prefill and is
+   * handed it a tick later. Anything the person has since typed wins: this fills a field, it does
+   * not keep overwriting one.
+   */
+  useEffect(() => {
+    if (prefill?.login) setLogin((held) => (held ? held : prefill.login as string));
+    if (prefill?.password) setPassword((held) => (held ? held : prefill.password as string));
+  }, [prefill?.login, prefill?.password]);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +134,11 @@ export function SignInPanel({
         if (cancelled) return;
         setContext(data);
         setContextState(data ? 'ready' : 'unavailable');
+        // Default to the first enabled path, which is the one a credential can actually be checked
+        // against; falling back to the first at all only when none is enabled, so the field is never
+        // left pointing at nothing.
+        const preferred = data?.providers.find((provider: Provider) => provider.enabled) ?? data?.providers[0];
+        setSelectedProvider(preferred?.name ?? '');
       })
       .catch(() => {
         if (cancelled) return;
@@ -231,13 +259,15 @@ export function SignInPanel({
           ) : (
             <select
               id="realm-picker"
-              value={realm}
-              onChange={(event) => { setRealm(event.target.value); setLogin(''); setPassword(''); setError(null); }}
+              value={selectedProvider}
+              onChange={(event) => { setSelectedProvider(event.target.value); setLogin(''); setPassword(''); setError(null); }}
               className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
             >
-              <option value={context.realm}>{context.displayName}</option>
+              {/* One entry per path this realm actually manages (`/system/domains`), the realm's own
+                  directory included: `providers` already carries it, so listing it again here would
+                  show it twice under two different labels. */}
               {context.providers.map((provider) => (
-                <option key={provider.name} value={context.realm} disabled={!provider.enabled}>
+                <option key={provider.name} value={provider.name} disabled={!provider.enabled}>
                   {provider.displayName}
                   {provider.enabled ? '' : ' (not active in this build)'}
                 </option>

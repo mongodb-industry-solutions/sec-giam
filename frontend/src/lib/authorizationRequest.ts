@@ -23,6 +23,27 @@ export interface PendingAuthorization {
   requestId: string;
 }
 
+/**
+ * Form prefill the authority passed along, from `login_hint` and `prefill_password`.
+ *
+ * Separate from `PendingAuthorization` on purpose. What is authorized is read back from the ticket
+ * by the authority and nothing here can influence it; these two values only decide what the fields
+ * start out holding, so a person walking a demo does not retype a credential they were handed.
+ */
+export interface SignInPrefill {
+  login?: string;
+  password?: string;
+}
+
+/** The prefill in the current URL, if the authority sent any. */
+export function readSignInPrefill(search: string): SignInPrefill {
+  const params = new URLSearchParams(search);
+  return {
+    ...(params.get('login_hint') ? { login: params.get('login_hint') as string } : {}),
+    ...(params.get('prefill_password') ? { password: params.get('prefill_password') as string } : {}),
+  };
+}
+
 /** One scope, as the authority describes it. The description is the deployment's, not this app's. */
 export interface ConsentScope {
   name: string;
@@ -34,7 +55,14 @@ export interface ConsentScope {
   alreadyGranted?: boolean;
 }
 
-/** What the person is being asked to agree to. Assembled by the authority from the stored request. */
+/**
+ * What the person is being asked to agree to. Assembled by the authority from the stored request.
+ *
+ * No authority name here: the screen shows GIAM's own brand for that half, the same fixed identity
+ * on every realm, not a per-realm value carried over the wire. A realm like `leafypay` is a shared
+ * identity domain for a group of applications, one of which happens to share its display name; that
+ * coincidence is not what a person is trusting when they agree to sign in.
+ */
 export interface ConsentPrompt {
   clientName: string;
   clientUri?: string;

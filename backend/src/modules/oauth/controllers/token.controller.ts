@@ -411,6 +411,9 @@ export async function tokenController(fastify: FastifyInstance) {
         ...(requestedPermissions.length ? { requestedPermissions } : {}),
         ...(identity?.accountHolderRef ? { accountHolderRef: identity.accountHolderRef } : {}),
         includeRefreshToken: true,
+        // Same domain the ORIGINAL sign-in carried: a rotation continues the same authenticated
+        // session, so the token it produces is bound by the same domain's policy, not re-derived.
+        ...(identity ? { subjectProfile: identity } : {}),
       });
       recordIssued(realm, { grantType, client, subjectId: redeemed.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
       return reply.send(tokens);
@@ -492,6 +495,7 @@ export async function tokenController(fastify: FastifyInstance) {
         nonce: pending.nonce,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
+        subjectProfile: identity,
       });
 
       recordIssued(realm, { grantType, client, subjectId: identity.subjectId, scope, correlationId, ipHash, ...(issuer.issuedJti ? { jti: issuer.issuedJti } : {}) });
@@ -530,6 +534,7 @@ export async function tokenController(fastify: FastifyInstance) {
         txn: claimed.requestId,
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
+        subjectProfile: identity,
       });
 
       // push delivery carries the tokens to the client's endpoint as well. The poll that got here
@@ -664,6 +669,9 @@ export async function tokenController(fastify: FastifyInstance) {
         // No refresh token. A delegated token that can renew itself outlives the reason it was
         // granted, and this one exists for the length of one demonstration.
         includeRefreshToken: false,
+        // The SUBJECT's domain, not the acting client's: this token still authenticates that
+        // subject, and it is their path's policy that bounds it.
+        subjectProfile: identity,
       });
       recordIssued(realm, {
         grantType,

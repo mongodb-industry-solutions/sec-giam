@@ -89,6 +89,24 @@ export interface DomainRecord extends Scoped {
      * registration (`grant_types`), which is where it already lives.
      */
     cibaEnabled?: boolean;
+    /**
+     * How long a token issued to a principal identified through THIS path lives. Absent means the
+     * realm's own `tokenPolicy` decides, the same "narrows, never widens" contract every other
+     * field here already carries.
+     *
+     * The one token rule that had stayed on the realm after ADR section 3 moved everything else
+     * path-specific (the password policy, the session limit, MFA, CIBA) onto the domain: an
+     * administrative path and a customer-facing one answering to the same realm have no reason to
+     * share how long a token issued through either lives.
+     *
+     * Narrower than a client's own override, which narrows the realm's: `domain ?? client ?? realm`.
+     * A client registers once across every path a subject might use it from; a domain is that one
+     * path, so it is the more specific of the two.
+     */
+    tokenPolicy?: {
+      accessTokenTtlSeconds?: number;
+      refreshTokenTtlSeconds?: number;
+    };
     lockout?: {
       /** Consecutive failures before the account is locked on this path. */
       maxAttempts: number;

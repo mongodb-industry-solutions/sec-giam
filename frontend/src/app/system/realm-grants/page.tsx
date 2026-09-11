@@ -6,6 +6,7 @@ import { SectionHeader } from '../../../components/SectionHeader';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when } from '../../../lib/console';
 import { useAdministrableRealms, useRealmChange } from '../../../lib/realms';
+import { useConfirm } from '../../../components/ConfirmProvider';
 
 /**
  * Administering more than one realm, and who was allowed to.
@@ -31,6 +32,7 @@ interface RealmGrant {
 }
 
 export default function RealmGrantsPage() {
+  const confirm = useConfirm();
   const { realms, active, loading: loadingRealms } = useAdministrableRealms();
   const [grants, setGrants] = useState<RealmGrant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,7 @@ export default function RealmGrantsPage() {
   useRealmChange(() => { void load(); });
 
   async function revoke(grant: RealmGrant) {
-    if (!window.confirm(`Take back administration of ${grant.targetRealm ?? 'that realm'}? It stops immediately.`)) return;
+    if (!(await confirm(`Take back administration of ${grant.targetRealm ?? 'that realm'}? It stops immediately.`))) return;
     setBusy(grant.assignmentId);
     try {
       await callApi(`/realm-grants/${encodeURIComponent(grant.assignmentId)}`, {

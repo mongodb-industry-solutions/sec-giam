@@ -13,6 +13,7 @@ import { ErrorState, LoadingState, StatusBadge } from '../../../../components/Re
 import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/console';
 import { usePermissions } from '../../../../lib/profile';
 import { ScimUser, extensionOf, primaryEmail, useDomainNames } from '../../../../lib/identities';
+import { useConfirm } from '../../../../components/ConfirmProvider';
 import type { RoleSummary } from '../../roles/types';
 
 interface Assignment {
@@ -35,6 +36,7 @@ const PATCH_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 export default function IdentityDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const confirm = useConfirm();
   const id = decodeURIComponent(String(params.id ?? ''));
 
   const [user, setUser] = useState<ScimUser | null>(null);
@@ -119,16 +121,16 @@ export default function IdentityDetailPage() {
   }
 
   async function setActive(active: boolean) {
-    if (!active && !window.confirm(
+    if (!active && !(await confirm(
       'Deactivate this principal? Every token already issued stops working immediately, not at its expiry.',
-    )) return;
+    ))) return;
     await patch({ active }, 'that principal');
   }
 
   async function deprovision() {
-    if (!window.confirm(
+    if (!(await confirm(
       'Deprovision this principal? The record is retired rather than deleted, so the audit trail still resolves, and everything outstanding stops working now.',
-    )) return;
+    ))) return;
     setBusy(true);
     try {
       await callApi(`/scim/v2/Users/${encodeURIComponent(id)}`, { method: 'DELETE', subject: 'that principal' });
@@ -157,7 +159,7 @@ export default function IdentityDetailPage() {
   }
 
   async function revokeRole(roleId: string) {
-    if (!window.confirm('Take this role back? It stops applying at this principal\'s next token.')) return;
+    if (!(await confirm('Take this role back? It stops applying at this principal\'s next token.'))) return;
     setRoleBusy(roleId);
     try {
       await callApi(`/principals/${encodeURIComponent(id)}/roles/${encodeURIComponent(roleId)}`, {
@@ -660,6 +662,7 @@ const CREDENTIAL_TYPE_LABEL: Record<string, string> = {
  * by a reset, not revoked. Both are linked to rather than reimplemented here.
  */
 function CredentialsHeld({ id }: { id: string }) {
+  const confirm = useConfirm();
   const [credentials, setCredentials] = useState<HeldCredential[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -680,7 +683,7 @@ function CredentialsHeld({ id }: { id: string }) {
   useEffect(() => { void load(); }, [load]);
 
   async function retire(credential: HeldCredential) {
-    if (!window.confirm(`Retire "${credential.label ?? credential.credentialId}"? It stops working immediately.`)) return;
+    if (!(await confirm(`Retire "${credential.label ?? credential.credentialId}"? It stops working immediately.`))) return;
     setBusy(credential.credentialId);
     try {
       await callApi(`/identities/${encodeURIComponent(id)}/credentials/${encodeURIComponent(credential.credentialId)}`, {
@@ -778,6 +781,7 @@ interface OversightGrant {
  * approving it again is theirs alone to do, the same asymmetry the API itself enforces.
  */
 function AuthorizedApplications({ id }: { id: string }) {
+  const confirm = useConfirm();
   const [grants, setGrants] = useState<OversightGrant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -798,7 +802,7 @@ function AuthorizedApplications({ id }: { id: string }) {
   useEffect(() => { void load(); }, [load]);
 
   async function revoke(grant: OversightGrant) {
-    if (!window.confirm(`Withdraw ${grant.clientName || grant.clientId}'s authorization? It stops acting for this principal immediately.`)) return;
+    if (!(await confirm(`Withdraw ${grant.clientName || grant.clientId}'s authorization? It stops acting for this principal immediately.`))) return;
     setBusy(grant.grantId);
     try {
       await callApi(`/grants/${encodeURIComponent(grant.grantId)}`, {

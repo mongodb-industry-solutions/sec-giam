@@ -9,7 +9,7 @@
 // policy does.
 import { describe, it, expect } from 'vitest';
 import { combineDecisions } from '../../../backend/src/modules/authorization/services/policyEvaluators';
-import { matchesPattern } from '../../../backend/src/modules/authorization/models/policy.model';
+import { selectorApplies } from '../../../backend/src/modules/authorization/models/policy.model';
 import type { PolicyEvaluator, AuthorizationRequest } from '../../../backend/src/shared/ports';
 
 const request: AuthorizationRequest = {
@@ -90,18 +90,26 @@ describe('v39 P8.2: the combination rule', () => {
   });
 });
 
-describe('v39 P8.2: policy patterns stay reviewable', () => {
-  it('matches exactly, by prefix, or everything', () => {
-    expect(matchesPattern('*', 'anything')).toBe(true);
-    expect(matchesPattern('accounts', 'accounts')).toBe(true);
-    expect(matchesPattern('accounts', 'accountsExtra')).toBe(false);
-    expect(matchesPattern('account*', 'accountHolders')).toBe(true);
+describe('selectorApplies: one matcher for resource, permission, principal and role', () => {
+  it('matches by id, exactly', () => {
+    expect(selectorApplies({ ids: ['accounts'] }, 'accounts')).toBe(true);
+    expect(selectorApplies({ ids: ['accounts'] }, 'accountsExtra')).toBe(false);
   });
 
-  it('is not a regular expression', () => {
-    // Deliberate. A pattern language that can express arbitrary matching produces policies nobody
-    // can review, and review is the entire point of writing one down.
-    expect(matchesPattern('.*', 'accounts')).toBe(false);
-    expect(matchesPattern('accounts|cards', 'accounts')).toBe(false);
+  it('matches by pattern, a real regular expression compiled with RE2', () => {
+    expect(selectorApplies({ pattern: '.*' }, 'accounts')).toBe(true);
+    expect(selectorApplies({ pattern: '^account' }, 'accountHolders')).toBe(true);
+    expect(selectorApplies({ pattern: '^accounts$|^cards$' }, 'accounts')).toBe(true);
+  });
+
+  it('lets ids win when both are given, rather than refusing the ambiguity', () => {
+    // `ids` decides; `pattern` sits there unread. Naming both is not an error, it is dead weight.
+    expect(selectorApplies({ ids: ['accounts'], pattern: '^cards$' }, 'accounts')).toBe(true);
+    expect(selectorApplies({ ids: ['accounts'], pattern: '^cards$' }, 'cards')).toBe(false);
+  });
+
+  it('matches nothing when neither is given', () => {
+    expect(selectorApplies({}, 'accounts')).toBe(false);
+    expect(selectorApplies(undefined, 'accounts')).toBe(false);
   });
 });

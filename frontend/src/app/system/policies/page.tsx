@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Scale, X } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
@@ -12,8 +12,13 @@ import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
 import { usePermissions } from '../../../lib/profile';
 import { Field, INPUT } from '../roles/parts';
-import { EffectBadge, StatusBadge } from './parts';
-import type { PolicyDetail, PolicySummary } from './types';
+import type { CatalogPermission } from '../roles/types';
+import type { RoleSummary } from '../roles/types';
+import {
+  EffectBadge, SelectorPanel, StatusBadge, permissionCatalogOptions, selectorFrom, splitPatterns,
+  type CatalogOption,
+} from './parts';
+import type { PolicyDetail, PolicySummary, ResourceServerCatalogEntry, Selector } from './types';
 
 /**
  * The conditional rules this realm applies, evaluated after roles.
@@ -47,8 +52,8 @@ export default function PoliciesPage() {
   const rows = policies.data?.policies ?? [];
 
   async function create(input: {
-    name: string; effect: 'allow' | 'deny'; resourceType: string; resourcePattern: string;
-    permissions: string; reason: string;
+    name: string; effect: 'allow' | 'deny'; resource: Selector;
+    permission: Selector; role: Selector; principal: Selector; reason: string;
   }) {
     const done = await policies.run(
       'new',
@@ -57,8 +62,10 @@ export default function PoliciesPage() {
         body: {
           name: input.name,
           effect: input.effect,
-          resource: { type: input.resourceType, pattern: input.resourcePattern || '*' },
-          permissions: input.permissions.split(',').map((value) => value.trim()).filter(Boolean),
+          resource: input.resource,
+          ...(input.permission.ids?.length || input.permission.pattern ? { permission: input.permission } : {}),
+          ...(input.role.ids?.length || input.role.pattern ? { role: input.role } : {}),
+          ...(input.principal.ids?.length || input.principal.pattern ? { principal: input.principal } : {}),
           ...(input.reason ? { reason: input.reason } : {}),
         },
         subject: 'that policy',
@@ -179,23 +186,80 @@ export default function PoliciesPage() {
 function CreatePolicy({ onCancel, onSubmit, busy }: {
   onCancel: () => void;
   onSubmit: (input: {
-    name: string; effect: 'allow' | 'deny'; resourceType: string; resourcePattern: string;
-    permissions: string; reason: string;
+    name: string; effect: 'allow' | 'deny'; resource: Selector;
+    permission: Selector; role: Selector; principal: Selector; reason: string;
   }) => void;
   busy: boolean;
 }) {
   const [name, setName] = useState('');
   const [effect, setEffect] = useState<'allow' | 'deny'>('allow');
-  const [resourceType, setResourceType] = useState('');
-  const [resourcePattern, setResourcePattern] = useState('*');
-  const [permissions, setPermissions] = useState('');
+
+  const [resourceMode, setResourceMode] = useState<'ids' | 'pattern'>('ids');
+  const [resourceIds, setResourceIds] = useState('');
+  const [resourcePattern, setResourcePattern] = useState('');
+
+  const [permissionMode, setPermissionMode] = useState<'ids' | 'pattern'>('ids');
+  const [permissionIds, setPermissionIds] = useState('');
+  const [permissionPattern, setPermissionPattern] = useState('');
+
+  const [roleMode, setRoleMode] = useState<'ids' | 'pattern'>('ids');
+  const [roleIds, setRoleIds] = useState('');
+  const [rolePattern, setRolePattern] = useState('');
+
+  const [principalMode, setPrincipalMode] = useState<'ids' | 'pattern'>('ids');
+  const [principalIds, setPrincipalIds] = useState('');
+  const [principalPattern, setPrincipalPattern] = useState('');
+
   const [reason, setReason] = useState('');
+
+  const resourceGiven = resourceMode === 'ids' ? resourceIds.trim() : resourcePattern.trim();
+  const governsSomething = permissionMode === 'ids' ? Boolean(permissionIds.trim()) : Boolean(permissionPattern.trim());
+  const rolesSomething = roleMode === 'ids' ? Boolean(roleIds.trim()) : Boolean(rolePattern.trim());
+
+  const readCatalog = useCallback(
+    () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
+    [],
+  );
+  const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
+  const readResources = useCallback(
+    () => callApi<{ resourceServers: ResourceServerCatalogEntry[] }>('/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' }),
+    [],
+  );
+  const resourceServers = useConsoleResource(readResources, 'The resource server catalog could not be read.');
+  const readRoles = useCallback(
+    () => callApi<{ roles: RoleSummary[] }>('/roles', { query: { limit: 200 }, subject: 'the roles in this realm' }),
+    [],
+  );
+  const allRoles = useConsoleResource(readRoles, 'The roles could not be read.');
+  useEffect(() => {
+    void catalog.reload(); void resourceServers.reload(); void allRoles.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Labelled and grouped by the server that declares each one, the same options the edit screen
+  // offers: the id is what gets stored, the name is how somebody finds the right one.
+  const resourceCatalog: CatalogOption[] = [...new Map(
+    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((entry) => [
+      entry.name,
+      { id: entry.name, label: entry.displayName, group: server.displayName ?? server.name },
+    ] as const)),
+  ).values()].sort((left, right) => left.id.localeCompare(right.id));
+  const roleCatalog: CatalogOption[] = (allRoles.data?.roles ?? [])
+    .map((role) => ({ id: role.name, label: role.displayName }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit({ name, effect, resourceType, resourcePattern, permissions, reason });
+        onSubmit({
+          name,
+          effect,
+          resource: selectorFrom(resourceMode, resourceIds, resourcePattern),
+          permission: selectorFrom(permissionMode, permissionIds, permissionPattern),
+          role: selectorFrom(roleMode, roleIds, rolePattern),
+          principal: selectorFrom(principalMode, principalIds, principalPattern),
+          reason,
+        });
       }}
       className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
     >
@@ -218,18 +282,48 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         </Field>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Resource type" hint="What object kind this policy governs, e.g. roles, sessions.">
-          <input required value={resourceType} onChange={(e) => setResourceType(e.target.value)} className={INPUT} placeholder="roles" />
-        </Field>
-        <Field label="Resource pattern" hint="`*` alone, or a trailing `*` for a prefix. Never a regular expression.">
-          <input value={resourcePattern} onChange={(e) => setResourcePattern(e.target.value)} className={INPUT} />
-        </Field>
-      </div>
+      <SelectorPanel
+        noun="Resource"
+        description="What this policy will govern. Tick each resource it attaches to."
+        mode={resourceMode} onModeChange={setResourceMode}
+        ids={resourceIds} onIdsChange={setResourceIds}
+        pattern={resourcePattern} onPatternChange={setResourcePattern}
+        catalog={resourceCatalog}
+      />
 
-      <Field label="Permissions" hint="Comma separated, full resource:action strings. The same spelling a role and a token use.">
-        <input required value={permissions} onChange={(e) => setPermissions(e.target.value)} className={INPUT} placeholder="roles:manage, sessions:view" />
-      </Field>
+      <SelectorPanel
+        noun="Permission"
+        description="What it covers, resource and action. A role below adds whatever it currently grants."
+        mode={permissionMode} onModeChange={setPermissionMode}
+        ids={permissionIds} onIdsChange={setPermissionIds}
+        pattern={permissionPattern} onPatternChange={setPermissionPattern}
+        catalog={permissionCatalogOptions(catalog.data?.permissions ?? [])}
+        required={false}
+      />
+
+      <SelectorPanel
+        noun="Role"
+        description="Every permission these roles grant, parents included, is folded into what this policy covers."
+        mode={roleMode} onModeChange={setRoleMode}
+        ids={roleIds} onIdsChange={setRoleIds}
+        pattern={rolePattern} onPatternChange={setRolePattern}
+        catalog={roleCatalog}
+        required={false}
+      />
+      <p className="text-[11px] text-gray-400">
+        A role's current permissions (parents included) are folded into what this policy governs,
+        alongside whatever permission ids are given above. At least one of Permission or Role must
+        resolve to something, or the policy would govern nothing.
+      </p>
+
+      <SelectorPanel
+        noun="Principal"
+        description="Who it applies to. Ticking nobody applies it to everybody."
+        mode={principalMode} onModeChange={setPrincipalMode}
+        ids={principalIds} onIdsChange={setPrincipalIds}
+        pattern={principalPattern} onPatternChange={setPrincipalPattern}
+        required={false}
+      />
 
       <Field label="Reason" hint="Carried into every decision this policy makes. A decision a log cannot explain is not auditable.">
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={INPUT} />
@@ -237,7 +331,7 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
 
       <button
         type="submit"
-        disabled={busy || !name || !permissions.trim() || !resourceType.trim()}
+        disabled={busy || !name || !resourceGiven || !(governsSomething || rolesSomething)}
         className="inline-flex items-center gap-1.5 rounded-md border border-[#001E2B] bg-[#001E2B] px-3 py-1.5 text-xs font-medium text-[#00ED64] transition-colors hover:bg-[#00303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64] disabled:opacity-50"
       >
         <Plus size={12} aria-hidden />

@@ -1,8 +1,8 @@
 import { Db } from 'mongodb';
 import { v5 as uuidv5 } from 'uuid';
 import { POLICY_COLLECTION, REALM_COLLECTION } from '../../shared/models/collections';
-import { PolicyRecord, PolicyCondition } from '../../modules/authorization/models/policy.model';
-import { validatePolicy } from '../../modules/authorization/services/policyAdmin.service';
+import { PolicyRecord, PolicyCondition, Selector } from '../../modules/authorization/models/policy.model';
+import { validatePolicy, resolvePermissions, isPolicyRefusal } from '../../modules/authorization/services/policyAdmin.service';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
@@ -10,10 +10,13 @@ import { readSeedFile } from './readSeedFile';
 /**
  * The example policies, chosen to demonstrate the mechanism rather than to flatter it.
  *
- * Three of them, and each earns its place. One allows, so the screen has something that grants. One
+ * Four of them, and each earns its place. One allows, so the screen has something that grants. One
  * DENIES what the first allows, because deny-wins is the rule the whole model rests on and a rule
- * nobody can see fire is a rule nobody has checked. One carries a condition, so the closed identity
- * vocabulary is visible as data instead of only as a form control.
+ * nobody can see fire is a rule nobody has checked. Two carry a condition, so the closed identity
+ * vocabulary is visible as data instead of only as a form control, and one of those two governs a
+ * business resource (`transactions`) rather than one of the authority's own (`sessions`, `roles`):
+ * without it, every seeded example would sit on the authority server, and a reader could reasonably
+ * wonder whether a policy on an application's own resource was ever actually exercised.
  *
  * Each is one policy stating one effect, per ADR section 7. The pair that disagree are two separate
  * records rather than two statements in one, which is what makes deny-wins a rule ACROSS policies
@@ -31,15 +34,15 @@ interface PolicyFixture {
   version: number;
   status: PolicyRecord['status'];
   effect: 'allow' | 'deny';
-  permissions: string[];
-  resource: { type: string; pattern: string };
-  principals?: string[];
+  resource: Selector;
+  permission?: Selector;
+  role?: Selector;
+  principal?: Selector;
   conditions?: PolicyCondition[];
   obligations?: PolicyRecord['obligations'];
   approvedBy?: string;
   effectiveFrom?: string;
   reason?: string;
-  attachedTo?: string[];
 }
 
 function policyId(realmId: string, name: string): string {
@@ -61,11 +64,15 @@ export async function seedPolicies(db: Db, fixtureName = 'policies.json'): Promi
     const realmId = realmIdByName.get(fixture.realm);
     if (!realmId) throw new Error(`${fixtureName} names realm "${fixture.realm}", which is not seeded`);
 
-    // The same check the API applies, against the same function. A fixture is not exempt from the
-    // condition vocabulary: seeding a condition the evaluator cannot read would produce a policy
-    // that exists, appears to decide something, and silently never applies.
+    // The same checks the API applies, against the same functions. A fixture is not exempt from the
+    // condition vocabulary or from resolving its roles: seeding a condition the evaluator cannot
+    // read, or a role that does not exist, would produce a policy that exists, appears to decide
+    // something, and silently never applies (or never should have been accepted at all).
     const invalid = validatePolicy(fixture);
     if (invalid) throw new Error(`${fixtureName} policy "${fixture.name}": ${invalid.title}. ${invalid.detail}`);
+
+    const resolved = await resolvePermissions(db, realmId, fixture);
+    if (isPolicyRefusal(resolved)) throw new Error(`${fixtureName} policy "${fixture.name}": ${resolved.title}. ${resolved.detail}`);
 
     const id = policyId(realmId, fixture.name);
     await upsertSeed<PolicyRecord>(
@@ -76,15 +83,16 @@ export async function seedPolicies(db: Db, fixtureName = 'policies.json'): Promi
         version: fixture.version,
         status: fixture.status,
         effect: fixture.effect,
-        permissions: fixture.permissions,
         resource: fixture.resource,
+        permission: fixture.permission ?? {},
+        resolvedPermissions: resolved.resolvedPermissions,
         conditions: fixture.conditions ?? [],
-        ...(fixture.principals?.length ? { principals: fixture.principals } : {}),
+        ...(fixture.role ? { role: fixture.role } : {}),
+        ...(fixture.principal ? { principal: fixture.principal } : {}),
         ...(fixture.obligations?.length ? { obligations: fixture.obligations } : {}),
         ...(fixture.approvedBy ? { approvedBy: fixture.approvedBy } : {}),
         ...(fixture.effectiveFrom ? { effectiveFrom: fixture.effectiveFrom } : {}),
         ...(fixture.reason ? { reason: fixture.reason } : {}),
-        ...(fixture.attachedTo?.length ? { attachedTo: fixture.attachedTo } : {}),
       },
       { policyId: id, realmId, tenantId: DEFAULT_TENANT_ID },
       'Policy',

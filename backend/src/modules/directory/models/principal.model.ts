@@ -264,3 +264,30 @@ export function toScimPhoneNumbers(identity: Pick<PrincipalRecord, 'primaryPhone
 export function canAuthenticate(identity: Pick<PrincipalRecord, 'active' | 'lifecycleState'>): boolean {
   return identity.active && identity.lifecycleState === 'active';
 }
+
+/**
+ * The identity claims a scope buys, OIDC Core 1.0 section 5.4.
+ *
+ * The single rule both the ID token and the UserInfo endpoint apply: `profile` is what buys a name
+ * and a login handle, `email` is what buys the address. A scope that was not granted yields no claim
+ * rather than an error, same as UserInfo. Kept in one place so the two cannot drift into disagreeing
+ * about what a client was allowed to learn about the same subject.
+ */
+export function oidcProfileClaims(
+  identity: Pick<PrincipalRecord, 'userName' | 'name' | 'primaryEmail'>,
+  scope: string[],
+): Record<string, unknown> {
+  return {
+    ...(scope.includes('profile')
+      ? {
+        ...(identity.name?.formatted ? { name: identity.name.formatted } : {}),
+        ...(identity.name?.givenName ? { given_name: identity.name.givenName } : {}),
+        ...(identity.name?.familyName ? { family_name: identity.name.familyName } : {}),
+        preferred_username: identity.userName,
+      }
+      : {}),
+    ...(scope.includes('email') && identity.primaryEmail
+      ? { email: identity.primaryEmail, email_verified: false }
+      : {}),
+  };
+}

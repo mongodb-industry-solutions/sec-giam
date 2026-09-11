@@ -10,6 +10,7 @@ import { ListToolbar } from '../../../components/ListToolbar';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
 import { ApiError, callApi, when } from '../../../lib/console';
 import { paginate } from '../../../lib/useConsoleResource';
+import { useConfirm } from '../../../components/ConfirmProvider';
 
 /**
  * What this principal has authorized, and taking it back.
@@ -38,6 +39,7 @@ const FILTERS: Array<{ key: Filter; label: string }> = [
 ];
 
 export default function ApplicationsPage() {
+  const confirm = useConfirm();
   const [grants, setGrants] = useState<Grant[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
@@ -67,7 +69,7 @@ export default function ApplicationsPage() {
 
   async function change(grant: Grant, action: 'revoke' | 'reactivate') {
     if (action === 'revoke'
-      && !window.confirm(`Withdraw ${grant.clientName}? It stops acting for you immediately.`)) return;
+      && !(await confirm(`Withdraw ${grant.clientName}? It stops acting for you immediately.`))) return;
     setBusy(grant.grantId);
     try {
       await callApi(`/grants/${encodeURIComponent(grant.grantId)}${action === 'revoke' ? '' : '/reactivate'}`, {

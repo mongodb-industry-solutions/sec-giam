@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../../components/Result
 import { ActionButton, Fact, RecordCard } from '../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../lib/console';
 import { useConsoleResource } from '../../../lib/useConsoleResource';
+import { useConfirm } from '../../../components/ConfirmProvider';
 
 /**
  * The realm's signing keys, and what each one is currently for.
@@ -61,6 +62,7 @@ const PHASE_TONE: Record<Phase, string> = {
 };
 
 export default function KeysPage() {
+  const confirm = useConfirm();
   const read = useCallback(
     () => callApi<KeySet>('/signing-keys', { subject: 'this realm\'s signing keys' }),
     [],
@@ -73,10 +75,10 @@ export default function KeysPage() {
   const set = keys.data;
 
   async function rotate() {
-    if (!window.confirm(
+    if (!(await confirm(
       'Rotate this replica\'s signing key? The new key is published before the old one stops signing, '
       + 'and the old one keeps verifying until its grace period ends.',
-    )) return;
+    ))) return;
     await keys.run(
       'rotate',
       () => callApi('/signing-keys/rotate', { method: 'POST', subject: 'that key' }),
@@ -86,10 +88,10 @@ export default function KeysPage() {
 
   async function retire(key: KeyView) {
     const stillPublished = key.phase === 'signing' || key.phase === 'published';
-    if (!window.confirm(stillPublished
+    if (!(await confirm(stillPublished
       ? 'Withdraw this key from the published set? Every token already signed with it stops verifying '
         + 'immediately, so anybody holding one is signed out at their next request.'
-      : 'Withdraw this key from the published set?')) return;
+      : 'Withdraw this key from the published set?'))) return;
 
     await keys.run(
       key.kid,

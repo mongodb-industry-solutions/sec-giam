@@ -15,7 +15,7 @@ import { AuditRecord } from '../models/audit.model';
  */
 
 /** Secrets that must never reach a trail, whatever a caller passes in. */
-const REDACTED_KEYS = /^(password|client_secret|secret|token|access_token|refresh_token|code|code_verifier|authorization|assertion|proof)$/i;
+const REDACTED_KEYS = /^(password|prefill_password|client_secret|secret|token|access_token|refresh_token|code|code_verifier|authorization|assertion|proof)$/i;
 
 /**
  * Removes credential material from anything about to be written.

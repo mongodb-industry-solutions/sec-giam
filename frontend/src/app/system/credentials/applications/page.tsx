@@ -8,11 +8,12 @@ import { Tooltip } from '../../../../components/Tooltip';
 import { Pagination } from '../../../../components/Pagination';
 import { FilterChips } from '../../../../components/FilterChips';
 import { SecretOnce } from '../../../../components/SecretOnce';
+import { UriListEditor } from '../../../../components/UriListEditor';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/console';
 import {
   ClientPage, PRIVILEGED_GRANTS, RegisteredClient, SELF_SERVICE_GRANTS, SELF_SERVICE_SCOPES,
-  firstRedirectProblem, linesToUris, ownersLabel,
+  firstRedirectProblem, redirectUriProblem, ownersLabel,
 } from '../../../../lib/clients';
 import { usePermissions } from '../../../../lib/profile';
 
@@ -271,8 +272,8 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
   onCreated: (client: RegisteredClient) => void;
 }) {
   const [name, setName] = useState('');
-  const [redirects, setRedirects] = useState('');
-  const [postLogout, setPostLogout] = useState('');
+  const [redirects, setRedirects] = useState<string[]>([]);
+  const [postLogout, setPostLogout] = useState<string[]>([]);
   const [scopes, setScopes] = useState<string[]>(['openid', 'profile']);
   const [grants, setGrants] = useState<string[]>(['authorization_code', 'refresh_token']);
   const [logoUri, setLogoUri] = useState('');
@@ -288,10 +289,10 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const redirectUris = linesToUris(redirects);
+    const redirectUris = redirects.map((uri) => uri.trim()).filter(Boolean);
     const problem = firstRedirectProblem(redirectUris);
     if (problem) return setFailure(problem);
-    const logoutUris = linesToUris(postLogout);
+    const logoutUris = postLogout.map((uri) => uri.trim()).filter(Boolean);
     const logoutProblem = firstRedirectProblem(logoutUris);
     if (logoutProblem) return setFailure(logoutProblem);
 
@@ -335,33 +336,32 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
         />
       </label>
 
-      <label className="block">
+      <div>
         <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
           Redirect URIs
-          <Tooltip text="Compared exactly, never by prefix. Write every address in full, one per line. A wildcard is refused. Plain HTTP is accepted only on a loopback address, and an address on a host this platform serves from is refused because it would place your application inside an origin people already trust." />
+          <Tooltip text="Compared exactly, never by prefix. Write every address in full. A wildcard is refused. Plain HTTP is accepted only on a loopback address, and an address on a host this platform serves from is refused because it would place your application inside an origin people already trust." />
         </span>
-        <textarea
-          rows={3}
-          value={redirects}
-          onChange={(event) => setRedirects(event.target.value)}
-          placeholder={'https://acme.example/callback\nhttp://localhost:3000/callback'}
-          className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-        <span className="mt-1 block text-xs text-gray-500">
-          Matched exactly, one per line. No wildcards, no fragments.
-        </span>
-      </label>
+        <div className="mt-1">
+          <UriListEditor
+            values={redirects}
+            onChange={setRedirects}
+            placeholder="https://acme.example/callback"
+            problemFor={redirectUriProblem}
+          />
+        </div>
+      </div>
 
-      <label className="block">
+      <div>
         <span className="text-[10px] uppercase tracking-wider text-gray-400">Post sign-out redirect URIs</span>
-        <textarea
-          rows={2}
-          value={postLogout}
-          onChange={(event) => setPostLogout(event.target.value)}
-          placeholder="https://acme.example"
-          className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-        />
-      </label>
+        <div className="mt-1">
+          <UriListEditor
+            values={postLogout}
+            onChange={setPostLogout}
+            placeholder="https://acme.example"
+            problemFor={redirectUriProblem}
+          />
+        </div>
+      </div>
 
       <fieldset>
         <legend className="text-[10px] uppercase tracking-wider text-gray-400">Grant types</legend>

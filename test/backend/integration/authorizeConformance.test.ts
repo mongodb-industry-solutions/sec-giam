@@ -88,6 +88,45 @@ describe('v41 P4: the authorization endpoint is conforming', () => {
   });
 
   /**
+   * The prefill hints, carried to the sign-in page and to nowhere else.
+   *
+   * This is the LeafyPay-era URL still working: an integration written when GIAM lived inside that
+   * system sends `login_hint` and `prefill_password` so the hosted form arrives filled in. Dropping
+   * either is silent, because an authorization server may ignore an unknown query parameter, so the
+   * flow would still complete and the person would simply face an empty form.
+   */
+  it('carries login_hint and prefill_password to the sign-in page', async () => {
+    if (!live) return;
+    const response = await get({
+      ...BASE,
+      state: 'hinted',
+      login_hint: 'luis.fernandez@back.es',
+      prefill_password: DEMO_PASSWORD,
+    }, false);
+    expect(response.status).toBe(302);
+
+    const location = new URL(response.headers.get('location') as string);
+    expect(location.pathname).toBe('/auth/login');
+    expect(location.searchParams.get('login_hint')).toBe('luis.fernandez@back.es');
+    expect(location.searchParams.get('prefill_password')).toBe(DEMO_PASSWORD);
+    // Still an identifier for the request itself: the hints fill fields, they do not carry the
+    // request, so nothing about what was asked for travels in this URL.
+    expect(location.searchParams.get('request_id')).toBeTruthy();
+    expect(location.searchParams.get('scope')).toBeNull();
+    expect(location.searchParams.get('redirect_uri')).toBeNull();
+  });
+
+  /** Neither hint is required, and a request without them behaves exactly as before. */
+  it('needs neither hint: the sign-in redirect is unchanged without them', async () => {
+    if (!live) return;
+    const response = await get(BASE, false);
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get('location') as string);
+    expect(location.searchParams.get('login_hint')).toBeNull();
+    expect(location.searchParams.get('prefill_password')).toBeNull();
+  });
+
+  /**
    * RFC 9700 2.1.1 requires PKCE of public and confidential clients alike. It was conditional on a
    * per-client `requirePkce`, which is a registration being able to opt out of the mitigation for
    * code interception.

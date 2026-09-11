@@ -13,6 +13,8 @@ export const CONDITION_KEYS = [
   'timeOfDayUtc',
   'tenantIs',
   'attestationRequired',
+  'heldRole',
+  'heldPermission',
 ] as const;
 
 export type ConditionKey = (typeof CONDITION_KEYS)[number];
@@ -24,12 +26,23 @@ export interface PolicyCondition {
   timeOfDayUtc?: { from: number; to: number };
   tenantIs?: string;
   attestationRequired?: boolean;
+  /** At least one of these, by role name. Independent of `heldPermission`: either, neither or both. */
+  heldRole?: string[];
+  /** Every one of these, `resource:action`. Independent of `heldRole`. */
+  heldPermission?: string[];
 }
 
-export interface PolicyResource {
-  type: string;
-  /** `*` alone, or a trailing `*` for a prefix. Never a regular expression. */
-  pattern: string;
+/**
+ * One way of naming "one or several things", used identically by every section of a policy:
+ * `resource`, `permission`, `principal` and `role`. `ids` is the fast path, matched by a plain
+ * indexed lookup. `pattern` is a regular expression (compiled with RE2, so it is guaranteed
+ * linear-time and cannot hang a decision), for the rare policy that describes a shape rather than
+ * listing every member it covers. `ids` wins when both are given, rather than the write being
+ * refused.
+ */
+export interface Selector {
+  ids?: string[];
+  pattern?: string;
 }
 
 export interface PolicyObligation {
@@ -51,21 +64,29 @@ export interface PolicySummary {
   status: 'draft' | 'active' | 'retired';
   /** Whether this policy prohibits. The first thing a reviewer wants to know. */
   effect: 'allow' | 'deny';
+  /** Carried on the summary, not only the detail: a resource's own screen asks "which policies
+   * govern me" and needs this to decide, without a round trip per policy to find out. */
+  resource: Selector;
+  /** `resolvedPermissions.length`: what this policy concretely covers right now, roles expanded. */
   permissionCount: number;
   conditionCount: number;
   /** False while drafted, retired, or dated ahead, so a list shows what actually decides today. */
   inEffect: boolean;
-  attachedTo: string[];
   created?: string;
   lastModified?: string;
 }
 
 export interface PolicyDetail extends PolicySummary {
-  /** Full permission strings, `resource:action`. The same spelling a role and a token use. */
-  permissions: string[];
-  resource: PolicyResource;
-  /** Subject patterns. `*` alone, or a trailing `*` for a prefix. Absent matches anyone. */
-  principals?: string[];
+  /** What an author added directly, `resource:action`. Never mutated by a role reference. */
+  permission: Selector;
+  /** Roles whose current, expanded grants are folded into `resolvedPermissions`. Provenance only:
+   * the decision engine never reads this, only what it already resolved to. */
+  role?: Selector;
+  /** Who this governs, by subject id or by pattern. Absent matches anyone. */
+  principal?: Selector;
+  /** The actual, flat set this policy is evaluated against: `permission` union every permission
+   * every role in `role` currently grants. */
+  resolvedPermissions: string[];
   conditions: PolicyCondition[];
   obligations?: PolicyObligation[];
   approvedBy?: string;
@@ -106,3 +127,33 @@ export interface DecisionResult {
 }
 
 export const ASSURANCE_LEVELS = ['aal1', 'aal2', 'aal3'] as const;
+
+/**
+ * One resource server as the catalog reports it, with the resource types it declares.
+ *
+ * Carried here rather than re-declared per screen: a policy names a resource by NAME, and turning
+ * that name into something a reader recognises (its display name, which server declares it, what
+ * may be done to it) is the same job on every screen that shows a policy's targets.
+ */
+export interface ResourceServerCatalogEntry {
+  resourceId: string;
+  name: string;
+  displayName?: string;
+  resources: Array<{
+    resourceId: string;
+    name: string;
+    displayName?: string;
+    description?: string;
+    actions?: string[];
+  }>;
+}
+
+/** A resource type, resolved from its name for display. */
+export interface ResourceCatalogEntry {
+  resourceId: string;
+  displayName?: string;
+  description?: string;
+  actions: string[];
+  /** The resource server that declares it, so `roles` reads as "Authority / roles". */
+  serverName: string;
+}

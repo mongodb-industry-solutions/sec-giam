@@ -12,6 +12,16 @@
       "selfServiceEnabled": true,
       "autoApprove": false
     },
+    "localDomainDisplayName": "Leafy IdP",
+    "tokenPolicy": {
+      "accessTokenTtlSeconds": 600
+    },
+    "localAuthentication": {
+      "tokenPolicy": {
+        "accessTokenTtlSeconds": 600,
+        "refreshTokenTtlSeconds": 2592000
+      }
+    },
     "branding": {
       "displayName": "Leafy Pay",
       "primaryColor": "#00ED64",

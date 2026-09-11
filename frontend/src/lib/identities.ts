@@ -63,7 +63,7 @@ export function scimFilter(attribute: FilterAttribute, value: string): string | 
   return `${attribute} eq "${value}"`;
 }
 
-interface DomainSummary {
+export interface DomainSummary {
   domainId: string;
   displayName: string;
 }
@@ -74,8 +74,11 @@ interface DomainSummary {
  * Read once and shared: a principal names its `domainId`, never the path's display name, so every
  * screen that shows "whose directory is this" would otherwise run its own lookup. A domain is
  * realm-scoped and few, so one read for the whole page is the right shape, not one per row.
+ *
+ * The list itself is returned alongside the lookup, so a filter picker can offer every domain by
+ * name without a second read of the same endpoint.
  */
-export function useDomainNames(): { name: (domainId?: string) => string | undefined; loading: boolean } {
+export function useDomainNames(): { name: (domainId?: string) => string | undefined; domains: DomainSummary[]; loading: boolean } {
   const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -90,6 +93,7 @@ export function useDomainNames(): { name: (domainId?: string) => string | undefi
 
   return {
     name: (domainId) => (domainId ? domains.find((domain) => domain.domainId === domainId)?.displayName : undefined),
+    domains,
     loading,
   };
 }

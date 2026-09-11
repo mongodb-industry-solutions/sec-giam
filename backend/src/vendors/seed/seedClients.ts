@@ -43,6 +43,8 @@ interface ClientFixture {
   scope: string;
   requirePkce: boolean;
   tokenEndpointAuthMethod: OAuthClient['tokenEndpointAuthMethod'];
+  /** Shown on the sign-in and consent screens, so a person sees who is asking before they agree. */
+  logoUri?: string;
   applicationType?: OAuthClient['applicationType'];
   status: OAuthClient['status'];
   backchannel?: OAuthClient['backchannel'];
@@ -80,8 +82,36 @@ interface ClientFixture {
   scopeDescriptions?: Array<{ name: string; description: string; required?: boolean }>;
 }
 
+/**
+ * The same `resources.json` the roles seeder reads, because a service identity declares resource
+ * types too and they are resources like any other.
+ *
+ * `psd2Role` and `impersonation` reach the catalog only through this file, and this file wrote them
+ * with no display name and no description: the console showed two bare camelCase words among
+ * otherwise described resources. A label belongs to the resource, not to whichever seeder happened
+ * to create it first.
+ */
+interface ResourceServerFixture {
+  realm: string;
+  name: string;
+  displayName: string;
+  description: string;
+  resources: Array<{ name: string; displayName: string; description: string }>;
+}
+
+/** The display half of a catalog row, or nothing when the fixture does not describe it. */
+function labelFor(meta?: { displayName: string; description: string }) {
+  return meta ? { displayName: meta.displayName, description: meta.description } : {};
+}
+
 export async function seedClients(db: Db): Promise<void> {
   const fixtures = readSeedFile<ClientFixture[]>('clients.json');
+
+  const resourceFixtures = readSeedFile<ResourceServerFixture[]>('resources.json');
+  const serverMeta = new Map(resourceFixtures.map((server) => [`${server.realm}|${server.name}`, server] as const));
+  const typeMeta = new Map(resourceFixtures.flatMap((server) => server.resources.map((entry) => [
+    `${server.realm}|${server.name}|${entry.name}`, entry,
+  ] as const)));
 
   const realms = await db.collection(REALM_COLLECTION)
     .find({}, { projection: { _id: 0, realmId: 1, name: 1 } })
@@ -129,6 +159,7 @@ export async function seedClients(db: Db): Promise<void> {
           scope: fixture.scope,
           requirePkce: fixture.requirePkce,
           tokenEndpointAuthMethod: fixture.tokenEndpointAuthMethod,
+          ...(fixture.logoUri ? { logoUri: fixture.logoUri } : {}),
           ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
           ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
           ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),
@@ -205,6 +236,7 @@ export async function seedClients(db: Db): Promise<void> {
       {
         name: serverName,
         audience: serverName,
+        ...labelFor(serverMeta.get(`${fixture.realm}|${serverName}`)),
         kind: 'api',
         catalogVersion: 0,
         actions: [],
@@ -250,7 +282,13 @@ export async function seedClients(db: Db): Promise<void> {
       await upsertSeed<ResourceRecord>(
         db.collection<ResourceRecord>(RESOURCE_COLLECTION),
         { resourceId: childId },
-        { name: type, actions: [...actions].sort(), catalogVersion: 1, status: 'active' },
+        {
+          name: type,
+          ...labelFor(typeMeta.get(`${fixture.realm}|${serverName}|${type}`)),
+          actions: [...actions].sort(),
+          catalogVersion: 1,
+          status: 'active',
+        },
         {
           resourceId: childId,
           realmId,

@@ -4,14 +4,19 @@
     "clientId": "oauth001-0000-4000-8000-000000000001",
     "clientName": "Espresso Works",
     "clientType": "confidential",
+    "logoUri": "http://localhost:8082/espresso-logo.svg",
     "redirectUris": [
       "http://localhost:8082/api/auth/callback",
       "http://127.0.0.1:8082/api/auth/callback",
-      "http://sec-fsi-pci-dss-merchant-web-app:80/api/auth/callback"
+      "http://sec-fsi-pci-dss-merchant-web-app:80/api/auth/callback",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "postLogoutRedirectUris": [
       "http://localhost:8082",
-      "http://127.0.0.1:8082"
+      "http://127.0.0.1:8082",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.staging.corp.mongodb.com",
+      "https://sec-fsi-pci-dss-merchant.industrysolutions.prod.corp.mongodb.com"
     ],
     "grantTypes": [
       "authorization_code",
@@ -108,7 +113,9 @@
     "redirectUris": [
       "http://localhost:8080/api/auth/callback",
       "http://127.0.0.1:8080/api/auth/callback",
-      "http://localhost:3000/api/auth/callback"
+      "http://localhost:3000/api/auth/callback",
+      "https://leafy-wallet-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://leafy-wallet-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "grantTypes": [
       "authorization_code",
@@ -324,13 +331,18 @@
     "clientId": "bankcore-console",
     "clientName": "BankCore administration console",
     "clientType": "public",
+    "logoUri": "http://localhost:8084/app-icon.png",
     "redirectUris": [
       "http://localhost:8084/api/auth/callback",
-      "http://127.0.0.1:8084/api/auth/callback"
+      "http://127.0.0.1:8084/api/auth/callback",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "postLogoutRedirectUris": [
       "http://localhost:8084",
-      "http://127.0.0.1:8084"
+      "http://127.0.0.1:8084",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.staging.corp.mongodb.com",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.prod.corp.mongodb.com"
     ],
     "grantTypes": [
       "authorization_code",
@@ -357,13 +369,18 @@
     "clientId": "leafypay-console",
     "clientName": "LeafyPay administration console",
     "clientType": "public",
+    "logoUri": "http://localhost:8080/leafy-pay-icon.png",
     "redirectUris": [
       "http://localhost:8080/api/auth/callback",
-      "http://127.0.0.1:8080/api/auth/callback"
+      "http://127.0.0.1:8080/api/auth/callback",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "postLogoutRedirectUris": [
       "http://localhost:8080",
-      "http://127.0.0.1:8080"
+      "http://127.0.0.1:8080",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.staging.corp.mongodb.com",
+      "https://sec-fsi-pci-dss-frontend.industrysolutions.prod.corp.mongodb.com"
     ],
     "grantTypes": [
       "authorization_code",
@@ -393,6 +410,7 @@
     "clientId": "giam-console",
     "clientName": "IdP administration console",
     "clientType": "public",
+    "logoUri": "http://localhost:8086/app-icon.png",
     "redirectUris": [
       "http://localhost:8086/auth/callback",
       "http://127.0.0.1:8086/auth/callback",

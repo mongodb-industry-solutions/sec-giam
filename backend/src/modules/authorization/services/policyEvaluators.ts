@@ -1,7 +1,9 @@
 import { Db } from 'mongodb';
 import type { PolicyEvaluator, AuthorizationRequest, AuthorizationDecision } from '../../../shared/ports';
 import { POLICY_COLLECTION } from '../../../shared/models/collections';
-import { PolicyRecord, PolicyCondition, matchesPattern, isInEffect } from '../models/policy.model';
+import {
+  PolicyRecord, PolicyCondition, isInEffect, selectorApplies, permissionApplies,
+} from '../models/policy.model';
 import { DecisionService } from './decision.service';
 
 /**
@@ -52,8 +54,35 @@ export const abacEvaluator: PolicyEvaluator = {
   async evaluate(request: AuthorizationRequest): Promise<AuthorizationDecision | null> {
     const policies = await database()
       .collection<PolicyRecord>(POLICY_COLLECTION)
-      .find({ realmId: request.realmId, tenantId: request.tenantId, status: 'active' }, { projection: { _id: 0 } })
+      .find({
+        realmId: request.realmId,
+        tenantId: request.tenantId,
+        status: 'active',
+        // Pushed down rather than filtered in memory after the fact, because a realm with a very
+        // large policy table must not read every active policy to decide about one resource. Named
+        // exactly is a plain indexed equality lookup; a `pattern` policy cannot be excluded by an
+        // index (it is a regular expression, not a value to compare against), so every one of those
+        // is still a candidate and is resolved by `selectorApplies` below, in memory, against
+        // however many policies actually chose that slower form rather than against all of them.
+        $or: [
+          { 'resource.ids': request.resource },
+          { 'resource.pattern': { $exists: true } },
+        ],
+      }, { projection: { _id: 0 } })
       .toArray();
+
+    // Resolved once, and only when some policy actually asks: `heldRole`/`heldPermission` are the
+    // one condition pair that needs more than the request itself, and asking the decision point for
+    // every request would cost a query even for a realm that never wrote one.
+    const needsHolding = policies.some((policy) => (policy.conditions ?? [])
+      .some((condition) => condition.heldRole?.length || condition.heldPermission?.length));
+    const holding = needsHolding
+      ? await new DecisionService(database()).effectivePermissions(
+        request.realmId,
+        request.subjectId,
+        typeof request.context.audience === 'string' ? request.context.audience : '',
+      )
+      : null;
 
     let allow: AuthorizationDecision | null = null;
 
@@ -61,7 +90,7 @@ export const abacEvaluator: PolicyEvaluator = {
       // Status and the effective date are both checked here rather than only in the query, so a
       // policy approved for next Monday cannot decide anything today.
       if (!isInEffect(policy)) continue;
-      if (!appliesTo(policy, request)) continue;
+      if (!appliesTo(policy, request, holding)) continue;
       const deciding = {
         policyId: policy.policyId,
         name: policy.name,
@@ -93,23 +122,27 @@ export const abacEvaluator: PolicyEvaluator = {
   },
 };
 
-function appliesTo(policy: PolicyRecord, request: AuthorizationRequest): boolean {
-  if (policy.principals?.length && !policy.principals.some((p) => matchesPattern(p, request.subjectId))) {
+function appliesTo(policy: PolicyRecord, request: AuthorizationRequest, holding: Holding | null): boolean {
+  // Absent `principal` matches anyone; present, it decides by id or by pattern, ids winning.
+  if (policy.principal && !selectorApplies(policy.principal, request.subjectId)) {
     return false;
   }
   // The permission the request is asking about, as the one string every side spells the same way.
+  // `resolvedPermissions` already carries the role-derived union, so this needs no role lookup here.
   const asked = `${request.resource}:${request.action}`;
-  if (policy.permissions?.length && !policy.permissions.some((p) => matchesPattern(p, asked))) {
-    return false;
-  }
-  // The resource type narrows first, then the pattern narrows within it.
-  if (policy.resource?.type && !matchesPattern(policy.resource.type, request.resource)) return false;
-  if (policy.resource?.pattern && !matchesPattern(policy.resource.pattern, asked)) return false;
+  if (!permissionApplies(policy, asked)) return false;
+  // Which resource this governs, by exact id or by pattern. The query above already narrowed to
+  // candidates for one or the other; this is the precise check, needed because `resource.pattern`
+  // could not be excluded by the query itself.
+  if (!selectorApplies(policy.resource, request.resource)) return false;
 
   // EVERY condition must hold. Any-of would mean adding a condition could WIDEN a policy, which is
   // the opposite of what somebody writing one down expects.
-  return (policy.conditions ?? []).every((condition) => conditionHolds(condition, request.context));
+  return (policy.conditions ?? []).every((condition) => conditionHolds(condition, request.context, holding));
 }
+
+/** What roles and permissions this request's subject holds, resolved once for whichever conditions ask. */
+type Holding = { roles: string[]; permissions: string[] };
 
 /**
  * Identity-context conditions.
@@ -121,6 +154,7 @@ function appliesTo(policy: PolicyRecord, request: AuthorizationRequest): boolean
 function conditionHolds(
   condition: PolicyCondition | undefined,
   context: Record<string, unknown>,
+  holding: Holding | null,
 ): boolean {
   if (!condition) return true;
 
@@ -145,6 +179,22 @@ function conditionHolds(
   if (condition.tenantIs && context.tenantId !== condition.tenantIs) return false;
 
   if (condition.attestationRequired && context.attestationState !== 'attested') return false;
+
+  // At least one of the named roles. Membership, the way a group check is asked anywhere else: a
+  // policy naming several roles means any of them satisfies it, not every one at once.
+  if (condition.heldRole?.length) {
+    const roles = holding?.roles ?? [];
+    if (!condition.heldRole.some((role) => roles.includes(role))) return false;
+  }
+
+  // EVERY named permission, unlike the roles just above. This is the narrower, more exhaustive half
+  // of the same requirement: naming several roles is "any one membership will do", naming several
+  // permissions is "all of these specifically", because a permission is not a group somebody belongs
+  // to, it is the exact thing that must already be held.
+  if (condition.heldPermission?.length) {
+    const permissions = holding?.permissions ?? [];
+    if (!condition.heldPermission.every((permission) => permissions.includes(permission))) return false;
+  }
 
   return true;
 }

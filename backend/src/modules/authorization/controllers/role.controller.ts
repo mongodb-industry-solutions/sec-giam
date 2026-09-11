@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { RoleAdminService, isRoleRefusal } from '../services/roleAdmin.service';
+import { PolicyAdminService } from '../services/policyAdmin.service';
 import { authorityAccess, refusal, AUTHORITY_RESOURCE_SERVER } from '../services/authorityAccess';
 import { DecisionService } from '../services/decision.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
@@ -376,6 +377,7 @@ export async function roleController(fastify: FastifyInstance) {
                   action: { type: 'string' },
                   description: { type: 'string' },
                   resourceServer: { type: 'string' },
+                  resourceServerAudience: { type: 'string', description: 'What a token must name in `aud` for that server. Needed to re-register it without guessing.' },
                 },
               },
             },
@@ -559,9 +561,19 @@ export async function roleController(fastify: FastifyInstance) {
 
     const service = new RoleAdminService(fastify.db);
     const before = await service.detail(realm.realmId, roleId);
-    const outcome = await service.update(realm.realmId, roleId, request.body as object);
+    const body = request.body as Parameters<RoleAdminService['update']>[2];
+    const outcome = await service.update(realm.realmId, roleId, body);
     if (outcome === null) return reply.status(404).send(problem(404, 'No such role'));
     if (isRoleRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
+
+    // A policy naming this role (or naming a role that inherits from it) governs by what this role
+    // CURRENTLY grants, resolved once and cached rather than looked up on every decision. Changing
+    // either the role's own permissions or its composition can change that resolved set, so both
+    // trigger the same sweep; nothing else edited by this route can.
+    if (body.permissions !== undefined || body.parentRoleIds !== undefined) {
+      const affectedNames = await service.namesAffectedByChangeTo(realm.realmId, roleId);
+      await new PolicyAdminService(fastify.db).resyncRoleReferences(realm.realmId, affectedNames);
+    }
 
     await recordConfigurationChange(fastify.db, {
       realmId: realm.realmId,
@@ -632,14 +644,22 @@ export async function roleController(fastify: FastifyInstance) {
         + 'a list that quietly drops them cannot answer it.',
       security: [{ bearerAuth: [] }],
       params: roleParams,
+      querystring: {
+        type: 'object',
+        properties: {
+          q: { type: 'string', description: 'Case-insensitive match on subject id or user name.' },
+          skip: { type: 'integer', default: 0 },
+          limit: { type: 'integer', default: 20, maximum: 200 },
+        },
+      },
       response: {
         200: {
           description: 'Everyone who holds or held this role.',
           type: 'object',
           additionalProperties: false,
-          required: ['assignments'],
-          properties: { assignments: { type: 'array', items: assignmentView } },
-          examples: [{ assignments: [assignmentView.examples[0]] }],
+          required: ['assignments', 'total'],
+          properties: { assignments: { type: 'array', items: assignmentView }, total: { type: 'integer' } },
+          examples: [{ assignments: [assignmentView.examples[0]], total: 1 }],
         },
         401: { $ref: 'Problem#', description: 'No valid access token.' },
         403: { $ref: 'Problem#', description: 'No role held administers this realm.' },
@@ -657,7 +677,9 @@ export async function roleController(fastify: FastifyInstance) {
     const service = new RoleAdminService(fastify.db);
     const role = await service.detail(realm.realmId, roleId);
     if (!role) return reply.status(404).send(problem(404, 'No such role'));
-    return reply.send({ assignments: await service.assignmentsFor(realm.realmId, roleId) });
+
+    const { q, skip, limit } = request.query as { q?: string; skip?: number; limit?: number };
+    return reply.send(await service.assignmentsFor(realm.realmId, roleId, { q, skip, limit }));
   });
 
   fastify.post(`${base}/:roleId/assignments`, {

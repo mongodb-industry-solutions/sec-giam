@@ -18,6 +18,23 @@ function base64url(value: Buffer | string): string {
   return Buffer.from(value).toString('base64url');
 }
 
+/**
+ * Reads a JWT's payload without verifying anything: no signature check, no realm, no key.
+ *
+ * A free function rather than a method, because reading which realm issued a token is the one
+ * question that has to be answerable BEFORE a realm is known, and a caller needing only this has no
+ * reason to construct a `JwtTokenFormat`, which exists to sign and verify against one realm's keys.
+ */
+export function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export class JwtTokenFormat implements TokenFormat {
   readonly name = 'jwt';
 
@@ -41,13 +58,7 @@ export class JwtTokenFormat implements TokenFormat {
    * them apart is what stops the two being confused at a call site.
    */
   async inspect(token: string): Promise<Record<string, unknown> | null> {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    try {
-      return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
+    return decodeJwtPayload(token);
   }
 
   /** The header, so a verifier can resolve the key id before trusting anything else. */

@@ -57,6 +57,26 @@ interface IdentityFixture {
 /** The authority's own resource server, so administering it is a permission like any other. */
 const AUTHORITY_RESOURCE_SERVER = 'authority';
 
+/**
+ * One resource server as `resources.json` declares it, with the resource types it owns.
+ *
+ * A FIXTURE rather than a map in this file, and scoped to a realm like everything else the seeder
+ * writes. Two things were wrong with holding it here: the labels were keyed by type name alone, so
+ * `consents` meant whatever the last realm to declare it said it meant and leafypay could not
+ * describe its own consents differently from the partner bank's; and a resource is configuration,
+ * which belongs beside the roles and policies that reference it rather than compiled into the
+ * seeder. Setup plus the fixtures stay the only source of truth for the database, and a resource is
+ * now part of that truth in the same form as the rest of it.
+ */
+interface ResourceServerFixture {
+  realm: string;
+  name: string;
+  audience: string;
+  displayName: string;
+  description: string;
+  resources: Array<{ name: string; displayName: string; description: string }>;
+}
+
 function resourceId(realmId: string, name: string): string {
   return uuidv5(`resource-server:${realmId}:${name}`, AUTHORIZATION_NAMESPACE);
 }
@@ -85,11 +105,22 @@ export async function seedAuthorization(
 ): Promise<void> {
   const roleFixtures = readSeedFile<RoleFixture[]>(roleFixtureName);
   const identityFixtures = readSeedFile<IdentityFixture[]>(identityFixtureName);
+  const resourceFixtures = readSeedFile<ResourceServerFixture[]>('resources.json');
+
+  // Keyed by realm as well as by name, which is the whole reason this moved out of a map in here:
+  // two realms may each declare a resource called `consents` and mean different things by it.
+  const serverMeta = new Map(resourceFixtures.map((server) => [`${server.realm}|${server.name}`, server] as const));
+  const typeMeta = new Map(resourceFixtures.flatMap((server) => server.resources.map((entry) => [
+    `${server.realm}|${server.name}|${entry.name}`, entry,
+  ] as const)));
 
   const realms = await db.collection(REALM_COLLECTION)
     .find({}, { projection: { _id: 0, realmId: 1, name: 1 } })
     .toArray() as unknown as Array<{ realmId: string; name: string }>;
   const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
+  // The fixture names a realm the way a person does; the records key by its id. Both directions are
+  // needed because the label for a resource is now looked up per realm.
+  const realmNameById = new Map(realms.map((realm) => [realm.realmId, realm.name]));
 
   const servers = db.collection<ResourceRecord>(RESOURCE_COLLECTION);
   const roles = db.collection<RoleRecord>(ROLE_COLLECTION);
@@ -103,12 +134,14 @@ export async function seedAuthorization(
     const id = resourceId(realmId, name);
     if (seenServers.has(id)) return id;
     seenServers.add(id);
+    const meta = serverMeta.get(`${realmNameById.get(realmId) ?? ''}|${name}`);
     await upsertSeed<ResourceRecord>(
       servers,
       { resourceId: id },
       {
         name,
         audience,
+        ...(meta ? { displayName: meta.displayName, description: meta.description } : {}),
         kind: 'api',
         catalogVersion: 0,
         // Filled in P5 from the permissions this resource declares: the catalog is what a policy
@@ -133,11 +166,19 @@ export async function seedAuthorization(
    * the audience to know which types it enforces. Declared as a BLOCK: the fixture states the whole
    * set of verbs, and that is what the catalog becomes.
    */
-  const actionsByType = new Map<string, { serverId: string; realmId: string; actions: Set<string> }>();
+  const actionsByType = new Map<string, {
+    serverId: string; serverName: string; realmId: string; actions: Set<string>;
+  }>();
 
-  function declareAction(realmId: string, serverId: string, resource: string, action: string): void {
+  function declareAction(
+    realmId: string,
+    serverId: string,
+    serverName: string,
+    resource: string,
+    action: string,
+  ): void {
     const key = `${serverId}:${resource}`;
-    const held = actionsByType.get(key) ?? { serverId, realmId, actions: new Set<string>() };
+    const held = actionsByType.get(key) ?? { serverId, serverName, realmId, actions: new Set<string>() };
     held.actions.add(action);
     actionsByType.set(key, held);
   }
@@ -147,11 +188,13 @@ export async function seedAuthorization(
     for (const [key, entry] of actionsByType) {
       const type = key.slice(entry.serverId.length + 1);
       const id = uuidv5(`resource:${entry.realmId}:${entry.serverId}:${type}`, AUTHORIZATION_NAMESPACE);
+      const meta = typeMeta.get(`${realmNameById.get(entry.realmId) ?? ''}|${entry.serverName}|${type}`);
       await upsertSeed<ResourceRecord>(
         servers,
         { resourceId: id },
         {
           name: type,
+          ...(meta ? { displayName: meta.displayName, description: meta.description } : {}),
           actions: [...entry.actions].sort(),
           catalogVersion: 1,
           status: 'active',
@@ -183,13 +226,13 @@ export async function seedAuthorization(
     const held: string[] = [];
     for (const [resource, actions] of Object.entries(fixture.permissions)) {
       for (const action of actions) {
-        declareAction(realmId, applicationServer, resource, action);
+        declareAction(realmId, applicationServer, fixture.resourceServer, resource, action);
         held.push(permissionString(resource, action));
       }
     }
     for (const [resource, actions] of Object.entries(fixture.authorityPermissions ?? {})) {
       for (const action of actions) {
-        declareAction(realmId, authorityServer, resource, action);
+        declareAction(realmId, authorityServer, AUTHORITY_RESOURCE_SERVER, resource, action);
         held.push(permissionString(resource, action));
       }
     }
@@ -289,7 +332,11 @@ export async function seedAuthorization(
   const ADMINISTRATOR_PERMISSIONS: Record<string, string[]> = {
     roles: ['view', 'manage'],
     assignments: ['view', 'manage'],
-    permissions: ['view'],
+    // `manage` declares or edits a resource server's own catalog from the console (the same write
+    // `PUT /admin/resource-servers/:name/permissions` already offers admin-token callers); `view` is
+    // reading what is already declared, the tier `/permissions` and the read side of the resource
+    // catalog both ask for.
+    permissions: ['view', 'manage'],
     // Reading a policy and writing one are separate authorities, because a statement that DENIES is
     // withdrawn by the same verb that adds one, and reviewing the rules is not the same standing as
     // changing them.
@@ -308,7 +355,7 @@ export async function seedAuthorization(
     const held: string[] = [];
     for (const [resource, actions] of Object.entries(ADMINISTRATOR_PERMISSIONS)) {
       for (const action of actions) {
-        declareAction(realmId, authorityServer, resource, action);
+        declareAction(realmId, authorityServer, AUTHORITY_RESOURCE_SERVER, resource, action);
         held.push(permissionString(resource, action));
       }
     }

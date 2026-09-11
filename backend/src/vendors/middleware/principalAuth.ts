@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { Db } from 'mongodb';
-import { JwtTokenFormat } from '../../modules/oauth/services/jwtTokenFormat';
+import { JwtTokenFormat, decodeJwtPayload } from '../../modules/oauth/services/jwtTokenFormat';
 import { KeyRing } from '../../modules/keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../modules/keys/services/signingKeyStore';
 import { RealmService } from '../../modules/realm/services/realm.service';
@@ -118,6 +118,54 @@ export async function resolvePrincipal(
 }
 
 /**
+ * The same verification, for a path that names no realm at all.
+ *
+ * `/realms/:realm/...` resolves a TARGET from the URL and then judges the token against it, which is
+ * what lets a grant reach a second realm. A path with no realm segment has no target to resolve, so
+ * there is only one realm left to mean: the one that issued the token. `crossRealm` is therefore
+ * always false here, on purpose: a caller who needs to reach a second realm has the real, realm-
+ * scoped path for that, where the crossing is explicit and the grant behind it is auditable. A
+ * compatibility alias is not the place to smuggle that capability in quietly.
+ */
+export async function resolveHomePrincipal(
+  db: Db,
+  authorization: string | undefined,
+): Promise<CallingPrincipal | null> {
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!token) return null;
+
+  // Read before any realm is known, which is exactly what `decodeJwtPayload` is for: nothing here
+  // is trusted yet, only used to find out which realm's keys to check the signature against.
+  const unverified = decodeJwtPayload(token);
+  const issuer = typeof unverified?.iss === 'string' ? unverified.iss : '';
+  if (!issuer) return null;
+
+  const home = await new RealmService(db).byIssuer(issuer);
+  if (!home || !home.enabled) return null;
+
+  const audience = Array.isArray(unverified?.aud) ? unverified?.aud[0] : unverified?.aud;
+  if (typeof audience !== 'string') return null;
+
+  const format = new JwtTokenFormat(new KeyRing(new MongoSigningKeyStore(db)), home.realmId);
+  const claims = await format.verify(token, { issuer: home.issuer, audience });
+  if (!claims || typeof claims.sub !== 'string') return null;
+
+  const clientId = typeof claims.client_id === 'string' ? claims.client_id : audience;
+  const client = await findOAuthClient(db, home.realmId, clientId);
+  if (!client || client.status !== 'active') return null;
+
+  return {
+    subjectId: claims.sub,
+    realmId: home.realmId,
+    homeRealmId: home.realmId,
+    clientId,
+    crossRealm: false,
+    scope: typeof claims.scope === 'string' ? claims.scope.split(' ').filter(Boolean) : [],
+    ...(typeof claims.sid === 'string' ? { sessionId: claims.sid } : {}),
+  };
+}
+
+/**
  * Refuses with problem details in the body and the RFC 6750 challenge in the header.
  *
  * Marks the request as bearer-protected first, so the challenge is added whether the refusal comes
@@ -138,6 +186,16 @@ export async function requirePrincipal(request: FastifyRequest, reply: FastifyRe
      * added by the `onSend` hook in `app.ts`, so no refusal can forget it.
      */
     return reply.status(401).send(problem(401, 'Unauthorized', 'A valid access token for this realm is required.'));
+  }
+  request.principal = principal;
+}
+
+/** `requirePrincipal`'s counterpart for a route that names no realm. See `resolveHomePrincipal`. */
+export async function requirePrincipalAtHome(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  request.bearerProtected = true;
+  const principal = await resolveHomePrincipal(request.server.db, request.headers.authorization);
+  if (!principal) {
+    return reply.status(401).send(problem(401, 'Unauthorized', 'A valid access token is required.'));
   }
   request.principal = principal;
 }

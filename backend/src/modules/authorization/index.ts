@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { resourceController } from './controllers/resource.controller';
+import { resourceCatalogController } from './controllers/resourceCatalog.controller';
 import { signalsController } from './controllers/signals.controller';
 import { roleController } from './controllers/role.controller';
 import { crossRealmController } from './controllers/crossRealm.controller';
@@ -9,6 +10,7 @@ import { policyController } from './controllers/policy.controller';
 // through roles, policies and relationships. The application never stores an assignment.
 export async function authorizationModule(fastify: FastifyInstance) {
   await fastify.register(resourceController);
+  await fastify.register(resourceCatalogController);
   await fastify.register(signalsController);
   await fastify.register(crossRealmController);
   await fastify.register(roleController);

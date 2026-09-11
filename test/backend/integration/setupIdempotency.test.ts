@@ -10,13 +10,18 @@
 // the kind of verification that stops happening.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { MongoClient, Db } from 'mongodb';
-import { resolve } from 'path';
-import * as dotenv from 'dotenv';
+import { connectionForTests } from './support/directDb';
 
-dotenv.config({ path: [resolve(__dirname, '../../../.env'), resolve(__dirname, '../../../../.env')] });
-
-const URI = process.env.GIAM_MONGODB_URI ?? process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
-const DB_NAME = process.env.GIAM_MONGODB_DB ?? process.env.GIAM_DB_NAME ?? 'giam';
+/**
+ * The connection comes from the shared helper, which resolves it the way the SERVER does.
+ *
+ * This file used to read `GIAM_MONGODB_URI` and `GIAM_MONGODB_DB`, neither of which this project
+ * sets: the real names are `GIAM_DB_URI` (falling back to `MONGODB_URI`) and `GIAM_DB_NAME`. It
+ * therefore connected to a local default, found no collections, and passed on an empty database.
+ * A duplicate-detection test that looks at the wrong database reports success for the one reason it
+ * must never report success, and it did so silently for every run.
+ */
+const { uri: URI, dbName: DB_NAME } = connectionForTests();
 
 /**
  * The identifier each collection is keyed by.
@@ -64,6 +69,42 @@ describe('setup and the seeder are idempotent, because they are the source of tr
       `${collection} holds ${duplicated.length} duplicated key(s) after seeding: `
       + `${duplicated.map((entry) => JSON.stringify(entry._id)).join(', ')}. `
       + 'A seed run inserted where it should have matched.',
+    ).toEqual([]);
+  });
+
+  /**
+   * The database this ran against was the seeded one.
+   *
+   * Without this, every assertion above is satisfied by an empty database, which is exactly how the
+   * wrong connection went unnoticed. A seeded realm is the cheapest proof that there was something
+   * to find duplicates in.
+   */
+  it('ran against a seeded database, not an empty one', async () => {
+    if (!db) return;
+    const realms = await db.collection('realm').countDocuments({});
+    expect(realms, 'no realm exists, so nothing above asserted anything').toBeGreaterThan(0);
+  });
+
+  /**
+   * One registration per client id, within a realm.
+   *
+   * `credentialId` above is derived with `uuidv5` from the client id, so it is unique by
+   * construction and cannot catch a second registration of the same client arriving by another
+   * route. `clientId` is what every OAuth lookup resolves on, and two records sharing one means a
+   * `findOne` decides which registration is real by collection order.
+   */
+  it('leaves exactly one registration per client id in a realm', async () => {
+    if (!db) return;
+    const duplicated = await db.collection('credential').aggregate([
+      { $match: { type: 'oauth_client' } },
+      { $group: { _id: { realmId: '$realmId', clientId: '$clientId' }, count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } },
+      { $limit: 5 },
+    ]).toArray();
+
+    expect(
+      duplicated,
+      `two registrations share a client id: ${duplicated.map((e) => JSON.stringify(e._id)).join(', ')}`,
     ).toEqual([]);
   });
 

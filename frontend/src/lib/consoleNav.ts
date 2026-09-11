@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Building2, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, Boxes, Building2, Globe, HelpCircle, KeyRound, KeySquare, LayoutGrid, MonitorSmartphone, Scale, ShieldCheck, ShieldHalf, Layers, UserRound, UsersRound, type LucideIcon } from 'lucide-react';
 import { can, type Claims } from './console';
 
 /**
@@ -76,10 +76,12 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
   },
   {
     key: 'applications',
-    // Named for what it holds: consents this person granted, not the credential registry above. An
-    // OAuth application IS a credential (ADR-001), but WHO has authorized ONE to act for them is a
-    // different question, asked and answered here.
-    label: 'Authorized apps',
+    // Short here, same as "Authenticators" above is short for its own page's "Your authenticators":
+    // the nav names the section, the page itself is where "Authorized applications" earns its
+    // fuller wording. What this holds is consents this person granted, not the credential registry
+    // (Credentials > Applications is a different tab entirely, for a different question: an OAuth
+    // application IS a credential, ADR-001, but WHO authorized one to act for them is asked here).
+    label: 'Applications',
     path: '/system/applications',
     icon: Layers,
     description: 'Applications allowed to act on a principal\'s behalf, what each may do, and when it was granted.',
@@ -141,6 +143,17 @@ export const CONSOLE_SECTIONS: ConsoleSection[] = [
     // Administrative, like roles. Absent rather than refused for anyone else, because a link that
     // answers 403 teaches the reader only that the console does not know what it is showing them.
     visible: (claims) => can(claims, 'policies', 'view'),
+  },
+  {
+    key: 'resources',
+    label: 'Resources',
+    path: '/system/resources',
+    icon: Boxes,
+    description: 'What each resource server declares it enforces, read only: it registers itself through its own deployment, never from here.',
+    // The API itself is open to any authenticated principal (same reasoning /permissions already
+    // documents: this is the authorization MODEL, not personal data). Placed next to Roles and
+    // Policies for the humans who administer those, not shown to everyone who merely signed in.
+    visible: (claims) => can(claims, 'roles', 'view'),
   },
   {
     key: 'keys',

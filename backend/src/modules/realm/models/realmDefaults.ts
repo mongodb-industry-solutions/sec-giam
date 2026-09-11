@@ -62,6 +62,8 @@ export function localDomainRecord(input: {
   realmId: string;
   tenantId: string;
   realmDisplayName: string;
+  /** Overrides the generic `"{realm} directory"` default, for a realm that wants its own directory to read as its own product rather than the platform's generic label. */
+  domainDisplayName?: string;
   registration?: { selfServiceEnabled: boolean; autoApprove: boolean };
   authentication?: NonNullable<DomainRecord['authentication']>;
 }): Omit<DomainRecord, 'meta'> {
@@ -70,7 +72,7 @@ export function localDomainRecord(input: {
     tenantId: input.tenantId,
     domainId: input.domainId,
     name: LOCAL_DOMAIN_NAME,
-    displayName: `${input.realmDisplayName} directory`,
+    displayName: input.domainDisplayName ?? `${input.realmDisplayName} directory`,
     protocol: 'internal',
     adapter: 'internal',
     enabled: true,

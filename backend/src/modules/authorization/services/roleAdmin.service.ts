@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import RE2 from 're2';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_COLLECTION,
@@ -9,6 +10,7 @@ import {
 } from '../../directory/models/principal.model';
 import { newMeta, touchMeta } from '../../../shared/models/base.model';
 import { ResourceRecord, parsePermission, permissionString } from '../models/resource.model';
+import { Selector } from '../models/policy.model';
 
 /**
  * Administering roles: what they grant, what they inherit, and who holds them.
@@ -227,21 +229,7 @@ export class RoleAdminService {
       .find({ realmId }, { projection: { _id: 0, roleId: 1, permissions: 1, parentRoleIds: 1 } })
       .toArray();
     const byId = new Map(everyRole.map((role) => [role.roleId, role]));
-
-    const effectiveCount = (roleId: string): number => {
-      const seen = new Set<string>();
-      const keys = new Set<string>();
-      const walk = (id: string, depth: number) => {
-        if (depth > MAX_COMPOSITION_DEPTH || seen.has(id)) return;
-        seen.add(id);
-        const role = byId.get(id);
-        if (!role) return;
-        for (const permission of role.permissions ?? []) keys.add(permission);
-        for (const parent of role.parentRoleIds ?? []) walk(parent, depth + 1);
-      };
-      walk(roleId, 0);
-      return keys.size;
-    };
+    const effectiveCount = (roleId: string): number => RoleAdminService.expandPermissionsOf(byId, roleId).size;
 
     return {
       roles: page.map((role) => ({
@@ -589,10 +577,35 @@ export class RoleAdminService {
       .sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
   }
 
-  /** Who holds a role, lapsed ones included: "who used to have this" is the question after an incident. */
-  async assignmentsFor(realmId: string, roleId: string): Promise<AssignmentView[]> {
+  /**
+   * Who holds a role, lapsed ones included: "who used to have this" is the question after an
+   * incident.
+   *
+   * `q` narrows at the Mongo level (fewer principal documents to join in memory below); the sort
+   * that matters, most recently granted first, and the paging, both happen after the join, because
+   * "most recent" is a property of the ASSIGNMENT (`grantedAt`), not of the principal document
+   * Mongo would otherwise sort by.
+   */
+  async assignmentsFor(
+    realmId: string,
+    roleId: string,
+    options: { q?: string; skip?: number; limit?: number } = {},
+  ): Promise<{ assignments: AssignmentView[]; total: number }> {
+    const skip = Math.max(0, options.skip ?? 0);
+    const limit = Math.min(200, Math.max(1, options.limit ?? 20));
+    const filter: Record<string, unknown> = { realmId, 'roles.roleId': roleId };
+    if (options.q) {
+      // Escaped, because a search box is not a place to accept an expression the database will
+      // then run.
+      const escaped = options.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { subjectId: { $regex: escaped, $options: 'i' } },
+        { userName: { $regex: escaped, $options: 'i' } },
+      ];
+    }
+
     const holders = await this.principals
-      .find({ realmId, 'roles.roleId': roleId }, { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } })
+      .find(filter, { projection: { _id: 0, subjectId: 1, userName: 1, roles: 1 } })
       .toArray();
     const now = new Date();
     const views: AssignmentView[] = [];
@@ -602,7 +615,8 @@ export class RoleAdminService {
         views.push(RoleAdminService.view(holder.subjectId, holding, now, holder.userName));
       }
     }
-    return views.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
+    const sorted = views.sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
+    return { assignments: sorted.slice(skip, skip + limit), total: sorted.length };
   }
 
   async grant(
@@ -758,6 +772,7 @@ export class RoleAdminService {
    */
   async catalog(realmId: string): Promise<Array<{
     permission: string; resource: string; action: string; description: string; resourceServer: string;
+    resourceServerAudience?: string;
   }>> {
     const resources = await this.db
       .collection<ResourceRecord>(RESOURCE_COLLECTION)
@@ -766,21 +781,130 @@ export class RoleAdminService {
       .toArray();
     const byId = new Map(resources.map((resource) => [resource.resourceId, resource]));
 
-    const catalog: Array<{
+    const catalog = new Map<string, {
       permission: string; resource: string; action: string; description: string; resourceServer: string;
-    }> = [];
+      resourceServerAudience?: string;
+    }>();
     for (const resource of resources) {
       const parent = resource.parentResourceId ? byId.get(resource.parentResourceId) : undefined;
       for (const action of resource.actions ?? []) {
-        catalog.push({
-          permission: permissionString(resource.name, action),
-          resource: resource.name,
-          action,
-          description: resource.description ?? '',
-          resourceServer: parent?.name ?? resource.name,
-        });
+        const permission = permissionString(resource.name, action);
+        // Two different resource servers can each declare a resource type of the same name (nothing
+        // stops "accounts" existing under two applications), and a permission is the STRING, not the
+        // pair of resource and server: `accounts:view` is one grantable thing everywhere it is held
+        // or checked, so the first server to declare it is the one this catalog remembers, rather
+        // than listing the same permission twice with nothing to tell the two apart once granted.
+        if (!catalog.has(permission)) {
+          catalog.set(permission, {
+            permission,
+            resource: resource.name,
+            action,
+            description: resource.description ?? '',
+            resourceServer: parent?.name ?? resource.name,
+            // Carried so a caller adding one more action to this resource can re-register its
+            // server without guessing the audience, which `registerCatalog` would otherwise
+            // overwrite with whatever the caller happened to send.
+            resourceServerAudience: parent?.audience ?? resource.audience,
+          });
+        }
       }
     }
-    return catalog.sort((a, b) => a.permission.localeCompare(b.permission));
+    return [...catalog.values()].sort((a, b) => a.permission.localeCompare(b.permission));
+  }
+
+  /**
+   * One role's permissions with every parent's folded in, bounded the same way `composed` bounds
+   * its own traversal. Shared by `list()`'s effective count and `effectivePermissionsFor` below, so
+   * a fix to how composition is walked cannot land in one and be forgotten in the other.
+   */
+  private static expandPermissionsOf(
+    byId: Map<string, Pick<RoleRecord, 'permissions' | 'parentRoleIds'>>,
+    roleId: string,
+  ): Set<string> {
+    const seen = new Set<string>();
+    const keys = new Set<string>();
+    const walk = (id: string, depth: number) => {
+      if (depth > MAX_COMPOSITION_DEPTH || seen.has(id)) return;
+      seen.add(id);
+      const role = byId.get(id);
+      if (!role) return;
+      for (const permission of role.permissions ?? []) keys.add(permission);
+      for (const parent of role.parentRoleIds ?? []) walk(parent, depth + 1);
+    };
+    walk(roleId, 0);
+    return keys;
+  }
+
+  /**
+   * Every permission a `role` selector's roles currently grant, expanded through inheritance exactly
+   * as RBAC itself resolves them (parents included). `ids` names roles by name and wins over
+   * `pattern`, matching the rule every other selector follows; `pattern` matches every role name in
+   * the realm it currently matches. `unknownIds` names anything in `ids` that is not a real role in
+   * this realm, for the caller to refuse rather than silently drop.
+   *
+   * Called when a policy naming this selector is saved, and again whenever one of the roles it
+   * names changes shape (`PolicyAdminService.resyncRoleReferences`) — never at decision time, which
+   * is the whole reason a policy's `resolvedPermissions` exists rather than this being resolved live.
+   */
+  async effectivePermissionsFor(
+    realmId: string,
+    selector: Selector | undefined,
+  ): Promise<{ permissions: string[]; unknownIds: string[] }> {
+    if (!selector?.ids?.length && !selector?.pattern) return { permissions: [], unknownIds: [] };
+
+    const all = await this.roles
+      .find({ realmId }, { projection: { _id: 0, roleId: 1, name: 1, permissions: 1, parentRoleIds: 1 } })
+      .toArray();
+    const byId = new Map(all.map((role) => [role.roleId, role]));
+    const byName = new Map(all.map((role) => [role.name, role]));
+
+    let targetNames: string[];
+    const unknownIds: string[] = [];
+    if (selector.ids?.length) {
+      targetNames = selector.ids.filter((id) => {
+        if (byName.has(id)) return true;
+        unknownIds.push(id);
+        return false;
+      });
+    } else {
+      let compiled: RE2 | null;
+      try {
+        compiled = new RE2(selector.pattern as string);
+      } catch {
+        compiled = null;
+      }
+      targetNames = compiled ? all.filter((role) => compiled!.test(role.name)).map((role) => role.name) : [];
+    }
+
+    const permissions = new Set<string>();
+    for (const name of targetNames) {
+      const role = byName.get(name);
+      if (!role) continue;
+      for (const permission of RoleAdminService.expandPermissionsOf(byId, role.roleId)) permissions.add(permission);
+    }
+    return { permissions: [...permissions].sort(), unknownIds };
+  }
+
+  /**
+   * This role's own name, plus every role that (directly or transitively) inherits from it: the
+   * whole set whose EXPANDED permissions can have changed now that this role's own permissions or
+   * parents changed. `parentRoleIds` is read child-to-parent everywhere else in this file
+   * (`validParents`, `composed`); this is the one reverse walk, used so a change to a PARENT role
+   * reaches policies naming a role that only inherits from it, not only the parent by name.
+   */
+  async namesAffectedByChangeTo(realmId: string, roleId: string): Promise<string[]> {
+    const all = await this.roles
+      .find({ realmId }, { projection: { _id: 0, roleId: 1, name: 1, parentRoleIds: 1 } })
+      .toArray();
+    const byId = new Map(all.map((role) => [role.roleId, role]));
+    const inheritsFrom = (candidateId: string, targetId: string, depth = 0): boolean => {
+      if (depth > MAX_COMPOSITION_DEPTH) return false;
+      const parents = byId.get(candidateId)?.parentRoleIds ?? [];
+      if (parents.includes(targetId)) return true;
+      return parents.some((parentId) => inheritsFrom(parentId, targetId, depth + 1));
+    };
+    return all
+      .filter((role) => role.roleId === roleId || inheritsFrom(role.roleId, roleId))
+      .map((role) => role.name);
   }
 }

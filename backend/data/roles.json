@@ -33,6 +33,12 @@
       "paymentRequests": [
         "view",
         "manage"
+      ],
+      "loans": [
+        "view"
+      ],
+      "investmentPortfolios": [
+        "view"
       ]
     }
   },
@@ -124,6 +130,12 @@
       "grants": [
         "view",
         "manage"
+      ],
+      "loans": [
+        "view"
+      ],
+      "investmentPortfolios": [
+        "view"
       ]
     }
   },
@@ -177,6 +189,17 @@
         "view"
       ],
       "grants": [
+        "view"
+      ],
+      "loans": [
+        "view",
+        "viewSensitive"
+      ],
+      "investmentPortfolios": [
+        "view",
+        "viewSensitive"
+      ],
+      "eventSubscriptions": [
         "view"
       ]
     },
@@ -295,6 +318,17 @@
       ],
       "auditEvents": [
         "view"
+      ],
+      "loans": [
+        "view",
+        "manage"
+      ],
+      "investmentPortfolios": [
+        "view"
+      ],
+      "eventSubscriptions": [
+        "view",
+        "manage"
       ]
     },
     "denialRationale": [
@@ -415,7 +449,12 @@
     "scopeKind": "all",
     "builtin": true,
     "sodRationale": "Registering an application needs no permission at all, because a person owns what they register and the registry narrows every read and every change to what they own. This role exists only to widen that narrowing to the whole realm. Rotating another party's credential is a separate action from reading their registration, so it is a separate permission, and a role may hold sight of the registry without holding the ability to reissue anybody's secret.",
-    "permissions": {},
+    "permissions": {
+      "eventSubscriptions": [
+        "view",
+        "manage"
+      ]
+    },
     "authorityPermissions": {
       "clients": [
         "view",

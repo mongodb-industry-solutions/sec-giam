@@ -135,18 +135,18 @@ export async function discoveryController(fastify: FastifyInstance) {
       // would advertise a downgrade a client could then choose.
       code_challenge_methods_supported: ['S256'],
       /**
-       * Including the three PRIVATE claims, which is the whole reason to list them.
+       * Including the PRIVATE claims, which is the whole reason to list them.
        *
-       * `session_epoch`, `admin_realms` and `account_holder` have no specification behind them, so a
-       * consumer can only learn they exist by being told. Declaring them here is the mitigation for
-       * using short names rather than collision-resistant ones.
+       * `session_epoch`, `admin_realms`, `account_holder` and `domain_id` have no specification
+       * behind them, so a consumer can only learn they exist by being told. Declaring them here is
+       * the mitigation for using short names rather than collision-resistant ones.
        */
       claims_supported: [
         'sub', 'iss', 'aud', 'exp', 'iat', 'jti', 'scope', 'client_id',
         'auth_time', 'acr', 'amr', 'sid', 'txn',
         'roles', 'entitlements', 'act', 'grant_id', 'authorization_details',
         'name', 'email', 'preferred_username',
-        'session_epoch', 'admin_realms', 'account_holder',
+        'session_epoch', 'admin_realms', 'account_holder', 'domain_id',
       ],
     };
   }

@@ -232,11 +232,12 @@ describe('v41 P1: the refresh token and the id token', () => {
   });
 
   /**
-   * D43. OIDC Core 5.4: the claims the `profile`, `email`, `address` and `phone` scopes request are
-   * returned from the UserInfo endpoint when an access token is issued, which in the code flow is
-   * always. They were also emitted here without checking the `profile` scope at all.
+   * D43. OIDC Core 5.4: the claims the `profile`, `email`, `address` and `phone` scopes request
+   * travel with the issuer's own `subjectProfile`, read once at issuance. Nothing puts them in the
+   * id token when the caller passes none, which is what this asserts; it is not a rule that the id
+   * token never carries them (see the `subjectProfile` suite below, which is the opposite case).
    */
-  it('puts no profile claims in the id token, because userinfo serves them', async () => {
+  it('puts no profile claims in the id token when the caller passes no subjectProfile', async () => {
     const claims = decode((await personTokens()).id_token as string);
     for (const claim of ['name', 'preferred_username', 'email', 'email_verified']) {
       expect(claims, claim).not.toHaveProperty(claim);
@@ -244,6 +245,66 @@ describe('v41 P1: the refresh token and the id token', () => {
     // The authentication context does belong here: an RP checks it without introspecting.
     expect(claims.acr).toBe('aal2');
     expect(claims.aud).toBe('orders-web');
+  });
+});
+
+describe('domain-scoped token policy and the domain_id claim', () => {
+  function issuingDbWithDomain(domain: Record<string, unknown> | null): Db {
+    return {
+      collection: () => ({
+        insertOne: async () => ({}),
+        find: () => ({ toArray: async () => [{ name: 'orders', audience: 'https://api.example' }] }),
+        findOne: async (filter: Record<string, unknown>) => {
+          if (filter.sessionId) return { sessionId: 'sess-1', refreshGen: 0, createdAt: SESSION_CREATED_AT, acr: 'aal2', amr: ['pwd', 'otp'] };
+          if (filter.domainId) return domain;
+          return null;
+        },
+      }),
+    } as unknown as Db;
+  }
+
+  async function tokensFor(domain: Record<string, unknown> | null, domainId?: string) {
+    return new TokenIssuer(issuingDbWithDomain(domain), ring).issue({
+      realm: realm(),
+      client: await client() as unknown as OAuthClient,
+      subjectId: 'subject-1',
+      scope: ['openid', 'profile'],
+      sessionId: 'sess-1',
+      sessionEpoch: 0,
+      includeRefreshToken: true,
+      includeIdToken: true,
+      ...(domainId ? { subjectProfile: { userName: 'ada', domainId } } : {}),
+    });
+  }
+
+  it('carries no domain_id when the caller names no subjectProfile', async () => {
+    const claims = decode((await tokensFor(null)).access_token);
+    expect(claims).not.toHaveProperty('domain_id');
+  });
+
+  it('carries domain_id on both the access and the id token when subjectProfile names one', async () => {
+    const access = decode((await tokensFor(null, 'domain-1')).access_token);
+    expect(access.domain_id).toBe('domain-1');
+
+    const idClaims = decode((await tokensFor(null, 'domain-1')).id_token as string);
+    expect(idClaims.domain_id).toBe('domain-1');
+  });
+
+  it('falls through to the realm default when the domain sets no override', async () => {
+    const claims = decode((await tokensFor({ authentication: {} }, 'domain-1')).access_token);
+    expect(claims.exp - claims.iat).toBe(900); // realm() above: accessTokenTtlSeconds: 900
+  });
+
+  it('narrows the realm default when the domain sets its own access token lifetime', async () => {
+    const domain = { authentication: { tokenPolicy: { accessTokenTtlSeconds: 60 } } };
+    const claims = decode((await tokensFor(domain, 'domain-1')).access_token);
+    expect(claims.exp - claims.iat).toBe(60);
+  });
+
+  it('narrows the refresh token lifetime the same way', async () => {
+    const domain = { authentication: { tokenPolicy: { refreshTokenTtlSeconds: 120 } } };
+    const refreshClaims = decode((await tokensFor(domain, 'domain-1')).refresh_token as string);
+    expect(refreshClaims.exp - refreshClaims.iat).toBe(120);
   });
 });
 

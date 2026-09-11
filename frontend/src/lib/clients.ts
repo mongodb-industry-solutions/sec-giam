@@ -90,11 +90,6 @@ export function redirectUriProblem(uri: string): string | null {
   return null;
 }
 
-/** Splits a textarea of addresses into a list, ignoring blank lines. */
-export function linesToUris(value: string): string[] {
-  return value.split(/[\n,]/).map((line) => line.trim()).filter(Boolean);
-}
-
 /** How a set of owners reads in one line, with the reader named as themselves. */
 export function ownersLabel(owners: ClientOwner[] | undefined): string {
   if (!owners || owners.length === 0) return 'nobody';
