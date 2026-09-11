@@ -963,17 +963,20 @@ function GovernedResources({ policyId, resourceSelector, resourceByName }: {
             return (
               <RecordCard
                 key={resource.resourceId}
-                // The resource's own full name, and the link on it: this row IS that resource, so
-                // following it opens that resource and nothing else. The pair is the name because
-                // neither half identifies it alone.
+                // The KEY is the title, and the link is on it: the resource's name is what this
+                // policy stores, what a permission is built from, and the identifier somebody reads
+                // the row by. Following it opens that resource and nothing else.
                 title={(
-                  <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
-                    {resourceLabel(resource.name, entry)}
+                  <Link
+                    href={`/system/resources/${encodeURIComponent(resource.resourceId)}`}
+                    className="font-mono text-sm hover:underline"
+                  >
+                    {resource.name}
                   </Link>
                 )}
-                // What a policy actually stores for it, which is the short name rather than the one
-                // above, and the only string that appears in the policy itself.
-                subtitle={`stored in this policy as "${resource.name}"`}
+                // Who declares it and what it is called for a reader, under the key rather than
+                // instead of it.
+                subtitle={resourceLabel(resource.name, entry)}
                 badges={<CatalogStatusBadge status={resource.status} />}
               >
                 {entry?.description && <p className="mt-1 text-xs text-gray-500">{entry.description}</p>}

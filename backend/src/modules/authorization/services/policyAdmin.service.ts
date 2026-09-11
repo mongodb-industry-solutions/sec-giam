@@ -287,17 +287,26 @@ export class PolicyAdminService {
     }
 
     if (options.governs) {
+      /**
+       * One name, or several separated by commas, matching if the selector applies to ANY of them.
+       *
+       * A resource SERVER is never named by a policy: policies name the resource types a server
+       * declares (`roles`, `sessions`), so asking with the server's own name matched nothing and its
+       * page showed no policies at all while several governed it. A server asks with the names of
+       * its types, and any one of them governing the server is what "governs this server" means.
+       */
+      const names = options.governs.split(',').map((name) => name.trim()).filter(Boolean);
       // Every candidate that could possibly govern this resource: an exact id is a plain equality
       // a query can decide, but `resource.pattern` is a regular expression a query cannot evaluate,
       // so a policy using one is a candidate here and `selectorApplies` decides for real below. This
       // is a screen a human reads, not the decision path, so filtering candidates in memory rather
       // than pushing every last bit of it into the query is the right trade here.
-      clauses.push({ $or: [{ 'resource.ids': options.governs }, { 'resource.pattern': { $exists: true } }] });
+      clauses.push({ $or: [{ 'resource.ids': { $in: names } }, { 'resource.pattern': { $exists: true } }] });
       const candidates = await this.policies
         .find({ $and: clauses }, { projection: { _id: 0 } })
         .sort({ name: 1 })
         .toArray();
-      const matching = candidates.filter((policy) => selectorApplies(policy.resource, options.governs!));
+      const matching = candidates.filter((policy) => names.some((name) => selectorApplies(policy.resource, name)));
       return {
         policies: matching.slice(skip, skip + limit).map((policy) => PolicyAdminService.summary(policy)),
         total: matching.length,

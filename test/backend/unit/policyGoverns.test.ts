@@ -33,6 +33,17 @@ function databaseHolding(documents: Array<Record<string, unknown>>): Db {
           const { $regex, $options } = value as { $regex: string; $options?: string };
           return new RegExp($regex, $options).test(String(actual ?? ''));
         }
+        if (value && typeof value === 'object' && '$in' in (value as Record<string, unknown>)) {
+          // `$in` against an ARRAY field is "do these two sets intersect", not "is the array one of
+          // these": `{ 'resource.ids': { $in: ['roles', 'sessions'] } }` has to match a policy whose
+          // ids are `['roles']`. Missing this made every governs test fail at once the moment the
+          // query started asking about several names, which is the fake being incomplete rather
+          // than the query being wrong.
+          const wanted = (value as { $in: unknown[] }).$in;
+          return Array.isArray(actual)
+            ? actual.some((entry) => wanted.includes(entry))
+            : wanted.includes(actual);
+        }
         if (Array.isArray(actual)) return actual.includes(value);
         return actual === value;
       });
@@ -125,5 +136,27 @@ describe('listing policies that govern one resource', () => {
     // resolves it to "does not match" rather than crashing, so it is silently excluded here, same as
     // any other policy that genuinely does not govern this resource.
     expect(policies.map((p) => p.policyId)).toEqual(['p-named']);
+  });
+  /**
+   * Several names at once, which is what a resource SERVER's page asks with.
+   *
+   * A policy names the resource TYPES a server declares, never the server, so the server's own page
+   * had no name to ask about and reported no policies while several governed it. Union, not
+   * intersection: governing any one of the names is what governs the server.
+   */
+  it('matches a policy governing any one of several names', async () => {
+    const db = databaseHolding([NAMED, UNRELATED]);
+
+    const found = await new PolicyAdminService(db).list('r1', { governs: 'reports,sessions' });
+    expect(found.policies.map((entry) => entry.name).sort()).toEqual(['named-policy', 'unrelated-policy']);
+    expect(found.total).toBe(2);
+  });
+
+  /** A stray comma must not turn the filter into "match everything". */
+  it('ignores blank names rather than matching every policy', async () => {
+    const db = databaseHolding([NAMED, UNRELATED]);
+
+    const found = await new PolicyAdminService(db).list('r1', { governs: 'reports, ,' });
+    expect(found.policies.map((entry) => entry.name)).toEqual(['named-policy']);
   });
 });

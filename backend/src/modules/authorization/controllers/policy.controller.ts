@@ -248,7 +248,10 @@ export async function policyController(fastify: FastifyInstance) {
             type: 'string',
             description:
               'Only policies whose resource selector actually matches this resource name, by exact '
-              + 'name or by pattern. What a resource\'s own screen asks to show which policies govern it.',
+              + 'name or by pattern. What a resource\'s own screen asks to show which policies govern it. '
+              + 'Several names may be given, separated by commas, matching a policy that governs ANY '
+              + 'of them: a resource server is never named by a policy directly, so its own page asks '
+              + 'with the names of every resource type it declares.',
           },
           skip: { type: 'integer', default: 0 },
           limit: { type: 'integer', default: 20, maximum: 200 },

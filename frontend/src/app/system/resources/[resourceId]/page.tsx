@@ -79,6 +79,9 @@ export default function ResourceDetailPage() {
           resource: {
             resourceId: server.resourceId, name: server.name, displayName: server.displayName, description: server.description,
             kind: server.kind, status: server.status, actions: [] as string[], serverName: server.displayName ?? server.name,
+            // A policy never names a server, only the types it declares, so this is what its own
+            // page has to ask about to find the policies that reach it.
+            governsNames: server.resources.map((entry) => entry.name),
           },
           parentServer: server,
         };
@@ -89,6 +92,7 @@ export default function ResourceDetailPage() {
           resource: {
             resourceId: child.resourceId, name: child.name, displayName: child.displayName, description: child.description,
             kind: 'object', status: child.status, actions: child.actions, serverName: server.displayName ?? server.name,
+            governsNames: [child.name],
           },
           parentServer: server,
         };
@@ -118,7 +122,9 @@ export default function ResourceDetailPage() {
     if (!resource) return { policies: [] as PolicySummary[], total: 0 };
     return callApi<{ policies: PolicySummary[]; total: number }>('/policies', {
       query: {
-        governs: resource.name,
+        // Every name this record is governed BY: its own for a resource type, and all of its
+        // types' for a server, since a policy names types and never the server itself.
+        governs: (resource.governsNames.length ? resource.governsNames : [resource.name]).join(','),
         q: query || undefined,
         status: status === 'all' ? undefined : status,
         skip: (page - 1) * limit,

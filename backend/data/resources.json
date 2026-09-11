@@ -1,0 +1,249 @@
+[
+  {
+    "realm": "leafypay",
+    "name": "authority",
+    "audience": "authority",
+    "displayName": "Leafy IdP Authority API",
+    "description": "The console's own control objects: realms, roles, policies, sessions and signing keys.",
+    "resources": [
+      {
+        "name": "assignments",
+        "displayName": "Role Assignments",
+        "description": "Who holds which role, and where that holding came from."
+      },
+      {
+        "name": "clients",
+        "displayName": "Applications",
+        "description": "The registered applications that request tokens from this authority."
+      },
+      {
+        "name": "credentials",
+        "displayName": "Credentials",
+        "description": "The passwords, keys and factors an identity authenticates with."
+      },
+      {
+        "name": "elevations",
+        "displayName": "Elevations",
+        "description": "Time-bound approvals that raise a session's assurance for a sensitive action."
+      },
+      {
+        "name": "grants",
+        "displayName": "Scope Grants",
+        "description": "Application scopes a customer has authorized, and can revoke."
+      },
+      {
+        "name": "identities",
+        "displayName": "Identities",
+        "description": "The people and services this authority recognizes as principals."
+      },
+      {
+        "name": "impersonation",
+        "displayName": "Impersonation",
+        "description": "Acting as another principal for a demonstration, which only the simulator is permitted to exercise."
+      },
+      {
+        "name": "keys",
+        "displayName": "Signing Keys",
+        "description": "The key set this realm publishes for verifying its own tokens."
+      },
+      {
+        "name": "permissions",
+        "displayName": "Permission Catalog",
+        "description": "Every `resource:action` a resource server has declared it enforces."
+      },
+      {
+        "name": "policies",
+        "displayName": "Policies",
+        "description": "The attribute-based rules that narrow or withhold what a role would otherwise allow."
+      },
+      {
+        "name": "providers",
+        "displayName": "Identity Providers",
+        "description": "External or federated identity sources a realm trusts."
+      },
+      {
+        "name": "realms",
+        "displayName": "Realms",
+        "description": "The organizations that group this authority's own configuration."
+      },
+      {
+        "name": "resourceServers",
+        "displayName": "Resource Servers",
+        "description": "The applications, tools and MCP servers that have registered a permission catalog."
+      },
+      {
+        "name": "roles",
+        "displayName": "Roles",
+        "description": "Named bundles of permission a principal can hold."
+      },
+      {
+        "name": "sessions",
+        "displayName": "Sessions",
+        "description": "Active and lapsed sign-ins across this realm."
+      },
+      {
+        "name": "tenants",
+        "displayName": "Tenants",
+        "description": "The partition a realm's data is isolated under."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "name": "bankcore",
+    "audience": "bankcore",
+    "displayName": "Partner Bank Core Banking API",
+    "description": "The federated partner bank's own core banking system, reached through a trust boundary this authority does not own.",
+    "resources": [
+      {
+        "name": "accountHolders",
+        "displayName": "Account Holders",
+        "description": "The people and businesses holding an account at this bank."
+      },
+      {
+        "name": "accounts",
+        "displayName": "Accounts",
+        "description": "Customer deposit and payout accounts."
+      },
+      {
+        "name": "bankAudit",
+        "displayName": "Bank Audit Trail",
+        "description": "The bank's own administrative and disclosure event stream."
+      },
+      {
+        "name": "bankModules",
+        "displayName": "Bank Engine Modules",
+        "description": "Configurable engine capabilities for the core banking platform."
+      },
+      {
+        "name": "cardData",
+        "displayName": "Card Vault Data",
+        "description": "The card number itself, held in the issuer vault behind a separate disclosure authority."
+      },
+      {
+        "name": "consents",
+        "displayName": "Consents",
+        "description": "Open banking consent grants a customer has authorized."
+      },
+      {
+        "name": "counterpartyBanks",
+        "displayName": "Counterparty Banks",
+        "description": "Other institutions this bank exchanges movements with."
+      },
+      {
+        "name": "creditAssessments",
+        "displayName": "Credit Assessments",
+        "description": "Underwriting decisions and risk scoring for an account holder."
+      },
+      {
+        "name": "issuedCards",
+        "displayName": "Issued Cards",
+        "description": "Physical and virtual cards this bank has issued."
+      },
+      {
+        "name": "movements",
+        "displayName": "Ledger Movements",
+        "description": "Posted debits and credits against a bank account."
+      },
+      {
+        "name": "psd2Role",
+        "displayName": "PSD2 Provider Roles",
+        "description": "The regulated role a third-party provider is authorised to act in: AISP for account information, PISP for payment initiation."
+      },
+      {
+        "name": "tppRegistrations",
+        "displayName": "Third-Party Provider Registrations",
+        "description": "PSD2 third-party providers registered to access accounts on a holder's behalf."
+      }
+    ]
+  },
+  {
+    "realm": "leafypay",
+    "name": "leafypay",
+    "audience": "leafypay",
+    "displayName": "Leafy Pay Core API",
+    "description": "The consumer payments application: transactions, cards, accounts, merchants and fraud cases.",
+    "resources": [
+      {
+        "name": "accounts",
+        "displayName": "Accounts",
+        "description": "Customer deposit and payout accounts."
+      },
+      {
+        "name": "auditEvents",
+        "displayName": "Audit Events",
+        "description": "The platform-wide administrative and access event stream."
+      },
+      {
+        "name": "beneficiaries",
+        "displayName": "Beneficiaries",
+        "description": "Saved payees a customer can send funds to."
+      },
+      {
+        "name": "cards",
+        "displayName": "Stored Cards",
+        "description": "Tokenized payment cards a customer has saved to their wallet."
+      },
+      {
+        "name": "consents",
+        "displayName": "Consents",
+        "description": "Open banking consent grants a customer has authorized."
+      },
+      {
+        "name": "customers",
+        "displayName": "Customers",
+        "description": "Customer identity and profile records."
+      },
+      {
+        "name": "eventSubscriptions",
+        "displayName": "Event Subscriptions",
+        "description": "Webhook configurations and event streams for real-time notifications on financial activities."
+      },
+      {
+        "name": "fraudCases",
+        "displayName": "Fraud Cases",
+        "description": "Investigation case files opened against suspicious activity."
+      },
+      {
+        "name": "grants",
+        "displayName": "Scope Grants",
+        "description": "Application scopes a customer has authorized, and can revoke."
+      },
+      {
+        "name": "investmentPortfolios",
+        "displayName": "Investment Portfolios",
+        "description": "Trading accounts, stock holdings, mutual fund positions, and asset performance metrics."
+      },
+      {
+        "name": "loans",
+        "displayName": "Loans",
+        "description": "Credit lines, active mortgages, repayment schedules, and outstanding debt balances."
+      },
+      {
+        "name": "merchants",
+        "displayName": "Merchants",
+        "description": "Registered businesses accepting payments on the platform."
+      },
+      {
+        "name": "modules",
+        "displayName": "Capability Modules",
+        "description": "The optional business capabilities enabled for a merchant or business file."
+      },
+      {
+        "name": "paymentRequests",
+        "displayName": "Payment Requests",
+        "description": "Requests to pay raised against a merchant or a peer."
+      },
+      {
+        "name": "providers",
+        "displayName": "Identity Providers",
+        "description": "External or federated identity sources a realm trusts."
+      },
+      {
+        "name": "transactions",
+        "displayName": "Transactions",
+        "description": "Payment and transfer records a customer, analyst or investigator can view."
+      }
+    ]
+  }
+]

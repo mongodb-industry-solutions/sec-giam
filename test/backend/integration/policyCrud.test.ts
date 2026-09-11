@@ -101,4 +101,43 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
       }).catch(() => {});
     }
   });
+
+  /**
+   * `governs` takes several names, which is what a resource SERVER's own page needs.
+   *
+   * A policy names the resource TYPES a server declares (`roles`, `sessions`), never the server, so
+   * asking with the server's own name matched nothing and its page reported no policies at all
+   * while several governed it. Asserting the comma form here because the single-name form kept
+   * working throughout: the bug was only ever visible one level up.
+   */
+  it('matches a policy governing ANY of several names, and none for a server name', async () => {
+    if (!live) return;
+    const headers = { authorization: `Bearer ${managerToken}` };
+    const ask = async (governs: string) => {
+      const response = await fetch(
+        `${GIAM}/realms/leafypay/policies?governs=${encodeURIComponent(governs)}&limit=50`,
+        { headers, signal: AbortSignal.timeout(20000) },
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as { total: number; policies: Array<{ name: string }> };
+    };
+
+    // The seeded catalog puts `roles` and `sessions` under the authority server, each governed.
+    const byType = await ask('roles');
+    expect(byType.total).toBeGreaterThan(0);
+
+    const byTypes = await ask('roles,sessions');
+    expect(byTypes.total).toBeGreaterThanOrEqual(byType.total);
+    // Union, not intersection: a policy governing either name belongs in the answer.
+    expect(byTypes.policies.map((policy) => policy.name)).toEqual(
+      expect.arrayContaining(byType.policies.map((policy) => policy.name)),
+    );
+
+    // The control, and the reason the comma form exists: nothing names the server itself.
+    expect((await ask('authority')).total).toBe(0);
+
+    // Blank entries are ignored rather than matching everything.
+    expect((await ask('roles,,')).total).toBe(byType.total);
+  });
+
 });

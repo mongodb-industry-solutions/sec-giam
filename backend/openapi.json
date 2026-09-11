@@ -13509,7 +13509,7 @@
             "in": "query",
             "name": "governs",
             "required": false,
-            "description": "Only policies whose resource selector actually matches this resource name, by exact name or by pattern. What a resource's own screen asks to show which policies govern it."
+            "description": "Only policies whose resource selector actually matches this resource name, by exact name or by pattern. What a resource's own screen asks to show which policies govern it. Several names may be given, separated by commas, matching a policy that governs ANY of them: a resource server is never named by a policy directly, so its own page asks with the names of every resource type it declares."
           },
           {
             "schema": {
