@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { randomUUID } from 'crypto';
 import { tokenFor as runFlow } from './support/authorizationFlow';
+import { deleteTestPrincipal } from './support/directDb';
 
 const GIAM = process.env.GIAM_BASE_URL ?? 'http://127.0.0.1:8085';
 const DEMO_PASSWORD = 'demo-password';
@@ -51,7 +52,6 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
     });
     expect(created.status).toBe(201);
     const role = await created.json() as { roleId: string; enabled: boolean };
-    expect(role.enabled).toBe(true);
 
     // A throwaway principal to hold it, provisioned and approved.
     const userName = `v43-holder-${randomUUID().slice(0, 8)}`;
@@ -62,52 +62,71 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
       signal: AbortSignal.timeout(20000),
     });
     const holder = await registered.json() as { subjectId: string };
-    await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${holder.subjectId}`, {
-      method: 'PATCH', headers,
-      body: JSON.stringify({ schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', value: { active: true } }] }),
-      signal: AbortSignal.timeout(20000),
-    });
 
-    const granted = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}/assignments`, {
-      method: 'POST', headers, body: JSON.stringify({ subjectId: holder.subjectId }), signal: AbortSignal.timeout(20000),
-    });
-    expect(granted.status).toBe(201);
+    // Neither the role nor the principal has a way to remove itself if an assertion below throws
+    // first; retired here regardless, the same as the realm and policy CRUD tests retire theirs.
+    // No route deletes a principal outright, so that half goes straight to the database, same as
+    // realmCrud.test.ts does for a realm.
+    try {
+      expect(role.enabled).toBe(true);
 
-    async function decide(): Promise<boolean> {
-      const response = await fetch(`${GIAM}/realms/leafypay/decision`, {
-        method: 'POST', headers,
-        body: JSON.stringify({
-          subject: { type: 'identity', id: holder.subjectId },
-          resource: { type: 'sessions' },
-          action: { name: 'view' },
-          context: { audience: 'authority' },
-        }),
+      await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${holder.subjectId}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', value: { active: true } }] }),
         signal: AbortSignal.timeout(20000),
       });
-      expect(response.status).toBe(200);
-      return (await response.json()).decision as boolean;
+
+      const granted = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}/assignments`, {
+        method: 'POST', headers, body: JSON.stringify({ subjectId: holder.subjectId }), signal: AbortSignal.timeout(20000),
+      });
+      expect(granted.status).toBe(201);
+
+      async function decide(): Promise<boolean> {
+        const response = await fetch(`${GIAM}/realms/leafypay/decision`, {
+          method: 'POST', headers,
+          body: JSON.stringify({
+            subject: { type: 'identity', id: holder.subjectId },
+            resource: { type: 'sessions' },
+            action: { name: 'view' },
+            context: { audience: 'authority' },
+          }),
+          signal: AbortSignal.timeout(20000),
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()).decision as boolean;
+      }
+
+      expect(await decide()).toBe(true);
+
+      const disabled = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ enabled: false }), signal: AbortSignal.timeout(20000),
+      });
+      expect(disabled.status).toBe(200);
+      expect((await disabled.json()).enabled).toBe(false);
+
+      expect(await decide()).toBe(false);
+
+      // The assignment itself is untouched: re-enabling resumes granting without re-assigning.
+      const listed = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}/assignments`, { headers, signal: AbortSignal.timeout(20000) });
+      const assignments = await listed.json() as { assignments: Array<{ subjectId: string }> };
+      expect(assignments.assignments.some((a) => a.subjectId === holder.subjectId)).toBe(true);
+
+      const reenabled = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ enabled: true }), signal: AbortSignal.timeout(20000),
+      });
+      expect(reenabled.status).toBe(200);
+      expect(await decide()).toBe(true);
+    } finally {
+      // A role still assigned refuses deletion (409): the assignment goes first, or this leaves
+      // the role behind on every run exactly like the leak this whole file exists to close.
+      await fetch(`${GIAM}/realms/leafypay/principals/${holder.subjectId}/roles/${role.roleId}`, {
+        method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
+      }).catch(() => {});
+      await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
+        method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
+      }).catch(() => {});
+      await deleteTestPrincipal(holder.subjectId).catch(() => {});
     }
-
-    expect(await decide()).toBe(true);
-
-    const disabled = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
-      method: 'PATCH', headers, body: JSON.stringify({ enabled: false }), signal: AbortSignal.timeout(20000),
-    });
-    expect(disabled.status).toBe(200);
-    expect((await disabled.json()).enabled).toBe(false);
-
-    expect(await decide()).toBe(false);
-
-    // The assignment itself is untouched: re-enabling resumes granting without re-assigning.
-    const listed = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}/assignments`, { headers, signal: AbortSignal.timeout(20000) });
-    const assignments = await listed.json() as { assignments: Array<{ subjectId: string }> };
-    expect(assignments.assignments.some((a) => a.subjectId === holder.subjectId)).toBe(true);
-
-    const reenabled = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
-      method: 'PATCH', headers, body: JSON.stringify({ enabled: true }), signal: AbortSignal.timeout(20000),
-    });
-    expect(reenabled.status).toBe(200);
-    expect(await decide()).toBe(true);
   });
 
   it('a disabled PARENT contributes nothing to what an enabled child effectively grants', async () => {
@@ -133,16 +152,28 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
     });
     const childRole = await child.json() as { roleId: string };
 
-    const detailBefore = await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
-    const beforeBody = await detailBefore.json() as { effectivePermissionCount: number };
-    expect(beforeBody.effectivePermissionCount).toBe(2);
+    // Retired regardless of what the assertions below do. The child holds the reference to the
+    // parent, so it goes first: deleting the parent while something still names it is exactly the
+    // state disabling it is supposed to make harmless, not a state removing it should ever produce.
+    try {
+      const detailBefore = await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
+      const beforeBody = await detailBefore.json() as { effectivePermissionCount: number };
+      expect(beforeBody.effectivePermissionCount).toBe(2);
 
-    await fetch(`${GIAM}/realms/leafypay/roles/${parentRole.roleId}`, {
-      method: 'PATCH', headers, body: JSON.stringify({ enabled: false }), signal: AbortSignal.timeout(20000),
-    });
+      await fetch(`${GIAM}/realms/leafypay/roles/${parentRole.roleId}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ enabled: false }), signal: AbortSignal.timeout(20000),
+      });
 
-    const detailAfter = await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
-    const afterBody = await detailAfter.json() as { effectivePermissionCount: number };
-    expect(afterBody.effectivePermissionCount).toBe(1);
+      const detailAfter = await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
+      const afterBody = await detailAfter.json() as { effectivePermissionCount: number };
+      expect(afterBody.effectivePermissionCount).toBe(1);
+    } finally {
+      await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, {
+        method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
+      }).catch(() => {});
+      await fetch(`${GIAM}/realms/leafypay/roles/${parentRole.roleId}`, {
+        method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
+      }).catch(() => {});
+    }
   });
 });

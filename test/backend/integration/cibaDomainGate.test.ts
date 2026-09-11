@@ -8,9 +8,10 @@
  *
  * Skipped unless the authority is listening.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'crypto';
 import { tokenFor as runFlow } from './support/authorizationFlow';
+import { deleteTestPrincipal } from './support/directDb';
 
 const GIAM = process.env.GIAM_BASE_URL ?? 'http://127.0.0.1:8085';
 const DEMO_PASSWORD = 'demo-password';
@@ -46,6 +47,7 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
   let managerToken = '';
   let domainId = '';
   let userName = '';
+  let subjectId = '';
 
   beforeAll(async () => {
     live = await reachable();
@@ -62,6 +64,7 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
       signal: AbortSignal.timeout(20000),
     });
     const created = await registered.json() as { subjectId: string };
+    subjectId = created.subjectId;
     const approveHeaders = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
     const approved = await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${created.subjectId}`, {
       method: 'PATCH',
@@ -76,29 +79,43 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
     domainId = user['urn:mongodb:params:scim:schemas:extension:principal:2.0:Principal']?.domainId ?? '';
   });
 
+  // No route retires a registered principal; deleted directly so this test does not leave one
+  // behind on every run.
+  afterAll(async () => {
+    if (subjectId) await deleteTestPrincipal(subjectId).catch(() => {});
+  });
+
   it('refuses before the credential check when the domain switches CIBA off, and allows it back on', async () => {
     if (!live) return;
     expect(domainId, 'the registered principal should carry a domainId (v43 fix)').toBeTruthy();
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
 
-    // A principal with no registered device key still reaches the domain gate FIRST: turned off,
-    // the refusal is the domain's, not "no authenticator".
-    const off = await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
-      method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: false } }), signal: AbortSignal.timeout(20000),
-    });
-    expect(off.status).toBe(200);
+    // Restored regardless of what the assertions below do: this domain is the realm's SHARED one,
+    // so leaving CIBA switched off here would refuse it for everybody else too, not just this test.
+    try {
+      // A principal with no registered device key still reaches the domain gate FIRST: turned off,
+      // the refusal is the domain's, not "no authenticator".
+      const off = await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: false } }), signal: AbortSignal.timeout(20000),
+      });
+      expect(off.status).toBe(200);
 
-    const refused = await tryCiba(userName);
-    expect(refused.error).toBe('unauthorized_client');
+      const refused = await tryCiba(userName);
+      expect(refused.error).toBe('unauthorized_client');
 
-    const on = await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
-      method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: true } }), signal: AbortSignal.timeout(20000),
-    });
-    expect(on.status).toBe(200);
+      const on = await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: true } }), signal: AbortSignal.timeout(20000),
+      });
+      expect(on.status).toBe(200);
 
-    const allowedPastTheGate = await tryCiba(userName);
-    // Falls through to the credential check now: this principal has no device key, so the refusal
-    // changes to that instead of the domain's.
-    expect(allowedPastTheGate.error).not.toBe('unauthorized_client');
+      const allowedPastTheGate = await tryCiba(userName);
+      // Falls through to the credential check now: this principal has no device key, so the refusal
+      // changes to that instead of the domain's.
+      expect(allowedPastTheGate.error).not.toBe('unauthorized_client');
+    } finally {
+      await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: true } }), signal: AbortSignal.timeout(20000),
+      }).catch(() => {});
+    }
   });
 });

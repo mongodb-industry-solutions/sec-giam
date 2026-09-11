@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { randomUUID } from 'crypto';
 import { tokenFor as runFlow } from './support/authorizationFlow';
+import { deleteTestPrincipal } from './support/directDb';
 
 const GIAM = process.env.GIAM_BASE_URL ?? 'http://127.0.0.1:8085';
 const DEMO_PASSWORD = 'demo-password';
@@ -39,48 +40,52 @@ describe('v43: an administrator resets a principal\'s password', () => {
     expect(registered.status).toBe(200);
     const created = await registered.json() as { subjectId: string };
 
-    const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: PLATFORM });
-    expect(managerToken).toBeTruthy();
-    const authHeaders = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
+    try {
+      const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: PLATFORM });
+      expect(managerToken).toBeTruthy();
+      const authHeaders = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
 
-    // This realm does not auto-approve self-registration: a login attempt would 401 on that alone,
-    // which would make the assertion below meaningless. Approved first (v43 P3's own fix), so what
-    // is actually being tested here is the password, not the lifecycle state.
-    const approved = await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${created.subjectId}`, {
-      method: 'PATCH',
-      headers: authHeaders,
-      body: JSON.stringify({
-        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
-        Operations: [{ op: 'replace', value: { active: true } }],
-      }),
-      signal: AbortSignal.timeout(20000),
-    });
-    expect(approved.status).toBe(200);
+      // This realm does not auto-approve self-registration: a login attempt would 401 on that alone,
+      // which would make the assertion below meaningless. Approved first (v43 P3's own fix), so what
+      // is actually being tested here is the password, not the lifecycle state.
+      const approved = await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${created.subjectId}`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({
+          schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+          Operations: [{ op: 'replace', value: { active: true } }],
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      expect(approved.status).toBe(200);
 
-    const reset = await fetch(`${GIAM}/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ password: 'Replaced-Pass-2' }),
-      signal: AbortSignal.timeout(20000),
-    });
-    expect(reset.status).toBe(200);
-    expect((await reset.json()).reset).toBe(true);
+      const reset = await fetch(`${GIAM}/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ password: 'Replaced-Pass-2' }),
+        signal: AbortSignal.timeout(20000),
+      });
+      expect(reset.status).toBe(200);
+      expect((await reset.json()).reset).toBe(true);
 
-    const oldLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ login: userName, password: 'Original-Pass-1' }),
-      signal: AbortSignal.timeout(20000),
-    });
-    expect(oldLogin.status).toBe(401);
+      const oldLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: userName, password: 'Original-Pass-1' }),
+        signal: AbortSignal.timeout(20000),
+      });
+      expect(oldLogin.status).toBe(401);
 
-    const newLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ login: userName, password: 'Replaced-Pass-2' }),
-      signal: AbortSignal.timeout(20000),
-    });
-    expect(newLogin.status).toBe(200);
+      const newLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: userName, password: 'Replaced-Pass-2' }),
+        signal: AbortSignal.timeout(20000),
+      });
+      expect(newLogin.status).toBe(200);
+    } finally {
+      await deleteTestPrincipal(created.subjectId);
+    }
   });
 
   it('refuses a password under the eight-character floor', async () => {
@@ -97,13 +102,17 @@ describe('v43: an administrator resets a principal\'s password', () => {
     });
     const created = await registered.json() as { subjectId: string };
 
-    const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: PLATFORM });
-    const response = await fetch(`${GIAM}/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ password: 'short1' }),
-      signal: AbortSignal.timeout(20000),
-    });
-    expect(response.status).toBe(400);
+    try {
+      const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: PLATFORM });
+      const response = await fetch(`${GIAM}/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ password: 'short1' }),
+        signal: AbortSignal.timeout(20000),
+      });
+      expect(response.status).toBe(400);
+    } finally {
+      await deleteTestPrincipal(created.subjectId);
+    }
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AppWindow, Bug, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import { Bug, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { apiUrl } from '../lib/env';
 import { startConsoleAuthorization, rememberUserName } from '../lib/session';
 import { BRAND } from '../config/brand';
@@ -37,30 +37,12 @@ export interface RosterEntry {
   demoNote?: string;
 }
 
-/** One scope the pending request asks for, described the same way the consent screen describes it. */
-export interface AskedScope {
-  name: string;
-  description?: string;
-}
-
-/**
- * The application a hosted sign-in was sent here for, so the screen can say who is asking before a
- * credential is typed: an icon and a name is what tells a person this is not the authority's own
- * page, and the scope list is what tells them what signing in here is about to permit.
- */
-export interface AskingApp {
-  clientName: string;
-  logoUri?: string;
-  scopes: AskedScope[];
-}
-
 export interface LoginContext {
   realm: string;
   displayName: string;
   notice?: string;
   registrationEnabled: boolean;
   branding: { displayName: string; logoUri?: string; primaryColor?: string };
-  askingApp?: AskingApp;
   providers: Provider[];
   roster: RosterEntry[];
 }
@@ -76,53 +58,6 @@ export interface SignedIn {
 
 // Plaintext behind the seed fixture's credential hashes, so it belongs to the demo data.
 const DEMO_PASSWORD = 'demo-password';
-
-/**
- * Who is asking, before a credential is typed: the application's own icon and name, the way a
- * federated sign-in ("Sign in with Google") shows the relying party rather than opening straight on
- * a bare credential form. The authority's own identity sits underneath, smaller, so the two are
- * never confused: signing in here is that application asking the AUTHORITY to vouch for a person,
- * not the application authenticating them itself.
- *
- * The scope list is shown here rather than only at consent, because consent is skipped entirely for
- * a grant that already exists: without this, a returning user would never see what the application
- * can do after the first time they agreed to it.
- */
-function AskingAppHeader({ app, authorityName }: { app: AskingApp; authorityName: string }) {
-  return (
-    <>
-      <div className="mb-2 flex justify-center">
-        {app.logoUri ? (
-          <img src={app.logoUri} alt={`${app.clientName} icon`} className="h-16 w-16 rounded-xl object-contain" />
-        ) : (
-          <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-gray-100 text-gray-400">
-            <AppWindow size={28} aria-hidden />
-          </span>
-        )}
-      </div>
-      <h1 className="text-xl font-bold text-[#001E2B]">
-        Sign in to continue to <span className="whitespace-nowrap">{app.clientName}</span>
-      </h1>
-      <p className="mt-1 flex items-center justify-center gap-1 text-xs text-gray-500">
-        <ShieldCheck size={12} className="text-gray-400" aria-hidden />
-        You&apos;re signing in with {authorityName}
-      </p>
-
-      {app.scopes.length > 0 && (
-        <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-left">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">This will let {app.clientName}</p>
-          <ul className="mt-1.5 space-y-1">
-            {app.scopes.map((scope) => (
-              <li key={scope.name} className="text-xs text-gray-600">
-                {scope.description ?? scope.name}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </>
-  );
-}
 
 /** Personas grouped by the role they hold, so the picker offers a ready-made user per role. */
 function byRole(roster: RosterEntry[]): Array<[string, RosterEntry[]]> {
@@ -294,19 +229,13 @@ export function SignInPanel({
           </button>
         </Tooltip>
 
-        {context?.askingApp ? (
-          <AskingAppHeader app={context.askingApp} authorityName={context.branding.displayName ?? context.displayName ?? BRAND.full} />
-        ) : (
-          <>
-            <div className="mb-2 text-4xl">
-              <img src="/app-icon.png" alt={`${BRAND.full} Icon`} className="mx-auto h-20 w-20" />
-            </div>
-            <h1 className="text-2xl font-bold text-[#001E2B]">
-              {heading ?? context?.branding.displayName ?? context?.displayName ?? BRAND.full}
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">Application Mode: Sign In</p>
-          </>
-        )}
+        <div className="mb-2 text-4xl">
+          <img src="/app-icon.png" alt={`${BRAND.full} Icon`} className="mx-auto h-20 w-20" />
+        </div>
+        <h1 className="text-2xl font-bold text-[#001E2B]">
+          {heading ?? context?.branding.displayName ?? context?.displayName ?? BRAND.full}
+        </h1>
+        <p className="mt-1 text-sm text-gray-500">Application Mode: Sign In</p>
       </div>
 
       <form

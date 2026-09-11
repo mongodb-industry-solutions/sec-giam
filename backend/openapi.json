@@ -3579,34 +3579,6 @@
                       "type": "object",
                       "additionalProperties": true
                     },
-                    "askingApp": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "description": "The application the pending authorization names, so the sign-in screen can show who is asking before a credential is typed, the way a person expects to be told whose sign-in page they landed on. Present only for a hosted screen (`request_id`): a bare `client_id` names an application but not what it asked for THIS time, and showing scopes for a request that does not exist would be showing nothing real.",
-                      "properties": {
-                        "clientName": {
-                          "type": "string"
-                        },
-                        "logoUri": {
-                          "type": "string"
-                        },
-                        "scopes": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                              "name": {
-                                "type": "string"
-                              },
-                              "description": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    },
                     "providers": {
                       "type": "array",
                       "items": {

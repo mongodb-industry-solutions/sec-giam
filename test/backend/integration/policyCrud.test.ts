@@ -54,40 +54,51 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
     const policy = await created.json() as {
       policyId: string; effect: string; status: string; resolvedPermissions: string[]; resource: { ids: string[] };
     };
-    // The exact shape the console reads: no `statements` array anywhere.
-    expect(policy.effect).toBe('deny');
-    expect(policy.status).toBe('active');
-    expect(policy.resolvedPermissions).toEqual(['sessions:manage']);
-    expect(policy.resource.ids).toEqual(['sessions']);
-    expect((policy as unknown as Record<string, unknown>).statements).toBeUndefined();
 
-    const listedActive = await fetch(`${GIAM}/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
-    expect(listedActive.status).toBe(200);
-    const activeList = await listedActive.json() as { policies: Array<{ policyId: string }> };
-    expect(activeList.policies.map((p) => p.policyId)).toContain(policy.policyId);
+    // Removed here regardless of what the assertions below do: an earlier one failing must not
+    // leave this behind for the same reason the realm and role CRUD tests retire what they made.
+    try {
+      // The exact shape the console reads: no `statements` array anywhere.
+      expect(policy.effect).toBe('deny');
+      expect(policy.status).toBe('active');
+      expect(policy.resolvedPermissions).toEqual(['sessions:manage']);
+      expect(policy.resource.ids).toEqual(['sessions']);
+      expect((policy as unknown as Record<string, unknown>).statements).toBeUndefined();
 
-    const toggled = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
-      method: 'PATCH', headers, body: JSON.stringify({ status: 'retired' }), signal: AbortSignal.timeout(20000),
-    });
-    expect(toggled.status).toBe(200);
-    expect((await toggled.json()).status).toBe('retired');
+      const listedActive = await fetch(`${GIAM}/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
+      expect(listedActive.status).toBe(200);
+      const activeList = await listedActive.json() as { policies: Array<{ policyId: string }> };
+      expect(activeList.policies.map((p) => p.policyId)).toContain(policy.policyId);
 
-    const listedRetired = await fetch(`${GIAM}/realms/leafypay/policies?status=retired&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
-    const retiredList = await listedRetired.json() as { policies: Array<{ policyId: string }> };
-    expect(retiredList.policies.map((p) => p.policyId)).toContain(policy.policyId);
-    const stillActive = await fetch(`${GIAM}/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
-    const activeAfter = await stillActive.json() as { policies: Array<{ policyId: string }> };
-    expect(activeAfter.policies.map((p) => p.policyId)).not.toContain(policy.policyId);
+      const toggled = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ status: 'retired' }), signal: AbortSignal.timeout(20000),
+      });
+      expect(toggled.status).toBe(200);
+      expect((await toggled.json()).status).toBe('retired');
 
-    const removed = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
-      method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
-    });
-    expect(removed.status).toBe(200);
+      const listedRetired = await fetch(`${GIAM}/realms/leafypay/policies?status=retired&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
+      const retiredList = await listedRetired.json() as { policies: Array<{ policyId: string }> };
+      expect(retiredList.policies.map((p) => p.policyId)).toContain(policy.policyId);
+      const stillActive = await fetch(`${GIAM}/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
+      const activeAfter = await stillActive.json() as { policies: Array<{ policyId: string }> };
+      expect(activeAfter.policies.map((p) => p.policyId)).not.toContain(policy.policyId);
 
-    const gone = await fetch(
-      `${GIAM}/realms/leafypay/policies/${policy.policyId}`,
-      { headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000) },
-    );
-    expect(gone.status).toBe(404);
+      const removed = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+        method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
+      });
+      expect(removed.status).toBe(200);
+
+      const gone = await fetch(
+        `${GIAM}/realms/leafypay/policies/${policy.policyId}`,
+        { headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000) },
+      );
+      expect(gone.status).toBe(404);
+    } finally {
+      // Best-effort and idempotent: the assertions above already delete it on the happy path, so
+      // this is only load-bearing when one of them threw first.
+      await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+        method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
+      }).catch(() => {});
+    }
   });
 });

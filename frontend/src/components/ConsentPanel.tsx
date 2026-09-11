@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AppWindow, ArrowRight, Check, X } from 'lucide-react';
+import { AppWindow, Check, X } from 'lucide-react';
 import type { ConsentPrompt } from '../lib/authorizationRequest';
 import { AuthBackdrop } from './AuthBackdrop';
 
@@ -23,6 +23,21 @@ function PartyBadge({ logoUri, name }: { logoUri?: string; name: string }) {
       )}
       <span className="max-w-full truncate text-xs font-medium text-gray-600" title={name}>{name}</span>
     </div>
+  );
+}
+
+/**
+ * A dashed connector rather than a solid one, deliberately: a solid arrow reads as data flowing
+ * from the application to the authority, which is backwards. What is actually happening is the
+ * authority admitting the application to its own SSO, so the line is drawn as a permission being
+ * extended rather than a value being passed.
+ */
+function AuthorizationLink() {
+  return (
+    <svg width="36" height="14" viewBox="0 0 36 14" fill="none" aria-hidden className="mt-[-18px] shrink-0 text-gray-300">
+      <line x1="1" y1="7" x2="26" y2="7" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3.5 3" strokeLinecap="round" />
+      <path d="M25 2 L32 7 L25 12" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -87,7 +102,7 @@ export function ConsentPanel({
         <div className="text-center">
           <div className="flex items-center justify-center gap-3">
             <PartyBadge logoUri={prompt.logoUri} name={prompt.clientName} />
-            <ArrowRight size={16} className="mt-[-18px] shrink-0 text-gray-300" aria-hidden />
+            <AuthorizationLink />
             <PartyBadge logoUri="/app-icon.png" name={prompt.authorityName} />
           </div>
           <h1 className="mt-4 text-xl font-semibold text-mongodb-dark">
