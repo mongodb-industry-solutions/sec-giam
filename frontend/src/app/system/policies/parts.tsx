@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { ListToolbar } from '../../../components/ListToolbar';
 import { Pagination } from '../../../components/Pagination';
 import { Tooltip } from '../../../components/Tooltip';
@@ -116,9 +117,20 @@ export interface CatalogOption {
   group?: string;
   /** One more fact worth a column: the actions a resource declares, a role's scope, a kind. */
   detail?: string;
+  /** Its own page. The id is the identifier, so the id is what carries the link. */
+  href?: string;
 }
 
 type Membership = 'all' | 'chosen' | 'available';
+
+/** Unanchored, as RE2 tests it server side. Invalid patterns reach nothing rather than throwing. */
+function reaches(pattern: string, value: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * One selector, as the same panel every time: a list with search, a filter, paging, and a check
@@ -132,12 +144,17 @@ type Membership = 'all' | 'chosen' | 'available';
  *
  * Four columns at most, and fewer as the screen narrows: the check and the id are the row's whole
  * purpose so they never leave, the name follows from `sm`, who declares it from `lg`, and the last
- * fact from `xl`. A pattern is still a pattern: it names no fixed set, so there is nothing to tick
- * and the panel says so instead of pretending otherwise.
+ * fact from `xl`.
+ *
+ * A pattern is shown the SAME way. "Which of these does this policy name" has one answer whether it
+ * was written as a list or as an expression, and that answer is what somebody opening the screen is
+ * looking for, so a pattern ticks the rows it reaches rather than hiding the table behind a text
+ * box. Only where the ticks come from differs: a list is ticked by hand, a pattern's ticks are
+ * derived and cannot be clicked off one at a time.
  */
 export function SelectorPanel({
   noun, description, mode, onModeChange, ids, onIdsChange, pattern, onPatternChange,
-  catalog, columns, required = true, loading = false, emptyCatalog, disabled = false,
+  catalog, columns, required = true, loading = false, emptyCatalog, disabled = false, matched,
 }: {
   /** "Resource", "Permission", "Role", "Principal". Used for every label in here. */
   noun: string;
@@ -159,16 +176,38 @@ export function SelectorPanel({
   emptyCatalog?: string;
   /** A reader without the permission to change this: the same panel, nothing to tick. */
   disabled?: boolean;
+  /**
+   * What a pattern currently reaches, when the authority itself has been asked.
+   *
+   * Given for resources, where an endpoint resolves it with the same `selectorApplies` the decision
+   * engine uses. Absent for the rest, where the panel previews it by compiling the pattern here:
+   * close enough to read by, and stated as a preview rather than as the authority's answer.
+   */
+  matched?: Set<string>;
 }) {
   const [query, setQuery] = useState('');
   const [membership, setMembership] = useState<Membership>('all');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
 
-  const chosen = splitPatterns(ids);
-  const selected = new Set(chosen);
+  const listed = splitPatterns(ids);
   const options = catalog ?? [];
   const known = new Set(options.map((option) => option.id));
+
+  /**
+   * What this selector covers, whichever way it says so.
+   *
+   * A pattern is not a different kind of answer to "which of these does this policy name": it
+   * reaches a set too, and that set is what somebody opening this screen is trying to see. So the
+   * table shows the same ticks either way, and only where they COME FROM changes: an exact list is
+   * ticked by hand, a pattern's ticks are derived and cannot be clicked off one at a time.
+   */
+  const byPattern = mode === 'pattern';
+  const covered = byPattern
+    ? new Set(matched ? [...matched] : options.filter((option) => reaches(pattern, option.id)).map((option) => option.id))
+    : new Set(listed);
+  const chosen = byPattern ? [...covered] : listed;
+  const selected = covered;
 
   /**
    * Anything chosen that the catalog does not declare is still a row.
@@ -178,7 +217,7 @@ export function SelectorPanel({
    * be impossible; it is shown, marked, and removable like everything else.
    */
   const rows: Array<CatalogOption & { unregistered?: boolean }> = [
-    ...chosen.filter((id) => !known.has(id)).map((id) => ({ id, unregistered: true })),
+    ...(byPattern ? [] : listed.filter((id) => !known.has(id)).map((id) => ({ id, unregistered: true }))),
     ...options,
   ];
 
@@ -210,27 +249,39 @@ export function SelectorPanel({
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-[#001E2B]">
             {noun}
             <span className="rounded-full bg-[#001E2B]/5 px-1.5 py-0.5 text-[10px] font-medium text-[#001E2B]">
-              {mode === 'pattern' ? 'by pattern' : `${chosen.length} chosen`}
+              {byPattern ? `${covered.size} matched` : `${listed.length} chosen`}
             </span>
           </h3>
           <p className="mt-0.5 text-xs text-gray-500">{description}</p>
         </div>
-        <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
-          <span className="sr-only sm:not-sr-only">Choose by</span>
-          <select
-            value={mode}
-            onChange={(event) => onModeChange(event.target.value as 'ids' | 'pattern')}
-            disabled={disabled}
-            aria-label={`How this policy names ${noun.toLowerCase()}s`}
-            className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
-          >
-            <option value="ids">Exact list</option>
-            <option value="pattern">Pattern</option>
-          </select>
-        </label>
+        {/*
+          * Two buttons, not a dropdown. A `select` in a panel header is a control people do not
+          * find: the choice between naming things and matching them is one of the two decisions
+          * this panel exists for, so it is visible without being opened.
+          */}
+        <div
+          role="group"
+          aria-label={`How this policy names ${noun.toLowerCase()}s`}
+          className="inline-flex shrink-0 rounded-lg border border-gray-200 p-0.5 text-[11px]"
+        >
+          {([['ids', 'Exact list'], ['pattern', 'Pattern']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onModeChange(key)}
+              disabled={disabled}
+              aria-pressed={mode === key}
+              className={`rounded-md px-2 py-0.5 transition-colors disabled:opacity-50 ${
+                mode === key ? 'bg-[#001E2B] text-white' : 'text-gray-500 hover:text-[#001E2B]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {mode === 'pattern' ? (
+      {byPattern && (
         <div className="space-y-1.5">
           <input
             required={required}
@@ -242,13 +293,18 @@ export function SelectorPanel({
             className={`${INPUT} font-mono text-xs`}
           />
           <p className="text-[11px] text-gray-400">
-            A regular expression (RE2 syntax), matched live at decision time. It names no fixed set,
-            so there is nothing to tick here; what it currently reaches is resolved by the authority.
+            A regular expression, matched unanchored, compiled with RE2 so it cannot hang a decision.
+            {matched
+              ? ' Ticked below is what it reaches right now, resolved by the authority itself.'
+              : ' Ticked below is what it reaches in the catalog of this realm right now, previewed here.'}
+            {' '}Its reach changes on its own as the catalog changes, which is the difference between
+            a pattern and a list.
           </p>
         </div>
-      ) : (
-        <div className="space-y-2.5">
-          <ListToolbar
+      )}
+
+      <div className="space-y-2.5">
+        <ListToolbar
             search={{
               value: query,
               onChange: (next) => { setQuery(next); setPage(1); },
@@ -261,11 +317,11 @@ export function SelectorPanel({
               onChange: (next: Membership) => { setMembership(next); setPage(1); },
               options: [
                 { key: 'all' as Membership, label: 'All' },
-                { key: 'chosen' as Membership, label: `Chosen (${chosen.length})` },
-                { key: 'available' as Membership, label: 'Not chosen' },
+                { key: 'chosen' as Membership, label: `${byPattern ? 'Matched' : 'Chosen'} (${covered.size})` },
+                { key: 'available' as Membership, label: byPattern ? 'Not matched' : 'Not chosen' },
               ],
             }}
-            extra={(
+            extra={byPattern ? undefined : (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -313,13 +369,21 @@ export function SelectorPanel({
                         type="checkbox"
                         checked={selected.has(row.id)}
                         onChange={(event) => toggle(row.id, event.target.checked)}
-                        disabled={disabled}
+                        disabled={disabled || byPattern}
+                        title={byPattern ? 'Reached by the pattern above. Switch to Exact list to name resources one by one.' : undefined}
                         aria-label={`${selected.has(row.id) ? 'Remove' : 'Add'} ${row.id}`}
                         className="rounded border-gray-300"
                       />
                     </td>
                     <td className="px-2 py-1.5">
-                      <span className="block truncate font-mono text-xs text-[#001E2B]" title={row.id}>{row.id}</span>
+                      {/* The id is the identifier, so the id carries the link to its own page. */}
+                      {row.href ? (
+                        <Link href={row.href} className="block truncate font-mono text-xs text-[#001E2B] hover:underline" title={row.id}>
+                          {row.id}
+                        </Link>
+                      ) : (
+                        <span className="block truncate font-mono text-xs text-[#001E2B]" title={row.id}>{row.id}</span>
+                      )}
                       {/* The name follows the id here while its own column is gone. */}
                       {row.label && <span className="mt-0.5 block truncate text-[11px] text-gray-500 sm:hidden">{row.label}</span>}
                       {row.unregistered && (
@@ -379,9 +443,8 @@ export function SelectorPanel({
               What actually gets stored. For a value this realm has not registered yet, which the
               table above cannot offer.
             </p>
-          </details>
-        </div>
-      )}
+        </details>
+      </div>
     </section>
   );
 }

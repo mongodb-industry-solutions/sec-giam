@@ -4,15 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Boxes, Code2, ListChecks, Play, Power, Save, Scale, Trash2,
+  ArrowLeft, Code2, ListChecks, Play, Power, Save, Scale, Trash2,
 } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { Tooltip } from '../../../../components/Tooltip';
-import { Pagination } from '../../../../components/Pagination';
-import { ListToolbar } from '../../../../components/ListToolbar';
-import {
-  EmptyState, ErrorState, LoadingState, StatusBadge as CatalogStatusBadge,
-} from '../../../../components/ResultState';
+import { ErrorState, LoadingState } from '../../../../components/ResultState';
 import { ActionButton, Fact } from '../../../../components/RecordCard';
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
@@ -23,7 +19,7 @@ import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import { SCIM_PRINCIPAL_EXTENSION, type PrincipalExtension, type ScimList } from '../../../../lib/identities';
 import {
   EffectBadge, SelectorPanel, StatusBadge,
-  describeCondition, permissionCatalogOptions, resourceLabel, splitPatterns,
+  describeCondition, permissionCatalogOptions, splitPatterns,
   type CatalogOption,
 } from '../parts';
 import {
@@ -66,7 +62,7 @@ export default function PolicyDetailPage() {
 
   // Fetched here, unconditionally, rather than only while editing: the READ-ONLY panels need these
   // catalogs too, to turn a bare id into a link (a resource's name into its resourceId, a role's
-  // name into its roleId) exactly the way `GovernedResources` already resolves a resource's own id.
+  // name into its roleId) and to mark what a pattern currently reaches.
   const readCatalog = useCallback(
     () => callApi<{ permissions: CatalogPermission[] }>('/permissions', { subject: 'the permission catalog' }),
     [],
@@ -96,8 +92,24 @@ export default function PolicyDetailPage() {
     [],
   );
   const principals = useConsoleResource(readPrincipals, 'The principal directory could not be read.');
+  /**
+   * What the SAVED policy's resource selector actually reaches, resolved by the authority.
+   *
+   * The panel can preview a pattern by compiling it here, and for three of the four selectors that
+   * is the only option. For resources there is an endpoint that answers with the identical
+   * `selectorApplies` the decision engine uses, so the resource panel is marked from that instead of
+   * from a second, approximate idea of what the pattern means.
+   */
+  const readGoverned = useCallback(
+    () => callApi<{ resources: Array<{ name: string }> }>(
+      `/policies/${encodeURIComponent(policyId)}/resources`,
+      { subject: 'the resources this policy governs' },
+    ),
+    [policyId],
+  );
+  const governed = useConsoleResource(readGoverned, 'The resources this policy governs could not be read.');
   useEffect(() => {
-    void catalog.reload(); void resourceServers.reload(); void allRoles.reload(); void principals.reload();
+    void catalog.reload(); void resourceServers.reload(); void allRoles.reload(); void principals.reload(); void governed.reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -125,11 +137,35 @@ export default function PolicyDetailPage() {
   // What the pickers offer: the id a policy stores, the name a person recognises, and the resource
   // server that declares it. A bare id is what made choosing one an exercise in recalling spellings.
   const resourceCatalogOptions: CatalogOption[] = [...resourceByName]
-    .map(([name, entry]) => ({ id: name, label: entry.displayName, group: entry.serverName }))
+    .map(([name, entry]) => ({
+      id: name,
+      label: entry.displayName,
+      group: entry.serverName,
+      detail: entry.actions.join(', '),
+      href: `/system/resources/${encodeURIComponent(entry.resourceId)}`,
+    }))
     .sort((left, right) => left.id.localeCompare(right.id));
   const roleCatalogOptions: CatalogOption[] = (allRoles.data?.roles ?? [])
-    .map((role) => ({ id: role.name, label: role.displayName, group: role.scopeKind }))
+    .map((role) => ({
+      id: role.name,
+      label: role.displayName,
+      group: role.scopeKind,
+      href: `/system/roles/${encodeURIComponent(role.roleId)}`,
+    }))
     .sort((left, right) => left.id.localeCompare(right.id));
+  /**
+   * A permission has no page of its own, so its link goes to the resource that DECLARES it.
+   *
+   * That is where the action it names is registered, which is the only thing there is to open for
+   * one. The resource half of the id is what resolves it.
+   */
+  const permissionCatalogEntries: CatalogOption[] = permissionCatalogOptions(catalog.data?.permissions ?? [])
+    .map((option) => {
+      const resource = resourceByName.get(option.id.split(':')[0]);
+      return resource
+        ? { ...option, href: `/system/resources/${encodeURIComponent(resource.resourceId)}` }
+        : option;
+    });
   // A policy names a principal by SUBJECT id, so that is the row's id; the login is what a person
   // recognises, and the kind is what distinguishes a service from somebody who signs in.
   const principalCatalogOptions: CatalogOption[] = (principals.data?.Resources ?? [])
@@ -138,6 +174,7 @@ export default function PolicyDetailPage() {
       label: entry.name?.formatted ?? entry.userName,
       group: (entry[SCIM_PRINCIPAL_EXTENSION] as PrincipalExtension | undefined)?.kind,
       detail: entry.userName,
+      href: `/system/identities/${encodeURIComponent(entry.id)}`,
     }))
     .sort((left, right) => (left.label ?? '').localeCompare(right.label ?? ''));
 
@@ -254,18 +291,14 @@ export default function PolicyDetailPage() {
                 onSave={save}
                 onDirtyChange={setDirty}
                 permissionCatalog={catalog.data?.permissions ?? []}
+                permissionOptions={permissionCatalogEntries}
                 resourceCatalog={resourceCatalogOptions}
                 roleCatalog={roleCatalogOptions}
                 principalCatalog={principalCatalogOptions}
+                // Only meaningful while the draft still says what the server holds; a pattern just
+                // typed has not been resolved by anybody yet, which the panel states as a preview.
+                governedResources={new Set((governed.data?.resources ?? []).map((entry) => entry.name))}
                 allRoles={allRoles.data?.roles ?? []}
-              />
-
-              {/* What the SAVED policy currently reaches, resolved by the authority rather than read
-                * off the draft above: it answers "and what does that actually mean today". */}
-              <GovernedResources
-                policyId={detail.policyId}
-                resourceSelector={detail.resource}
-                resourceByName={resourceByName}
               />
 
               <Simulator policyId={detail.policyId} subjectId={claims?.sub ?? ''} />
@@ -377,7 +410,8 @@ function canonical(value: unknown): string {
 
 function PolicyBody({
   detail, busy, canEdit, onSave, onDirtyChange,
-  permissionCatalog, resourceCatalog, roleCatalog, principalCatalog, allRoles,
+  permissionCatalog, permissionOptions, resourceCatalog, roleCatalog, principalCatalog,
+  governedResources, allRoles,
 }: {
   detail: PolicyDetail;
   busy: boolean;
@@ -386,10 +420,15 @@ function PolicyBody({
   onSave: (patch: Record<string, unknown>) => void;
   /** Lifted so the page's own link back can ask before it navigates. */
   onDirtyChange: (dirty: boolean) => void;
+  /** The raw catalog, which the condition editor below offers as held-permission checkboxes. */
   permissionCatalog: CatalogPermission[];
+  /** The same catalog as panel rows, each linked to the resource that declares it. */
+  permissionOptions: CatalogOption[];
   resourceCatalog: CatalogOption[];
   roleCatalog: CatalogOption[];
   principalCatalog: CatalogOption[];
+  /** What the authority says the SAVED resource selector reaches. */
+  governedResources: Set<string>;
   allRoles: RoleSummary[];
 }) {
   const [effect, setEffect] = useState(detail.effect);
@@ -650,8 +689,9 @@ function PolicyBody({
             ids={resourceIds} onIdsChange={setResourceIds}
             pattern={resourcePattern} onPatternChange={setResourcePattern}
             catalog={resourceCatalog}
-            columns={{ group: 'Resource server' }}
+            columns={{ group: 'Resource server', detail: 'Actions' }}
             disabled={!canEdit}
+            matched={resourcePattern === (detail.resource.pattern ?? '') ? governedResources : undefined}
           />
 
           <SelectorPanel
@@ -660,7 +700,7 @@ function PolicyBody({
             mode={permissionMode} onModeChange={setPermissionMode}
             ids={permissionIds} onIdsChange={setPermissionIds}
             pattern={permissionPattern} onPatternChange={setPermissionPattern}
-            catalog={permissionCatalogOptions(permissionCatalog)}
+            catalog={permissionOptions}
             columns={{ group: 'Resource server' }}
             required={false}
             disabled={!canEdit}
@@ -913,169 +953,6 @@ function ConditionEditor({ condition, onChange, roles, permissions }: {
   );
 }
 
-/**
- * Which of this realm's own resources this policy actually governs, as an ordinary list: a name
- * on its own is not "visible" the way a link, a status and a search box are.
- *
- * `resource.ids` and `resource.pattern` are exclusive in effect (ids wins when both are stored), so
- * there is nothing here to reconcile: whichever one actually decides is the only one this reads, and
- * the read comes from the SAME `selectorApplies` the decision engine itself uses, never a second,
- * approximate idea of what either one means. Fetched once (a realm's catalog is small enough to read
- * whole, the same call `/permissions` and `/resource-servers` already make), search and paging
- * happen over what was already read.
- */
-function GovernedResources({ policyId, resourceSelector, resourceByName }: {
-  policyId: string;
-  resourceSelector: Selector;
-  resourceByName: Map<string, ResourceCatalogEntry>;
-}) {
-  const read = useCallback(
-    () => callApi<{ resources: Array<{ resourceId: string; name: string; status: string }>; total: number }>(
-      `/policies/${encodeURIComponent(policyId)}/resources`,
-      { subject: 'the resources this policy governs' },
-    ),
-    [policyId],
-  );
-  const resources = useConsoleResource(read, 'The resources this policy governs could not be read.');
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
-
-  const all = resources.data?.resources ?? [];
-  const filtered = query ? all.filter((r) => r.name.toLowerCase().includes(query.toLowerCase())) : all;
-  const total = filtered.length;
-  const rows = filtered.slice((page - 1) * limit, page * limit);
-
-  return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="font-semibold text-[#001E2B]">Resources this policy governs</h2>
-        <p className="mt-0.5 text-sm text-gray-500">
-          {resourceSelector.pattern && !resourceSelector.ids?.length
-            ? `Every resource in this realm's catalog the pattern (${resourceSelector.pattern}) currently matches. A pattern names no resource directly, so this is the only place to see which ones it actually reaches.`
-            : 'Named exactly: this policy attaches to each of these directly, and to nothing a pattern alone might otherwise have matched. Each one opens its own page, where the other policies governing it are listed.'}
-        </p>
-      </div>
-
-      <ListToolbar search={{ value: query, onChange: (next) => { setQuery(next); setPage(1); }, placeholder: 'Search by name' }} />
-
-      {resources.error && <ErrorState message={resources.error} onRetry={() => void resources.reload()} />}
-      {resources.loading && <LoadingState label="Reading the resources this policy governs…" />}
-
-      {!resources.loading && !resources.error && total === 0 && (
-        <EmptyState
-          icon={Boxes}
-          title={query ? 'No resource matches that' : 'This policy governs no resource yet'}
-          description={query
-            ? 'Nothing in the current match set matches that search.'
-            : resourceSelector.pattern
-              ? 'Nothing in this realm\'s resource catalog matches this pattern right now.'
-              : 'The ids on this policy do not (or no longer) correspond to a registered resource.'}
-        />
-      )}
-
-      {/*
-        * A table, because these rows are the same few fields repeated and nothing else.
-        *
-        * Stacked cards put a name, a label, a sentence and a list of verbs in a column per row, so
-        * comparing two resources meant reading two paragraphs. Columns line the same field up
-        * across rows, which is the whole reason a table exists.
-        *
-        * Narrow screens drop columns rather than squeezing them: the name is the identifier and
-        * the link, so it survives every width; the resource server appears from `sm`, the
-        * description from `lg`, the declared actions from `xl`. What a dropped column held is
-        * still reachable by opening the resource, which is what the name links to.
-        */}
-      {!resources.loading && rows.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-gray-200">
-          <table className="w-full table-fixed text-left text-sm">
-            <thead className="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400">
-              <tr>
-                <th scope="col" className="w-1/2 px-3 py-2 font-medium sm:w-1/3 lg:w-1/5">Name</th>
-                <th scope="col" className="hidden px-3 py-2 font-medium sm:table-cell sm:w-1/3 lg:w-1/5">Resource server</th>
-                <th scope="col" className="hidden px-3 py-2 font-medium lg:table-cell lg:w-2/5">Description</th>
-                <th scope="col" className="hidden px-3 py-2 font-medium xl:table-cell xl:w-1/6">Actions</th>
-                <th scope="col" className="w-1/2 px-3 py-2 font-medium sm:w-1/6 lg:w-[10%]">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {rows.map((resource) => {
-                const entry = resourceByName.get(resource.name);
-                return (
-                  <tr key={resource.resourceId} className="align-top hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      {/*
-                        * The name is the key AND the link: it is what this policy stores, what a
-                        * permission is built from, and what somebody reads the row by.
-                        */}
-                      <Link
-                        href={`/system/resources/${encodeURIComponent(resource.resourceId)}`}
-                        className="block truncate font-mono text-xs text-[#001E2B] hover:underline"
-                        title={resource.name}
-                      >
-                        {resource.name}
-                      </Link>
-                      {/*
-                        * The human name sits under the key at every width rather than moving between
-                        * columns as they drop away. Two names for one thing is the row's identity;
-                        * reproducing it in whichever column happens to be visible is three places to
-                        * keep right for no gain.
-                        */}
-                      {entry?.displayName && (
-                        <span className="mt-0.5 block truncate text-xs text-gray-500" title={entry.displayName}>
-                          {entry.displayName}
-                        </span>
-                      )}
-                    </td>
-                    <td className="hidden px-3 py-2 sm:table-cell">
-                      <span className="block truncate text-xs text-gray-600" title={entry?.serverName}>
-                        {entry?.serverName ?? '—'}
-                      </span>
-                    </td>
-                    <td className="hidden px-3 py-2 lg:table-cell">
-                      <span className="block text-xs text-gray-500">{entry?.description ?? '—'}</span>
-                    </td>
-                    <td className="hidden px-3 py-2 xl:table-cell">
-                      <span className="block truncate font-mono text-xs text-gray-500" title={entry?.actions.join(', ')}>
-                        {entry && entry.actions.length > 0 ? entry.actions.join(', ') : '—'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <CatalogStatusBadge status={resource.status} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!resources.loading && total > 0 && (
-        <Pagination
-          page={page}
-          totalPages={Math.max(1, Math.ceil(total / limit))}
-          total={total}
-          limit={limit}
-          noun="resources"
-          onPageChange={setPage}
-          onLimitChange={(next) => { setLimit(next); setPage(1); }}
-        />
-      )}
-    </section>
-  );
-}
-
-/**
- * Ask the authority what it would decide, right now.
- *
- * It calls the decision endpoint rather than re-implementing the rules in the browser, which is the
- * only way an answer here can be trusted: a simulator that reasons about the statements itself is a
- * second implementation, and the moment the two disagree the one on screen is the one nobody checks.
- *
- * Asking about somebody else is a separate authority at the API, because the answer describes what
- * THAT principal may do. The field defaults to the signed-in subject for the same reason.
- */
 function Simulator({ policyId, subjectId }: { policyId: string; subjectId: string }) {
   const [subject, setSubject] = useState(subjectId);
   const [resource, setResource] = useState('roles');
