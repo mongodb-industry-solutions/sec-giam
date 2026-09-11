@@ -97,6 +97,22 @@ export function splitPatterns(value: string): string[] {
   return value.split(',').map((entry) => entry.trim()).filter(Boolean);
 }
 
+/**
+ * One selector, from the two fields that edit it.
+ *
+ * EMPTY BECOMES `{}`, which is the whole reason this is a function rather than an expression at each
+ * call site. The contract accepts an object with neither key, meaning "this selector names nothing",
+ * but it refuses `{ ids: [] }`: an empty array is not the same statement as no statement, and
+ * `minItems: 1` says so. A PATCH built the obvious way therefore failed with
+ * `/role/ids must NOT have fewer than 1 items` the moment an optional selector was left untouched,
+ * which is most of the time.
+ */
+export function selectorFrom(mode: 'ids' | 'pattern', ids: string, pattern: string): Selector {
+  if (mode === 'pattern') return pattern.trim() ? { pattern: pattern.trim() } : {};
+  const named = splitPatterns(ids);
+  return named.length ? { ids: named } : {};
+}
+
 /** Adds or removes one value from a comma-separated field, without disturbing anything typed by hand. */
 function toggleCsv(current: string, value: string, checked: boolean): string {
   const values = splitPatterns(current);

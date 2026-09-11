@@ -15,7 +15,7 @@ import { Field, INPUT } from '../roles/parts';
 import type { CatalogPermission } from '../roles/types';
 import type { RoleSummary } from '../roles/types';
 import {
-  EffectBadge, SelectorPanel, StatusBadge, permissionCatalogOptions, splitPatterns,
+  EffectBadge, SelectorPanel, StatusBadge, permissionCatalogOptions, selectorFrom, splitPatterns,
   type CatalogOption,
 } from './parts';
 import type { PolicyDetail, PolicySummary, ResourceServerCatalogEntry, Selector } from './types';
@@ -254,10 +254,10 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         onSubmit({
           name,
           effect,
-          resource: resourceMode === 'ids' ? { ids: splitPatterns(resourceIds) } : { pattern: resourcePattern },
-          permission: permissionMode === 'ids' ? { ids: splitPatterns(permissionIds) } : { pattern: permissionPattern },
-          role: roleMode === 'ids' ? { ids: splitPatterns(roleIds) } : { pattern: rolePattern },
-          principal: principalMode === 'ids' ? { ids: splitPatterns(principalIds) } : { pattern: principalPattern },
+          resource: selectorFrom(resourceMode, resourceIds, resourcePattern),
+          permission: selectorFrom(permissionMode, permissionIds, permissionPattern),
+          role: selectorFrom(roleMode, roleIds, rolePattern),
+          principal: selectorFrom(principalMode, principalIds, principalPattern),
           reason,
         });
       }}

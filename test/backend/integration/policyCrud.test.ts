@@ -140,4 +140,67 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
     expect((await ask('roles,,')).total).toBe(byType.total);
   });
 
+  /**
+   * A PATCH that leaves an optional selector empty, which is what the console sends most of the time.
+   *
+   * `ids` carries `minItems: 1`, so `{ ids: [] }` is refused with
+   * `/role/ids must NOT have fewer than 1 items`, while `{}` is accepted and states that the
+   * selector names nothing. The console built the obvious thing and every save of a policy with no
+   * role failed; the button stayed lit and the screen looked as though the click had missed.
+   */
+  it('accepts an empty selector as {}, and refuses { ids: [] }', async () => {
+    if (!live) return;
+    const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
+    const name = `v43-empty-selector-${randomUUID().slice(0, 8)}`;
+
+    const created = await fetch(`${GIAM}/realms/leafypay/policies`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        name,
+        effect: 'allow',
+        resource: { ids: ['sessions'] },
+        permission: { ids: ['sessions:view'] },
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    expect(created.status).toBe(201);
+    const policy = await created.json() as { policyId: string };
+
+    try {
+      // What the screen sends when Role and Principal were never touched.
+      const patched = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          effect: 'allow',
+          resource: { ids: ['sessions'] },
+          permission: { ids: ['sessions:view'] },
+          role: {},
+          principal: {},
+          conditions: [],
+          reason: 'an empty selector names nothing',
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      expect(patched.status, await patched.text()).toBe(200);
+
+      // The control: the shape that was being sent before, and the error it answered with.
+      const refused = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ resource: { ids: ['sessions'] }, role: { ids: [] } }),
+        signal: AbortSignal.timeout(20000),
+      });
+      expect(refused.status).toBe(400);
+      expect((await refused.text()).toLowerCase()).toContain('fewer than 1 items');
+    } finally {
+      await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${managerToken}` },
+        signal: AbortSignal.timeout(20000),
+      }).catch(() => {});
+    }
+  });
+
 });

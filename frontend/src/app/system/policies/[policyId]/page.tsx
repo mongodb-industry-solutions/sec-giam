@@ -19,7 +19,7 @@ import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import { SCIM_PRINCIPAL_EXTENSION, type PrincipalExtension, type ScimList } from '../../../../lib/identities';
 import {
   EffectBadge, SelectorPanel, StatusBadge,
-  describeCondition, permissionCatalogOptions, splitPatterns,
+  describeCondition, permissionCatalogOptions, selectorFrom, splitPatterns,
   type CatalogOption,
 } from '../parts';
 import {
@@ -59,6 +59,7 @@ export default function PolicyDetailPage() {
   const policy = useConsoleResource(read, 'That policy could not be read.');
   /** Reported by the body below, so this page's own link back can ask before it navigates. */
   const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
 
   // Fetched here, unconditionally, rather than only while editing: the READ-ONLY panels need these
   // catalogs too, to turn a bare id into a link (a resource's name into its resourceId, a role's
@@ -184,7 +185,10 @@ export default function PolicyDetailPage() {
       () => callApi(`/policies/${encodeURIComponent(policyId)}`, { method: 'PATCH', body: patch, subject: 'that policy' }),
       'That policy could not be changed.',
     );
-    if (done) setDirty(false);
+    if (done) {
+      setDirty(false);
+      setSaved('Saved.');
+    }
   }
 
   async function remove() {
@@ -251,6 +255,12 @@ export default function PolicyDetailPage() {
 
       {policy.error && <ErrorState message={policy.error} onRetry={() => void policy.reload()} />}
 
+      {saved && !dirty && (
+        <p className="rounded-lg border border-[#00ED64]/40 bg-[#00ED64]/5 px-3 py-2 text-xs text-[#001E2B]" role="status">
+          {saved}
+        </p>
+      )}
+
       {policy.loading && !detail
         ? <LoadingState label="Reading the policy…" />
         : !detail
@@ -281,15 +291,11 @@ export default function PolicyDetailPage() {
               </section>
 
               <PolicyBody
-                // Keyed on the version so a save, which reloads the policy, restarts the drafts from
-                // what the server now holds. Without it the fields would keep the values that were
-                // just saved and `dirty` would go on comparing against a stale original.
-                key={`${detail.policyId}:${detail.version}:${detail.lastModified ?? ''}`}
                 detail={detail}
                 busy={policy.busy === 'save'}
                 canEdit={mayManage}
                 onSave={save}
-                onDirtyChange={setDirty}
+                onDirtyChange={(next) => { setDirty(next); if (next) setSaved(null); }}
                 permissionCatalog={catalog.data?.permissions ?? []}
                 permissionOptions={permissionCatalogEntries}
                 resourceCatalog={resourceCatalogOptions}
@@ -460,15 +466,12 @@ function PolicyBody({
     const sent = condition
       ? Object.fromEntries(Object.entries(condition).filter(([, value]) => !(Array.isArray(value) && value.length === 0)))
       : undefined;
-    const permission: Selector = permissionMode === 'ids' ? { ids: splitPatterns(permissionIds) } : { pattern: permissionPattern };
-    const role: Selector = roleMode === 'ids' ? { ids: splitPatterns(roleIds) } : { pattern: rolePattern };
-    const principal: Selector = principalMode === 'ids' ? { ids: splitPatterns(principalIds) } : { pattern: principalPattern };
     return {
       effect,
-      resource: resourceMode === 'ids' ? { ids: splitPatterns(resourceIds) } : { pattern: resourcePattern },
-      permission,
-      role,
-      principal,
+      resource: selectorFrom(resourceMode, resourceIds, resourcePattern),
+      permission: selectorFrom(permissionMode, permissionIds, permissionPattern),
+      role: selectorFrom(roleMode, roleIds, rolePattern),
+      principal: selectorFrom(principalMode, principalIds, principalPattern),
       conditions: sent && Object.keys(sent).length > 0 ? [sent] : [],
       ...(reason.trim() ? { reason: reason.trim() } : { reason: '' }),
     };
@@ -494,6 +497,20 @@ function PolicyBody({
 
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
 
+  /**
+   * Re-based whenever the policy is re-read: once on load, and again the moment a save reloads it.
+   *
+   * This was a `key` on the component derived from the version and the last-modified stamp, which is
+   * a bet that an edit changes one of them. A policy's `version` is its own, not a row revision, so
+   * editing one need not move it: the body never remounted, the drafts kept what had just been
+   * saved, `dirty` went on comparing against the old document, and the save bar stayed up looking
+   * exactly as though nothing had happened. Following the record itself has no such bet in it.
+   */
+  useEffect(() => {
+    reset(detail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail]);
+
   // A refresh, a closed tab, a typed URL: `beforeunload` is the only hook for any of the three, and
   // the text is no longer shown by any supported browser, only the fact that one fires.
   useEffect(() => {
@@ -506,19 +523,21 @@ function PolicyBody({
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
-  /** Back to exactly what the server holds, in both tabs at once. */
-  function discard() {
-    const loaded = statedBy(detail);
-    setEffect(detail.effect);
+  /** Back to exactly what the server holds, in both tabs at once. Discarding, and re-basing, are this. */
+  function reset(from: PolicyDetail) {
+    const loaded = statedBy(from);
+    setEffect(from.effect);
     applySelector('resource', loaded.resource);
     applySelector('permission', loaded.permission);
     applySelector('role', loaded.role);
     applySelector('principal', loaded.principal);
-    setReason(detail.reason ?? '');
-    setCondition(detail.conditions[0]);
+    setReason(from.reason ?? '');
+    setCondition(from.conditions[0]);
     setJson(JSON.stringify(loaded, null, 2));
     setJsonError(null);
   }
+
+  const discard = () => reset(detail);
 
   /** One selector's two fields and its mode, set from a stored selector. Used by discard and by JSON. */
   function applySelector(which: 'resource' | 'permission' | 'role' | 'principal', selector: Selector | undefined) {
