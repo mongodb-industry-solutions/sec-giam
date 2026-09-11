@@ -15,7 +15,7 @@ import { Field, INPUT } from '../roles/parts';
 import type { CatalogPermission } from '../roles/types';
 import type { RoleSummary } from '../roles/types';
 import {
-  EffectBadge, SelectorFields, StatusBadge, permissionCatalogOptions, splitPatterns,
+  EffectBadge, SelectorPanel, StatusBadge, permissionCatalogOptions, splitPatterns,
   type CatalogOption,
 } from './parts';
 import type { PolicyDetail, PolicySummary, ResourceServerCatalogEntry, Selector } from './types';
@@ -282,16 +282,18 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         </Field>
       </div>
 
-      <SelectorFields
+      <SelectorPanel
         noun="Resource"
+        description="What this policy will govern. Tick each resource it attaches to."
         mode={resourceMode} onModeChange={setResourceMode}
         ids={resourceIds} onIdsChange={setResourceIds}
         pattern={resourcePattern} onPatternChange={setResourcePattern}
         catalog={resourceCatalog}
       />
 
-      <SelectorFields
+      <SelectorPanel
         noun="Permission"
+        description="What it covers, resource and action. A role below adds whatever it currently grants."
         mode={permissionMode} onModeChange={setPermissionMode}
         ids={permissionIds} onIdsChange={setPermissionIds}
         pattern={permissionPattern} onPatternChange={setPermissionPattern}
@@ -299,8 +301,9 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         required={false}
       />
 
-      <SelectorFields
+      <SelectorPanel
         noun="Role"
+        description="Every permission these roles grant, parents included, is folded into what this policy covers."
         mode={roleMode} onModeChange={setRoleMode}
         ids={roleIds} onIdsChange={setRoleIds}
         pattern={rolePattern} onPatternChange={setRolePattern}
@@ -313,8 +316,9 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         resolve to something, or the policy would govern nothing.
       </p>
 
-      <SelectorFields
+      <SelectorPanel
         noun="Principal"
+        description="Who it applies to. Ticking nobody applies it to everybody."
         mode={principalMode} onModeChange={setPrincipalMode}
         ids={principalIds} onIdsChange={setPrincipalIds}
         pattern={principalPattern} onPatternChange={setPrincipalPattern}

@@ -334,11 +334,15 @@
     "logoUri": "http://localhost:8084/app-icon.png",
     "redirectUris": [
       "http://localhost:8084/api/auth/callback",
-      "http://127.0.0.1:8084/api/auth/callback"
+      "http://127.0.0.1:8084/api/auth/callback",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
     ],
     "postLogoutRedirectUris": [
       "http://localhost:8084",
-      "http://127.0.0.1:8084"
+      "http://127.0.0.1:8084",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.staging.corp.mongodb.com",
+      "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.prod.corp.mongodb.com"
     ],
     "grantTypes": [
       "authorization_code",

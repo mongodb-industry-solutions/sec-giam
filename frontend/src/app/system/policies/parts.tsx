@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { ListToolbar } from '../../../components/ListToolbar';
+import { Pagination } from '../../../components/Pagination';
 import { Tooltip } from '../../../components/Tooltip';
 import { Field, INPUT } from '../roles/parts';
 import type { CatalogPermission } from '../roles/types';
@@ -103,181 +104,285 @@ function toggleCsv(current: string, value: string, checked: boolean): string {
 }
 
 /**
- * One thing that can be picked: the id a policy stores, and what it is called for a reader.
+ * One thing that can be chosen: the id a policy stores, and what it is called for a reader.
  *
  * The id is the value, always: a policy stores `sessions`, and no presentation changes that. The
- * label and the group are what make an exact choice possible without already knowing the catalog by
- * heart, which is what a bare list of camelCase keys demanded.
+ * rest is what makes an exact choice possible without knowing the catalog by heart.
  */
 export interface CatalogOption {
   id: string;
   label?: string;
-  /** The resource server, or whatever these belong to. Shown as a heading, and searchable. */
+  /** Who declares it (the resource server, usually). A heading on wide screens, always searchable. */
   group?: string;
+  /** One more fact worth a column: the actions a resource declares, a role's scope, a kind. */
+  detail?: string;
 }
 
-/**
- * Picking exact ids out of a catalog: searchable, grouped, and showing what is already chosen.
- *
- * The list used to be every id at once, unlabelled and unsearchable, four rows tall, with a
- * comma-separated text field above it as the real control. Adding one existing resource meant
- * scrolling dozens of keys looking for the right spelling, and nothing on screen confirmed what was
- * already named. So what is selected comes first, as chips that can be removed one at a time; the
- * search narrows on the id, the label and the server; and each row shows the id it will store
- * beside the name a person recognises.
- */
-function CatalogPicker({ noun, catalog, ids, onIdsChange }: {
-  noun: string;
-  catalog: CatalogOption[];
-  ids: string;
-  onIdsChange: (value: string) => void;
-}) {
-  const [query, setQuery] = useState('');
-  const chosen = splitPatterns(ids);
-  const selected = new Set(chosen);
-  const known = new Map(catalog.map((option) => [option.id, option] as const));
-
-  const needle = query.trim().toLowerCase();
-  const matching = needle
-    ? catalog.filter((option) => `${option.id} ${option.label ?? ''} ${option.group ?? ''}`.toLowerCase().includes(needle))
-    : catalog;
-
-  // Grouped by whoever declares each one: the same short name can be declared by more than one
-  // resource server, and the group is the only thing that tells those apart.
-  const groups = new Map<string, CatalogOption[]>();
-  for (const option of matching) {
-    groups.set(option.group ?? '', [...(groups.get(option.group ?? '') ?? []), option]);
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {chosen.length === 0
-          ? <span className="text-xs text-gray-400">{`Nothing chosen yet. Search and tick the ${noun.toLowerCase()}s this policy names.`}</span>
-          : chosen.map((id) => (
-            <span
-              key={id}
-              title={known.get(id)?.label ?? id}
-              className="inline-flex items-center gap-1 rounded-full bg-[#001E2B]/5 py-0.5 pl-2 pr-1 text-xs text-[#001E2B]"
-            >
-              <span className="font-mono">{id}</span>
-              {!known.has(id) && (
-                <span className="text-[10px] font-medium text-amber-700" title="Nothing in the catalog declares this">?</span>
-              )}
-              <button
-                type="button"
-                onClick={() => onIdsChange(toggleCsv(ids, id, false))}
-                aria-label={`Remove ${id}`}
-                className="rounded-full p-0.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
-              >
-                <X size={11} aria-hidden />
-              </button>
-            </span>
-          ))}
-        {chosen.length > 1 && (
-          <button
-            type="button"
-            onClick={() => onIdsChange('')}
-            className="ml-1 text-[11px] text-gray-400 hover:text-[#001E2B] hover:underline"
-          >
-            Clear all
-          </button>
-        )}
-      </div>
-
-      <div className="relative">
-        <Search size={13} className="pointer-events-none absolute left-2.5 top-2.5 text-gray-400" aria-hidden />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={`Search ${noun.toLowerCase()}s by name`}
-          aria-label={`Search ${noun.toLowerCase()}s`}
-          className={`${INPUT} pl-7`}
-        />
-      </div>
-
-      <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 p-2">
-        {matching.length === 0 && (
-          <p className="px-1 py-2 text-xs text-gray-400">
-            Nothing in the catalog matches that. A value it does not declare can still be typed in the field above.
-          </p>
-        )}
-        {[...groups.entries()].map(([group, options]) => (
-          <div key={group} className="mb-1.5 last:mb-0">
-            {group && (
-              <p className="px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">{group}</p>
-            )}
-            {options.map((option) => (
-              <label
-                key={`${group}:${option.id}`}
-                className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(option.id)}
-                  onChange={(event) => onIdsChange(toggleCsv(ids, option.id, event.target.checked))}
-                  className="rounded border-gray-300"
-                />
-                <span className="font-mono">{option.id}</span>
-                {option.label && <span className="truncate text-gray-500">{option.label}</span>}
-              </label>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+type Membership = 'all' | 'chosen' | 'available';
 
 /**
- * One selector: named ids or a regular expression, never edited as both at once even though the
- * contract now tolerates it (ids would just win). Shared by every section that is a {@link Selector}
- * — resource, permission, principal, role — so the four cannot drift into offering the choice
- * differently.
+ * One selector, as the same panel every time: a list with search, a filter, paging, and a check
+ * column that IS the choosing.
  *
- * `catalog`, when given, offers every value this realm already knows about (a resource type, a
- * declared permission, a role name) as checkboxes alongside the free-text field: the common case is
- * picking one that already exists, and typing remains for one not registered yet.
+ * Resource, permission, role and principal are the same question asked about four catalogs, so they
+ * are one component rather than four arrangements of the same fields. What this replaced asked the
+ * question two ways at once: a comma-separated text box as the real control, with an unlabelled,
+ * unsearchable list of every id underneath it. Choosing one of forty meant knowing its spelling
+ * already.
+ *
+ * Four columns at most, and fewer as the screen narrows: the check and the id are the row's whole
+ * purpose so they never leave, the name follows from `sm`, who declares it from `lg`, and the last
+ * fact from `xl`. A pattern is still a pattern: it names no fixed set, so there is nothing to tick
+ * and the panel says so instead of pretending otherwise.
  */
-export function SelectorFields({
-  noun, mode, onModeChange, ids, onIdsChange, pattern, onPatternChange, catalog, required = true,
+export function SelectorPanel({
+  noun, description, mode, onModeChange, ids, onIdsChange, pattern, onPatternChange,
+  catalog, columns, required = true, loading = false, emptyCatalog, disabled = false,
 }: {
-  /** What this selector names, for the field labels: "Resource", "Permission", "Principal", "Role". */
+  /** "Resource", "Permission", "Role", "Principal". Used for every label in here. */
   noun: string;
+  description: string;
   mode: 'ids' | 'pattern';
   onModeChange: (mode: 'ids' | 'pattern') => void;
+  /** Comma separated, which is how every one of these fields has always been stored. */
   ids: string;
   onIdsChange: (value: string) => void;
   pattern: string;
   onPatternChange: (value: string) => void;
   catalog?: CatalogOption[];
-  /** False for an optional selector (principal, role): leaving both fields empty is a valid choice. */
+  /** Headings for the two optional columns, so each panel names its own facts. */
+  columns?: { group?: string; detail?: string };
+  /** False for an optional selector (role, principal): choosing nothing is a valid answer. */
   required?: boolean;
+  loading?: boolean;
+  /** What it means for this catalog to be empty, which is never just "no rows". */
+  emptyCatalog?: string;
+  /** A reader without the permission to change this: the same panel, nothing to tick. */
+  disabled?: boolean;
 }) {
+  const [query, setQuery] = useState('');
+  const [membership, setMembership] = useState<Membership>('all');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
+  const chosen = splitPatterns(ids);
+  const selected = new Set(chosen);
+  const options = catalog ?? [];
+  const known = new Set(options.map((option) => option.id));
+
+  /**
+   * Anything chosen that the catalog does not declare is still a row.
+   *
+   * A policy can name something withdrawn, or something registered after this list was read.
+   * Dropping it from the table would hide part of what the policy says, and unticking it would then
+   * be impossible; it is shown, marked, and removable like everything else.
+   */
+  const rows: Array<CatalogOption & { unregistered?: boolean }> = [
+    ...chosen.filter((id) => !known.has(id)).map((id) => ({ id, unregistered: true })),
+    ...options,
+  ];
+
+  const needle = query.trim().toLowerCase();
+  const matching = rows.filter((row) => {
+    if (membership === 'chosen' && !selected.has(row.id)) return false;
+    if (membership === 'available' && selected.has(row.id)) return false;
+    if (!needle) return true;
+    return `${row.id} ${row.label ?? ''} ${row.group ?? ''} ${row.detail ?? ''}`.toLowerCase().includes(needle);
+  });
+
+  const total = matching.length;
+  const shown = matching.slice((page - 1) * limit, page * limit);
+
+  function setAll(values: string[]): void {
+    onIdsChange([...new Set(values)].join(', '));
+  }
+
+  function toggle(id: string, checked: boolean): void {
+    onIdsChange(toggleCsv(ids, id, checked));
+  }
+
+  const allShownChosen = shown.length > 0 && shown.every((row) => selected.has(row.id));
+
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={`${noun}, by`} hint="Exact ids are a fast, indexed lookup. A pattern is a regular expression, compiled with RE2 so it cannot hang a decision. If both are given, ids wins and the pattern decides nothing.">
-          <select value={mode} onChange={(e) => onModeChange(e.target.value as 'ids' | 'pattern')} className={INPUT}>
-            <option value="ids">Exact id(s)</option>
-            <option value="pattern">Pattern (regular expression)</option>
+    <section className="space-y-2.5 rounded-xl border border-gray-200 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-[#001E2B]">
+            {noun}
+            <span className="rounded-full bg-[#001E2B]/5 px-1.5 py-0.5 text-[10px] font-medium text-[#001E2B]">
+              {mode === 'pattern' ? 'by pattern' : `${chosen.length} chosen`}
+            </span>
+          </h3>
+          <p className="mt-0.5 text-xs text-gray-500">{description}</p>
+        </div>
+        <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
+          <span className="sr-only sm:not-sr-only">Choose by</span>
+          <select
+            value={mode}
+            onChange={(event) => onModeChange(event.target.value as 'ids' | 'pattern')}
+            disabled={disabled}
+            aria-label={`How this policy names ${noun.toLowerCase()}s`}
+            className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
+          >
+            <option value="ids">Exact list</option>
+            <option value="pattern">Pattern</option>
           </select>
-        </Field>
-        {mode === 'ids' ? (
-          <Field label={`${noun} id(s)`} hint="What gets stored. Pick from the catalog below, or type a value it does not declare.">
-            <input required={required} value={ids} onChange={(e) => onIdsChange(e.target.value)} className={`${INPUT} font-mono text-xs`} />
-          </Field>
-        ) : (
-          <Field label="Pattern" hint={`A regular expression (RE2 syntax), matched against the ${noun.toLowerCase()}.`}>
-            <input required={required} value={pattern} onChange={(e) => onPatternChange(e.target.value)} className={INPUT} placeholder="^reports.*" />
-          </Field>
-        )}
+        </label>
       </div>
 
-      {mode === 'ids' && catalog && catalog.length > 0 && (
-        <CatalogPicker noun={noun} catalog={catalog} ids={ids} onIdsChange={onIdsChange} />
+      {mode === 'pattern' ? (
+        <div className="space-y-1.5">
+          <input
+            required={required}
+            value={pattern}
+            onChange={(event) => onPatternChange(event.target.value)}
+            readOnly={disabled}
+            placeholder="^report.*"
+            aria-label={`${noun} pattern`}
+            className={`${INPUT} font-mono text-xs`}
+          />
+          <p className="text-[11px] text-gray-400">
+            A regular expression (RE2 syntax), matched live at decision time. It names no fixed set,
+            so there is nothing to tick here; what it currently reaches is resolved by the authority.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          <ListToolbar
+            search={{
+              value: query,
+              onChange: (next) => { setQuery(next); setPage(1); },
+              placeholder: `Search ${noun.toLowerCase()}s`,
+              label: `Search ${noun.toLowerCase()}s`,
+            }}
+            filter={{
+              label: `Show ${noun.toLowerCase()}s`,
+              value: membership,
+              onChange: (next: Membership) => { setMembership(next); setPage(1); },
+              options: [
+                { key: 'all' as Membership, label: 'All' },
+                { key: 'chosen' as Membership, label: `Chosen (${chosen.length})` },
+                { key: 'available' as Membership, label: 'Not chosen' },
+              ],
+            }}
+            extra={(
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAll(allShownChosen
+                    ? chosen.filter((id) => !shown.some((row) => row.id === id))
+                    : [...chosen, ...shown.map((row) => row.id)])}
+                  disabled={disabled || shown.length === 0}
+                  className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-[#001E2B] hover:text-[#001E2B] disabled:opacity-40"
+                >
+                  {allShownChosen ? 'Unpick these' : 'Pick these'}
+                </button>
+                {chosen.length > 0 && !disabled && (
+                  <button
+                    type="button"
+                    onClick={() => onIdsChange('')}
+                    className="text-xs text-gray-400 transition-colors hover:text-[#001E2B] hover:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+            )}
+          />
+
+          <div className="overflow-hidden rounded-lg border border-gray-200">
+            <table className="w-full table-fixed text-left text-sm">
+              <thead className="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400">
+                <tr>
+                  <th scope="col" className="w-9 px-2 py-2">
+                    <span className="sr-only">Chosen</span>
+                  </th>
+                  <th scope="col" className="px-2 py-2 font-medium">{noun}</th>
+                  <th scope="col" className="hidden px-2 py-2 font-medium sm:table-cell sm:w-1/3">Name</th>
+                  <th scope="col" className="hidden px-2 py-2 font-medium lg:table-cell lg:w-1/4">{columns?.group ?? 'Declared by'}</th>
+                  {columns?.detail && (
+                    <th scope="col" className="hidden px-2 py-2 font-medium xl:table-cell xl:w-1/5">{columns.detail}</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {shown.map((row) => (
+                  <tr key={row.id} className={`align-top ${selected.has(row.id) ? 'bg-[#00ED64]/5' : 'hover:bg-gray-50'}`}>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(row.id)}
+                        onChange={(event) => toggle(row.id, event.target.checked)}
+                        disabled={disabled}
+                        aria-label={`${selected.has(row.id) ? 'Remove' : 'Add'} ${row.id}`}
+                        className="rounded border-gray-300"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <span className="block truncate font-mono text-xs text-[#001E2B]" title={row.id}>{row.id}</span>
+                      {/* The name follows the id here while its own column is gone. */}
+                      {row.label && <span className="mt-0.5 block truncate text-[11px] text-gray-500 sm:hidden">{row.label}</span>}
+                      {row.unregistered && (
+                        <span className="mt-0.5 block text-[10px] font-medium text-amber-700">not in the catalog</span>
+                      )}
+                    </td>
+                    <td className="hidden px-2 py-1.5 sm:table-cell">
+                      <span className="block truncate text-xs text-gray-600" title={row.label}>{row.label ?? '—'}</span>
+                    </td>
+                    <td className="hidden px-2 py-1.5 lg:table-cell">
+                      <span className="block truncate text-xs text-gray-500" title={row.group}>{row.group ?? '—'}</span>
+                    </td>
+                    {columns?.detail && (
+                      <td className="hidden px-2 py-1.5 xl:table-cell">
+                        <span className="block truncate font-mono text-[11px] text-gray-500" title={row.detail}>{row.detail ?? '—'}</span>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {total === 0 && (
+              <p className="px-3 py-4 text-xs text-gray-400">
+                {loading
+                  ? `Reading the ${noun.toLowerCase()}s…`
+                  : rows.length === 0
+                    ? emptyCatalog ?? `No ${noun.toLowerCase()} is registered in this realm yet.`
+                    : 'Nothing matches that search and filter.'}
+              </p>
+            )}
+          </div>
+
+          {total > limit && (
+            <Pagination
+              page={page}
+              totalPages={Math.max(1, Math.ceil(total / limit))}
+              total={total}
+              limit={limit}
+              noun={`${noun.toLowerCase()}s`}
+              onPageChange={setPage}
+              onLimitChange={(next) => { setLimit(next); setPage(1); }}
+            />
+          )}
+
+          <details className="text-[11px] text-gray-400">
+            <summary className="cursor-pointer hover:text-[#001E2B]">Edit the stored list directly</summary>
+            <input
+              value={ids}
+              onChange={(event) => onIdsChange(event.target.value)}
+              readOnly={disabled}
+              aria-label={`${noun} ids, comma separated`}
+              placeholder="comma separated"
+              className={`${INPUT} mt-1.5 font-mono text-xs`}
+            />
+            <p className="mt-1">
+              What actually gets stored. For a value this realm has not registered yet, which the
+              table above cannot offer.
+            </p>
+          </details>
+        </div>
       )}
-    </div>
+    </section>
   );
 }
 
