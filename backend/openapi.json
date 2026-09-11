@@ -996,7 +996,6 @@
                   "additionalProperties": false,
                   "required": [
                     "clientName",
-                    "authorityName",
                     "scopes"
                   ],
                   "properties": {
@@ -1007,9 +1006,6 @@
                       "type": "string"
                     },
                     "logoUri": {
-                      "type": "string"
-                    },
-                    "authorityName": {
                       "type": "string"
                     },
                     "scopes": {

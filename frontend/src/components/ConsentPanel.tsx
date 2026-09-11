@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AppWindow, Check, X } from 'lucide-react';
 import type { ConsentPrompt } from '../lib/authorizationRequest';
 import { AuthBackdrop } from './AuthBackdrop';
+import { BRAND } from '../config/brand';
 
 /**
  * Who is asking, and who is being asked to vouch: the application, then this authority, icon over
@@ -103,13 +104,13 @@ export function ConsentPanel({
           <div className="flex items-center justify-center gap-3">
             <PartyBadge logoUri={prompt.logoUri} name={prompt.clientName} />
             <AuthorizationLink />
-            <PartyBadge logoUri="/app-icon.png" name={prompt.authorityName} />
+            <PartyBadge logoUri="/app-icon.png" name={BRAND.full} />
           </div>
           <h1 className="mt-4 text-xl font-semibold text-mongodb-dark">
             {prompt.clientName} wants to sign you in
           </h1>
           <p className="mt-2 text-sm text-gray-600">
-            It is asking {prompt.authorityName} to vouch for your identity. Nothing is shared until you agree.
+            It is asking {BRAND.full} to vouch for your identity. Nothing is shared until you agree.
           </p>
         </div>
 

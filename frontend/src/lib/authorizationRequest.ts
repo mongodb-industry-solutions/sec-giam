@@ -55,13 +55,18 @@ export interface ConsentScope {
   alreadyGranted?: boolean;
 }
 
-/** What the person is being asked to agree to. Assembled by the authority from the stored request. */
+/**
+ * What the person is being asked to agree to. Assembled by the authority from the stored request.
+ *
+ * No authority name here: the screen shows GIAM's own brand for that half, the same fixed identity
+ * on every realm, not a per-realm value carried over the wire. A realm like `leafypay` is a shared
+ * identity domain for a group of applications, one of which happens to share its display name; that
+ * coincidence is not what a person is trusting when they agree to sign in.
+ */
 export interface ConsentPrompt {
   clientName: string;
   clientUri?: string;
   logoUri?: string;
-  /** This authority's own display name, so the screen can show who is vouching, not just who is asking. */
-  authorityName: string;
   scopes: ConsentScope[];
 }
 

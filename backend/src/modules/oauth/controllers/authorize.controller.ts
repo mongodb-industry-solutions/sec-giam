@@ -486,13 +486,11 @@ export async function authorizeController(fastify: FastifyInstance) {
             description: 'The application, and what it is asking for.',
             type: 'object',
             additionalProperties: false,
-            required: ['clientName', 'authorityName', 'scopes'],
+            required: ['clientName', 'scopes'],
             properties: {
               clientName: { type: 'string' },
               clientUri: { type: 'string' },
               logoUri: { type: 'string' },
-              /** This authority's own display name, so the screen can show who is being trusted to vouch. */
-              authorityName: { type: 'string' },
               scopes: {
                 type: 'array',
                 description:
@@ -568,7 +566,6 @@ export async function authorizeController(fastify: FastifyInstance) {
         clientName: client?.clientName ?? pending.clientId,
         ...(client?.clientUri ? { clientUri: client.clientUri } : {}),
         ...(client?.logoUri ? { logoUri: client.logoUri } : {}),
-        authorityName: realm.branding?.displayName ?? realm.displayName,
         scopes: asked.map((name) => ({
           name,
           ...(catalogue.get(name)?.description ? { description: catalogue.get(name)!.description } : {}),

@@ -447,6 +447,7 @@
     "clientId": "giam-console",
     "clientName": "IdP administration console",
     "clientType": "public",
+    "logoUri": "http://localhost:8086/app-icon.png",
     "redirectUris": [
       "http://localhost:8086/auth/callback",
       "http://127.0.0.1:8086/auth/callback",
