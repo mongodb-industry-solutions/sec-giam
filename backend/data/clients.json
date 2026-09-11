@@ -151,47 +151,6 @@
   },
   {
     "realm": "leafypay",
-    "clientId": "leafy-wallet-kanopy",
-    "clientName": "Leafy Wallet",
-    "clientType": "confidential",
-    "redirectUris": [
-      "https://leafy-wallet-frontend.industrysolutions.staging.corp.mongodb.com/api/auth/callback",
-      "https://leafy-wallet-frontend.industrysolutions.prod.corp.mongodb.com/api/auth/callback"
-    ],
-    "grantTypes": [
-      "authorization_code",
-      "refresh_token",
-      "urn:openid:params:grant-type:ciba"
-    ],
-    "scope": "openid profile email read:beneficiaries write:beneficiaries write:transfers read:accounts read:transactions read:rtp write:rtp",
-    "requirePkce": true,
-    "tokenEndpointAuthMethod": "client_secret_basic",
-    "applicationType": "web",
-    "status": "active",
-    "backchannel": {
-      "deliveryMode": "poll"
-    },
-    "owners": [
-      {
-        "kind": "merchant",
-        "ref": "m0000002-0000-4000-8000-000000000002",
-        "displayName": "Leafy Wallet"
-      },
-      {
-        "kind": "principal",
-        "ref": "a1000102-0000-4000-8000-000000000102",
-        "displayName": "Nina Berg"
-      }
-    ],
-    "demoRoster": [
-      "customer"
-    ],
-    "audience": [
-      "leafypay"
-    ]
-  },
-  {
-    "realm": "leafypay",
     "clientId": "leafypay-backend",
     "clientName": "LeafyPay backend service",
     "clientType": "confidential",

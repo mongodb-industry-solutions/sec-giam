@@ -22,6 +22,11 @@ dotenv.config({
 const URI = process.env.GIAM_DB_URI ?? process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
 const DB_NAME = process.env.GIAM_DB_NAME ?? 'giamdb';
 
+/** The resolved connection, for a suite that opens its own client rather than borrowing this one. */
+export function connectionForTests(): { uri: string; dbName: string } {
+  return { uri: URI, dbName: DB_NAME };
+}
+
 /**
  * Direct database access, for the ONE thing a test still needs it for: cleaning up what it created
  * when there is no API to undo it with. Deleting a whole realm, or a principal outright, is not a
