@@ -25,7 +25,8 @@ import {
 } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
-  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail, type Selector,
+  type ConditionKey, type DecisionResult, type PolicyCondition, type PolicyDetail,
+  type ResourceCatalogEntry, type ResourceServerCatalogEntry, type Selector,
 } from '../types';
 
 /**
@@ -68,7 +69,7 @@ export default function PolicyDetailPage() {
   );
   const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
   const readResources = useCallback(
-    () => callApi<{ resourceServers: Array<{ resources: Array<{ resourceId: string; name: string }> }> }>(
+    () => callApi<{ resourceServers: ResourceServerCatalogEntry[] }>(
       '/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' },
     ),
     [],
@@ -84,11 +85,28 @@ export default function PolicyDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const resourceIdByName = new Map(
-    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((r) => [r.name, r.resourceId] as const)),
+  /**
+   * The catalog entry behind each resource NAME, not just its id.
+   *
+   * A policy stores a resource by name (`roles`), and a name on its own reads as a stray word: the
+   * screens below have to be able to say which resource server declares it, what it is called for a
+   * reader, and what may be done to it. All of that is already in the catalog this page fetches, so
+   * resolving it here costs nothing and keeps both panels from inventing their own idea of it.
+   */
+  const resourceByName = new Map(
+    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((entry) => [
+      entry.name,
+      {
+        resourceId: entry.resourceId,
+        displayName: entry.displayName,
+        description: entry.description,
+        actions: entry.actions ?? [],
+        serverName: server.displayName ?? server.name,
+      },
+    ] as const)),
   );
   const roleIdByName = new Map((allRoles.data?.roles ?? []).map((role) => [role.name, role.roleId] as const));
-  const resourceCatalogNames = [...resourceIdByName.keys()].sort();
+  const resourceCatalogNames = [...resourceByName.keys()].sort();
   const roleCatalogNames = [...roleIdByName.keys()].sort();
 
   async function save(patch: Record<string, unknown>) {
@@ -197,12 +215,18 @@ export default function PolicyDetailPage() {
                 : (
                   <ReadOnlyBody
                     detail={detail}
-                    resourceIdByName={resourceIdByName}
+                    resourceByName={resourceByName}
                     roleIdByName={roleIdByName}
                   />
                 )}
 
-              {!editing && <GovernedResources policyId={detail.policyId} resourceSelector={detail.resource} />}
+              {!editing && (
+                <GovernedResources
+                  policyId={detail.policyId}
+                  resourceSelector={detail.resource}
+                  resourceByName={resourceByName}
+                />
+              )}
 
               <Simulator policyId={detail.policyId} subjectId={claims?.sub ?? ''} />
             </>
@@ -243,7 +267,14 @@ function ModeTabs({ mode, onChange }: { mode: 'ui' | 'json'; onChange: (mode: 'u
 function IdList({ title, description, rows, emptyTitle, emptyDescription }: {
   title: string;
   description: string;
-  rows: Array<{ key: string; href?: string }>;
+  rows: Array<{
+    key: string;
+    href?: string;
+    /** Plain words for what the key means, when the key alone does not read as anything. */
+    caption?: string;
+    /** Nothing in the catalog declares it: stated rather than left looking like an ordinary row. */
+    unregistered?: boolean;
+  }>;
   emptyTitle: string;
   emptyDescription: string;
 }) {
@@ -251,7 +282,11 @@ function IdList({ title, description, rows, emptyTitle, emptyDescription }: {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
 
-  const filtered = query ? rows.filter((row) => row.key.toLowerCase().includes(query.toLowerCase())) : rows;
+  const matches = (row: { key: string; caption?: string }) => {
+    const needle = query.toLowerCase();
+    return row.key.toLowerCase().includes(needle) || (row.caption ?? '').toLowerCase().includes(needle);
+  };
+  const filtered = query ? rows.filter(matches) : rows;
   const total = filtered.length;
   const pageRows = filtered.slice((page - 1) * limit, page * limit);
 
@@ -275,8 +310,13 @@ function IdList({ title, description, rows, emptyTitle, emptyDescription }: {
               key={row.key}
               title={row.href
                 ? <Link href={row.href} className="hover:underline">{row.key}</Link>
-                : <span className="font-mono">{row.key}</span>}
-            />
+                : <span className="font-mono text-sm">{row.key}</span>}
+              badges={row.unregistered
+                ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">not in the catalog</span>
+                : undefined}
+            >
+              {row.caption && <p className="mt-0.5 text-xs text-gray-500">{row.caption}</p>}
+            </RecordCard>
           ))}
         </ul>
       )}
@@ -320,11 +360,30 @@ function PrincipalsPanel({ selector }: { selector?: Selector }) {
   );
 }
 
-function PermissionsPanel({ detail, resourceIdByName }: { detail: PolicyDetail; resourceIdByName: Map<string, string> }) {
+/**
+ * The permissions, as a list of permissions and nothing else.
+ *
+ * Each row used to LINK to the resource page, which read as a promise this screen could not keep:
+ * clicking `roles:view` navigated to a resource and its policies, so the answer to "what is this
+ * permission" was a page about something else. There is no permission page to link to, because a
+ * permission is not a record: it is a resource and an action, and both are already named here. So
+ * the row states the pair and glosses it in words, and the resource itself is reachable from the
+ * panel below, where the link means what it says.
+ */
+function PermissionsPanel({ detail, resourceByName }: {
+  detail: PolicyDetail;
+  resourceByName: Map<string, ResourceCatalogEntry>;
+}) {
   const rows = detail.resolvedPermissions.map((permission) => {
-    const [resourceName] = permission.split(':');
-    const resourceId = resourceIdByName.get(resourceName);
-    return { key: permission, href: resourceId ? `/system/resources/${encodeURIComponent(resourceId)}` : undefined };
+    const [resourceName, action] = permission.split(':');
+    const resource = resourceByName.get(resourceName);
+    const readable = resource?.displayName ?? resourceName;
+    return {
+      key: permission,
+      // "view on Roles", so a reader who does not already know the catalog can tell what it covers.
+      caption: action ? `${action} on ${readable}` : readable,
+      unregistered: !resource,
+    };
   });
   const foldedFromRole = Boolean(detail.role?.ids?.length || detail.role?.pattern);
   const livePattern = detail.permission.pattern && !detail.permission.ids?.length;
@@ -332,7 +391,7 @@ function PermissionsPanel({ detail, resourceIdByName }: { detail: PolicyDetail; 
     <IdList
       title="Permissions"
       description={[
-        'What this policy actually covers right now, resource expanded into action.',
+        'What this policy actually covers right now, one resource and action per row.',
         foldedFromRole ? 'Includes every permission the role(s) below currently grant.' : null,
         livePattern ? `Also matches ${detail.permission.pattern} live, at decision time; a pattern names no fixed set, so nothing for it is listed here.` : null,
       ].filter(Boolean).join(' ')}
@@ -390,9 +449,9 @@ function ConditionsPanel({ conditions }: { conditions: PolicyCondition[] }) {
 }
 
 /** The policy read-only, panel by panel, with the same JSON⇄UI choice editing offers. */
-function ReadOnlyBody({ detail, resourceIdByName, roleIdByName }: {
+function ReadOnlyBody({ detail, resourceByName, roleIdByName }: {
   detail: PolicyDetail;
-  resourceIdByName: Map<string, string>;
+  resourceByName: Map<string, ResourceCatalogEntry>;
   roleIdByName: Map<string, string>;
 }) {
   const [mode, setMode] = useState<'ui' | 'json'>('ui');
@@ -413,7 +472,7 @@ function ReadOnlyBody({ detail, resourceIdByName, roleIdByName }: {
             <span className="font-mono text-xs text-gray-500">{describeSelector(detail.resource)}</span>
           </div>
           <PrincipalsPanel selector={detail.principal} />
-          <PermissionsPanel detail={detail} resourceIdByName={resourceIdByName} />
+          <PermissionsPanel detail={detail} resourceByName={resourceByName} />
           <RolesPanel selector={detail.role} />
           <ConditionsPanel conditions={detail.conditions} />
           {detail.obligations?.length ? (
@@ -847,7 +906,11 @@ function ConditionEditor({ condition, onChange, roles, permissions }: {
  * whole, the same call `/permissions` and `/resource-servers` already make), search and paging
  * happen over what was already read.
  */
-function GovernedResources({ policyId, resourceSelector }: { policyId: string; resourceSelector: Selector }) {
+function GovernedResources({ policyId, resourceSelector, resourceByName }: {
+  policyId: string;
+  resourceSelector: Selector;
+  resourceByName: Map<string, ResourceCatalogEntry>;
+}) {
   const read = useCallback(
     () => callApi<{ resources: Array<{ resourceId: string; name: string; status: string }>; total: number }>(
       `/policies/${encodeURIComponent(policyId)}/resources`,
@@ -872,7 +935,7 @@ function GovernedResources({ policyId, resourceSelector }: { policyId: string; r
         <p className="mt-0.5 text-sm text-gray-500">
           {resourceSelector.pattern && !resourceSelector.ids?.length
             ? `Every resource in this realm's catalog the pattern (${resourceSelector.pattern}) currently matches. A pattern names no resource directly, so this is the only place to see which ones it actually reaches.`
-            : 'Named exactly: this policy attaches to each of these directly, and to nothing a pattern alone might otherwise have matched.'}
+            : 'Named exactly: this policy attaches to each of these directly, and to nothing a pattern alone might otherwise have matched. Each one opens its own page, where the other policies governing it are listed.'}
         </p>
       </div>
 
@@ -895,17 +958,30 @@ function GovernedResources({ policyId, resourceSelector }: { policyId: string; r
 
       {!resources.loading && rows.length > 0 && (
         <ul className="space-y-2">
-          {rows.map((resource) => (
-            <RecordCard
-              key={resource.resourceId}
-              title={(
-                <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
-                  {resource.name}
-                </Link>
-              )}
-              badges={<CatalogStatusBadge status={resource.status} />}
-            />
-          ))}
+          {rows.map((resource) => {
+            const entry = resourceByName.get(resource.name);
+            return (
+              <RecordCard
+                key={resource.resourceId}
+                title={(
+                  <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
+                    {entry?.displayName ?? resource.name}
+                  </Link>
+                )}
+                // The name a policy actually stores, and the resource server that declares it. Both
+                // are needed to place the row: `roles` is a resource type of one server, not a word.
+                subtitle={entry ? `${entry.serverName} / ${resource.name}` : resource.name}
+                badges={<CatalogStatusBadge status={resource.status} />}
+              >
+                {entry?.description && <p className="mt-1 text-xs text-gray-500">{entry.description}</p>}
+                {entry && entry.actions.length > 0 && (
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    Actions declared on it: <span className="font-mono">{entry.actions.join(', ')}</span>
+                  </p>
+                )}
+              </RecordCard>
+            );
+          })}
         </ul>
       )}
 

@@ -127,3 +127,33 @@ export interface DecisionResult {
 }
 
 export const ASSURANCE_LEVELS = ['aal1', 'aal2', 'aal3'] as const;
+
+/**
+ * One resource server as the catalog reports it, with the resource types it declares.
+ *
+ * Carried here rather than re-declared per screen: a policy names a resource by NAME, and turning
+ * that name into something a reader recognises (its display name, which server declares it, what
+ * may be done to it) is the same job on every screen that shows a policy's targets.
+ */
+export interface ResourceServerCatalogEntry {
+  resourceId: string;
+  name: string;
+  displayName?: string;
+  resources: Array<{
+    resourceId: string;
+    name: string;
+    displayName?: string;
+    description?: string;
+    actions?: string[];
+  }>;
+}
+
+/** A resource type, resolved from its name for display. */
+export interface ResourceCatalogEntry {
+  resourceId: string;
+  displayName?: string;
+  description?: string;
+  actions: string[];
+  /** The resource server that declares it, so `roles` reads as "Authority / roles". */
+  serverName: string;
+}

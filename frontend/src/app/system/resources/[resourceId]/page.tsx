@@ -237,9 +237,19 @@ export default function ResourceDetailPage() {
 
       <SectionHeader
         icon={Boxes}
-        title={resource?.displayName ?? resource?.name ?? 'Resource'}
-        description={resource?.description
-          ?? 'What this resource declares, and which policies actually govern it, found the same way the decision engine finds them.'}
+        // The server and the stored name, both in the title: a resource type called "Roles" is
+        // otherwise indistinguishable, on arrival, from the console's own roles section, and the
+        // name a policy stores is `roles` rather than the display name shown here.
+        title={resource && resource.kind === 'object'
+          ? `${resource.serverName} / ${resource.displayName ?? resource.name}`
+          : resource?.displayName ?? resource?.name ?? 'Resource'}
+        description={[
+          resource?.kind === 'object'
+            ? `A resource type this resource server declares, stored in a policy as "${resource.name}".`
+            : null,
+          resource?.description
+            ?? 'What this resource declares, and which policies actually govern it, found the same way the decision engine finds them.',
+        ].filter(Boolean).join(' ')}
       />
 
       {catalog.error && <ErrorState message={catalog.error} onRetry={() => void catalog.reload()} />}
