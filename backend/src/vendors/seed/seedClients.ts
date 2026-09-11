@@ -43,6 +43,8 @@ interface ClientFixture {
   scope: string;
   requirePkce: boolean;
   tokenEndpointAuthMethod: OAuthClient['tokenEndpointAuthMethod'];
+  /** Shown on the sign-in and consent screens, so a person sees who is asking before they agree. */
+  logoUri?: string;
   applicationType?: OAuthClient['applicationType'];
   status: OAuthClient['status'];
   backchannel?: OAuthClient['backchannel'];
@@ -129,6 +131,7 @@ export async function seedClients(db: Db): Promise<void> {
           scope: fixture.scope,
           requirePkce: fixture.requirePkce,
           tokenEndpointAuthMethod: fixture.tokenEndpointAuthMethod,
+          ...(fixture.logoUri ? { logoUri: fixture.logoUri } : {}),
           ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
           ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
           ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),

@@ -890,6 +890,25 @@
             "schema": {
               "type": "string"
             },
+            "example": "luis.fernandez@back.es",
+            "in": "query",
+            "name": "login_hint",
+            "required": false,
+            "description": "OIDC 3.1.2.1. Who the client believes is signing in, used to prefill the login on the sign-in page of this authority. A hint only: the credential still has to be given, and nothing about the request changes if it is wrong."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "prefill_password",
+            "required": false,
+            "description": "NON-STANDARD, and optional. Prefills the password field on the sign-in page so a demo can be walked in one click. Honoured because a simple integration is the point of it; a deployment with a real security model simply does not send it, since a credential in a query string reaches access logs, browser history and the Referer header. It is passed to the sign-in page and nowhere else: never stored on the request, never written to the trail."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "in": "query",
             "name": "request_id",
             "required": false,
@@ -977,6 +996,7 @@
                   "additionalProperties": false,
                   "required": [
                     "clientName",
+                    "authorityName",
                     "scopes"
                   ],
                   "properties": {
@@ -987,6 +1007,9 @@
                       "type": "string"
                     },
                     "logoUri": {
+                      "type": "string"
+                    },
+                    "authorityName": {
                       "type": "string"
                     },
                     "scopes": {

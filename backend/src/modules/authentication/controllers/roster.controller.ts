@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { RealmService } from '../../realm/services/realm.service';
 import { DirectoryService } from '../../directory/services/directory.service';
 import { activeHoldings, toScimEmails } from '../../directory/models/principal.model';
+import { scopeCatalogue } from '../../oauth/services/scopeCatalogue';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -65,6 +66,31 @@ export async function rosterController(fastify: FastifyInstance) {
             notice: { type: 'string' },
             registrationEnabled: { type: 'boolean' },
             branding: { type: 'object', additionalProperties: true },
+            askingApp: {
+              type: 'object',
+              additionalProperties: false,
+              description:
+                'The application the pending authorization names, so the sign-in screen can show '
+                + 'who is asking before a credential is typed, the way a person expects to be told '
+                + 'whose sign-in page they landed on. Present only for a hosted screen (`request_id`): '
+                + 'a bare `client_id` names an application but not what it asked for THIS time, and '
+                + 'showing scopes for a request that does not exist would be showing nothing real.',
+              properties: {
+                clientName: { type: 'string' },
+                logoUri: { type: 'string' },
+                scopes: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      name: { type: 'string' },
+                      description: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
             providers: {
               type: 'array',
               items: {
@@ -133,8 +159,8 @@ export async function rosterController(fastify: FastifyInstance) {
       requestId
         ? fastify.db.collection(TICKET_COLLECTION).findOne(
           { realmId: realm.realmId, requestId },
-          { projection: { _id: 0, clientId: 1 } },
-        ) as Promise<{ clientId?: string } | null>
+          { projection: { _id: 0, clientId: 1, scope: 1 } },
+        ) as Promise<{ clientId?: string; scope?: string } | null>
         : Promise.resolve(null),
       fastify.db.collection(ROLE_COLLECTION)
         .find({ realmId: realm.realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
@@ -178,6 +204,29 @@ export async function rosterController(fastify: FastifyInstance) {
     const client = askingClient ? await findOAuthClient(fastify.db, realm.realmId, askingClient) : null;
     const offered = client?.demoRoster;
 
+    /**
+     * Who is asking, and for what, before a credential is typed.
+     *
+     * Only for the hosted screen (`parked`, from a `request_id`): a bare `client_id` names an
+     * application in general but not what THIS request asked for, and this platform's own console
+     * used to resolve that ambiguity by rendering the sign-in page with no scopes to show at all,
+     * which is one way of getting it wrong and not the other. Answered from the same catalogue the
+     * consent screen reads, so the description of a scope cannot differ by which of the two asked.
+     */
+    const askingApp = parked && client
+      ? {
+        clientName: client.clientName,
+        ...(client.logoUri ? { logoUri: client.logoUri } : {}),
+        scopes: await (async () => {
+          const catalogue = await scopeCatalogue(fastify.db, realm.realmId);
+          return (parked.scope ?? '').split(' ').filter(Boolean).map((name) => ({
+            name,
+            ...(catalogue.get(name)?.description ? { description: catalogue.get(name)!.description } : {}),
+          }));
+        })()
+      }
+      : undefined;
+
     // The role this screen should show the persona under: the one it offers, when it offers any of them.
     const roleFor = (subjectId: string): string | undefined => {
       const held = rolesBySubject.get(subjectId) ?? [];
@@ -193,6 +242,7 @@ export async function rosterController(fastify: FastifyInstance) {
       // reason about which path answers it. Resolved from the internal path (ADR-002).
       registrationEnabled: joining.selfServiceEnabled,
       branding: realm.branding,
+      ...(askingApp ? { askingApp } : {}),
       providers: providers.map((provider) => ({
         name: provider.name,
         displayName: provider.displayName,

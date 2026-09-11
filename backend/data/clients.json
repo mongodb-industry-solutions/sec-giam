@@ -4,6 +4,7 @@
     "clientId": "oauth001-0000-4000-8000-000000000001",
     "clientName": "Espresso Works",
     "clientType": "confidential",
+    "logoUri": "http://localhost:8082/espresso-logo.svg",
     "redirectUris": [
       "http://localhost:8082/api/auth/callback",
       "http://127.0.0.1:8082/api/auth/callback",
@@ -371,6 +372,7 @@
     "clientId": "bankcore-console",
     "clientName": "BankCore administration console",
     "clientType": "public",
+    "logoUri": "http://localhost:8084/app-icon.png",
     "redirectUris": [
       "http://localhost:8084/api/auth/callback",
       "http://127.0.0.1:8084/api/auth/callback"
@@ -404,6 +406,7 @@
     "clientId": "leafypay-console",
     "clientName": "LeafyPay administration console",
     "clientType": "public",
+    "logoUri": "http://localhost:8080/leafy-pay-icon.png",
     "redirectUris": [
       "http://localhost:8080/api/auth/callback",
       "http://127.0.0.1:8080/api/auth/callback",
