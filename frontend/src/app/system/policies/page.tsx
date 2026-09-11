@@ -14,8 +14,11 @@ import { usePermissions } from '../../../lib/profile';
 import { Field, INPUT } from '../roles/parts';
 import type { CatalogPermission } from '../roles/types';
 import type { RoleSummary } from '../roles/types';
-import { EffectBadge, SelectorFields, StatusBadge, permissionCatalogIds, splitPatterns } from './parts';
-import type { PolicyDetail, PolicySummary, Selector } from './types';
+import {
+  EffectBadge, SelectorFields, StatusBadge, permissionCatalogOptions, splitPatterns,
+  type CatalogOption,
+} from './parts';
+import type { PolicyDetail, PolicySummary, ResourceServerCatalogEntry, Selector } from './types';
 
 /**
  * The conditional rules this realm applies, evaluated after roles.
@@ -219,7 +222,7 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
   );
   const catalog = useConsoleResource(readCatalog, 'The permission catalog could not be read.');
   const readResources = useCallback(
-    () => callApi<{ resourceServers: Array<{ resources: Array<{ name: string }> }> }>('/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' }),
+    () => callApi<{ resourceServers: ResourceServerCatalogEntry[] }>('/resource-servers', { query: { limit: 200 }, subject: 'the resource server catalog' }),
     [],
   );
   const resourceServers = useConsoleResource(readResources, 'The resource server catalog could not be read.');
@@ -232,10 +235,17 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
     void catalog.reload(); void resourceServers.reload(); void allRoles.reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const resourceCatalog = [...new Set(
-    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((entry) => entry.name)),
-  )].sort();
-  const roleCatalog = (allRoles.data?.roles ?? []).map((role) => role.name).sort();
+  // Labelled and grouped by the server that declares each one, the same options the edit screen
+  // offers: the id is what gets stored, the name is how somebody finds the right one.
+  const resourceCatalog: CatalogOption[] = [...new Map(
+    (resourceServers.data?.resourceServers ?? []).flatMap((server) => server.resources.map((entry) => [
+      entry.name,
+      { id: entry.name, label: entry.displayName, group: server.displayName ?? server.name },
+    ] as const)),
+  ).values()].sort((left, right) => left.id.localeCompare(right.id));
+  const roleCatalog: CatalogOption[] = (allRoles.data?.roles ?? [])
+    .map((role) => ({ id: role.name, label: role.displayName }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 
   return (
     <form
@@ -285,7 +295,7 @@ function CreatePolicy({ onCancel, onSubmit, busy }: {
         mode={permissionMode} onModeChange={setPermissionMode}
         ids={permissionIds} onIdsChange={setPermissionIds}
         pattern={permissionPattern} onPatternChange={setPermissionPattern}
-        catalog={permissionCatalogIds(catalog.data?.permissions ?? [])}
+        catalog={permissionCatalogOptions(catalog.data?.permissions ?? [])}
         required={false}
       />
 

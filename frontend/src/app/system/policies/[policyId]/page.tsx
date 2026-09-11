@@ -21,7 +21,8 @@ import { Field, INPUT } from '../../roles/parts';
 import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import {
   EffectBadge, SelectorFields, StatusBadge,
-  describeCondition, describeSelector, permissionCatalogIds, resourceLabel, splitPatterns,
+  describeCondition, describeSelector, permissionCatalogOptions, resourceLabel, splitPatterns,
+  type CatalogOption,
 } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
@@ -106,8 +107,15 @@ export default function PolicyDetailPage() {
     ] as const)),
   );
   const roleIdByName = new Map((allRoles.data?.roles ?? []).map((role) => [role.name, role.roleId] as const));
-  const resourceCatalogNames = [...resourceByName.keys()].sort();
-  const roleCatalogNames = [...roleIdByName.keys()].sort();
+
+  // What the pickers offer: the id a policy stores, the name a person recognises, and the resource
+  // server that declares it. A bare id is what made choosing one an exercise in recalling spellings.
+  const resourceCatalogOptions: CatalogOption[] = [...resourceByName]
+    .map(([name, entry]) => ({ id: name, label: entry.displayName, group: entry.serverName }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const roleCatalogOptions: CatalogOption[] = (allRoles.data?.roles ?? [])
+    .map((role) => ({ id: role.name, label: role.displayName }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 
   async function save(patch: Record<string, unknown>) {
     const done = await policy.run(
@@ -207,8 +215,8 @@ export default function PolicyDetailPage() {
                     onSave={save}
                     onCancel={() => setEditing(false)}
                     permissionCatalog={catalog.data?.permissions ?? []}
-                    resourceCatalog={resourceCatalogNames}
-                    roleCatalog={roleCatalogNames}
+                    resourceCatalog={resourceCatalogOptions}
+                    roleCatalog={roleCatalogOptions}
                     allRoles={allRoles.data?.roles ?? []}
                   />
                 )
@@ -502,8 +510,8 @@ function EditableBody({ detail, busy, onSave, onCancel, permissionCatalog, resou
   onSave: (patch: Record<string, unknown>) => void;
   onCancel: () => void;
   permissionCatalog: CatalogPermission[];
-  resourceCatalog: string[];
-  roleCatalog: string[];
+  resourceCatalog: CatalogOption[];
+  roleCatalog: CatalogOption[];
   allRoles: RoleSummary[];
 }) {
   const [effect, setEffect] = useState(detail.effect);
@@ -665,7 +673,7 @@ function EditableBody({ detail, busy, onSave, onCancel, permissionCatalog, resou
             mode={permissionMode} onModeChange={setPermissionMode}
             ids={permissionIds} onIdsChange={setPermissionIds}
             pattern={permissionPattern} onPatternChange={setPermissionPattern}
-            catalog={permissionCatalogIds(permissionCatalog)}
+            catalog={permissionCatalogOptions(permissionCatalog)}
             required={false}
           />
 
@@ -956,39 +964,81 @@ function GovernedResources({ policyId, resourceSelector, resourceByName }: {
         />
       )}
 
+      {/*
+        * A table, because these rows are the same few fields repeated and nothing else.
+        *
+        * Stacked cards put a name, a label, a sentence and a list of verbs in a column per row, so
+        * comparing two resources meant reading two paragraphs. Columns line the same field up
+        * across rows, which is the whole reason a table exists.
+        *
+        * Narrow screens drop columns rather than squeezing them: the name is the identifier and
+        * the link, so it survives every width; the resource server appears from `sm`, the
+        * description from `lg`, the declared actions from `xl`. What a dropped column held is
+        * still reachable by opening the resource, which is what the name links to.
+        */}
       {!resources.loading && rows.length > 0 && (
-        <ul className="space-y-2">
-          {rows.map((resource) => {
-            const entry = resourceByName.get(resource.name);
-            return (
-              <RecordCard
-                key={resource.resourceId}
-                // The KEY is the title, and the link is on it: the resource's name is what this
-                // policy stores, what a permission is built from, and the identifier somebody reads
-                // the row by. Following it opens that resource and nothing else.
-                title={(
-                  <Link
-                    href={`/system/resources/${encodeURIComponent(resource.resourceId)}`}
-                    className="font-mono text-sm hover:underline"
-                  >
-                    {resource.name}
-                  </Link>
-                )}
-                // Who declares it and what it is called for a reader, under the key rather than
-                // instead of it.
-                subtitle={resourceLabel(resource.name, entry)}
-                badges={<CatalogStatusBadge status={resource.status} />}
-              >
-                {entry?.description && <p className="mt-1 text-xs text-gray-500">{entry.description}</p>}
-                {entry && entry.actions.length > 0 && (
-                  <p className="mt-1.5 text-xs text-gray-400">
-                    Actions declared on it: <span className="font-mono">{entry.actions.join(', ')}</span>
-                  </p>
-                )}
-              </RecordCard>
-            );
-          })}
-        </ul>
+        <div className="overflow-hidden rounded-xl border border-gray-200">
+          <table className="w-full table-fixed text-left text-sm">
+            <thead className="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400">
+              <tr>
+                <th scope="col" className="w-1/2 px-3 py-2 font-medium sm:w-1/3 lg:w-1/5">Name</th>
+                <th scope="col" className="hidden px-3 py-2 font-medium sm:table-cell sm:w-1/3 lg:w-1/5">Resource server</th>
+                <th scope="col" className="hidden px-3 py-2 font-medium lg:table-cell lg:w-2/5">Description</th>
+                <th scope="col" className="hidden px-3 py-2 font-medium xl:table-cell xl:w-1/6">Actions</th>
+                <th scope="col" className="w-1/2 px-3 py-2 font-medium sm:w-1/6 lg:w-[10%]">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.map((resource) => {
+                const entry = resourceByName.get(resource.name);
+                return (
+                  <tr key={resource.resourceId} className="align-top hover:bg-gray-50">
+                    <td className="px-3 py-2">
+                      {/*
+                        * The name is the key AND the link: it is what this policy stores, what a
+                        * permission is built from, and what somebody reads the row by.
+                        */}
+                      <Link
+                        href={`/system/resources/${encodeURIComponent(resource.resourceId)}`}
+                        className="block truncate font-mono text-xs text-[#001E2B] hover:underline"
+                        title={resource.name}
+                      >
+                        {resource.name}
+                      </Link>
+                      {/*
+                        * The human name sits under the key at every width rather than moving between
+                        * columns as they drop away. Two names for one thing is the row's identity;
+                        * reproducing it in whichever column happens to be visible is three places to
+                        * keep right for no gain.
+                        */}
+                      {entry?.displayName && (
+                        <span className="mt-0.5 block truncate text-xs text-gray-500" title={entry.displayName}>
+                          {entry.displayName}
+                        </span>
+                      )}
+                    </td>
+                    <td className="hidden px-3 py-2 sm:table-cell">
+                      <span className="block truncate text-xs text-gray-600" title={entry?.serverName}>
+                        {entry?.serverName ?? '—'}
+                      </span>
+                    </td>
+                    <td className="hidden px-3 py-2 lg:table-cell">
+                      <span className="block text-xs text-gray-500">{entry?.description ?? '—'}</span>
+                    </td>
+                    <td className="hidden px-3 py-2 xl:table-cell">
+                      <span className="block truncate font-mono text-xs text-gray-500" title={entry?.actions.join(', ')}>
+                        {entry && entry.actions.length > 0 ? entry.actions.join(', ') : '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <CatalogStatusBadge status={resource.status} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {!resources.loading && total > 0 && (
