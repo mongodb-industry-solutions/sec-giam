@@ -169,3 +169,24 @@ export function SelectorFields({
 export function permissionCatalogIds(catalog: CatalogPermission[]): string[] {
   return catalog.map((permission) => `${permission.resource}:${permission.action}`).sort();
 }
+
+/**
+ * A resource's full name: the resource server that declares it, then the resource itself.
+ *
+ * ONE definition, used by every screen that names a resource, because a resource called "Roles"
+ * says nothing on its own: the console has a roles section of its own, and several resource servers
+ * may each declare a type under the same short name. What identifies it is the pair, so the pair is
+ * the name, and it reads the same in a policy's list as it does in the heading of the resource's own
+ * page.
+ *
+ * Falls back to the stored name when the catalog declares no display name, and to the stored name
+ * alone when the declaring server is unknown, which is what a policy naming something withdrawn
+ * looks like.
+ */
+export function resourceLabel(
+  storedName: string,
+  entry?: { displayName?: string; serverName?: string },
+): string {
+  const own = entry?.displayName ?? storedName;
+  return entry?.serverName ? `${entry.serverName} / ${own}` : own;
+}

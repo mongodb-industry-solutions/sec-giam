@@ -13,7 +13,7 @@ import { ActionButton, Fact as RecordFact, RecordCard } from '../../../../compon
 import { callApi, can, currentClaims, when } from '../../../../lib/console';
 import { useConsoleResource } from '../../../../lib/useConsoleResource';
 import { Field, INPUT } from '../../roles/parts';
-import { EffectBadge, StatusBadge as PolicyStatusBadge } from '../../policies/parts';
+import { EffectBadge, StatusBadge as PolicyStatusBadge, resourceLabel } from '../../policies/parts';
 import type { PolicySummary } from '../../policies/types';
 import { ServerForm } from '../ServerForm';
 import { draftFromResponse, draftToRegisterBody } from '../shared';
@@ -237,12 +237,11 @@ export default function ResourceDetailPage() {
 
       <SectionHeader
         icon={Boxes}
-        // The server and the stored name, both in the title: a resource type called "Roles" is
-        // otherwise indistinguishable, on arrival, from the console's own roles section, and the
-        // name a policy stores is `roles` rather than the display name shown here.
-        title={resource && resource.kind === 'object'
-          ? `${resource.serverName} / ${resource.displayName ?? resource.name}`
-          : resource?.displayName ?? resource?.name ?? 'Resource'}
+        // The same full name a policy's own list shows for it, from the same helper, so the row
+        // somebody followed and the heading they arrive at cannot read differently.
+        title={resource
+          ? resourceLabel(resource.name, resource.kind === 'object' ? resource : { displayName: resource.displayName })
+          : 'Resource'}
         description={[
           resource?.kind === 'object'
             ? `A resource type this resource server declares, stored in a policy as "${resource.name}".`

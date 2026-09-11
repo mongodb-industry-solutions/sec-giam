@@ -21,7 +21,7 @@ import { Field, INPUT } from '../../roles/parts';
 import type { CatalogPermission, RoleSummary } from '../../roles/types';
 import {
   EffectBadge, SelectorFields, StatusBadge,
-  describeCondition, describeSelector, permissionCatalogIds, splitPatterns,
+  describeCondition, describeSelector, permissionCatalogIds, resourceLabel, splitPatterns,
 } from '../parts';
 import {
   ASSURANCE_LEVELS, CONDITION_KEYS,
@@ -377,7 +377,7 @@ function PermissionsPanel({ detail, resourceByName }: {
   const rows = detail.resolvedPermissions.map((permission) => {
     const [resourceName, action] = permission.split(':');
     const resource = resourceByName.get(resourceName);
-    const readable = resource?.displayName ?? resourceName;
+    const readable = resourceLabel(resourceName, resource);
     return {
       key: permission,
       // "view on Roles", so a reader who does not already know the catalog can tell what it covers.
@@ -963,14 +963,17 @@ function GovernedResources({ policyId, resourceSelector, resourceByName }: {
             return (
               <RecordCard
                 key={resource.resourceId}
+                // The resource's own full name, and the link on it: this row IS that resource, so
+                // following it opens that resource and nothing else. The pair is the name because
+                // neither half identifies it alone.
                 title={(
                   <Link href={`/system/resources/${encodeURIComponent(resource.resourceId)}`} className="hover:underline">
-                    {entry?.displayName ?? resource.name}
+                    {resourceLabel(resource.name, entry)}
                   </Link>
                 )}
-                // The name a policy actually stores, and the resource server that declares it. Both
-                // are needed to place the row: `roles` is a resource type of one server, not a word.
-                subtitle={entry ? `${entry.serverName} / ${resource.name}` : resource.name}
+                // What a policy actually stores for it, which is the short name rather than the one
+                // above, and the only string that appears in the policy itself.
+                subtitle={`stored in this policy as "${resource.name}"`}
                 badges={<CatalogStatusBadge status={resource.status} />}
               >
                 {entry?.description && <p className="mt-1 text-xs text-gray-500">{entry.description}</p>}
