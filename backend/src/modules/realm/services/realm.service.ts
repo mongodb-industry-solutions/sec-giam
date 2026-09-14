@@ -1,8 +1,8 @@
 import { Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
-import { REALM_COLLECTION, DOMAIN_COLLECTION } from '../../../shared/models/collections';
+import { REALM_COLLECTION, DOMAIN_COLLECTION, CASE_INSENSITIVE } from '../../../shared/models/collections';
 import { DEFAULT_TENANT_ID, newMeta, touchMeta } from '../../../shared/models/base.model';
-import { RealmRecord, matchesRealmName } from '../models/realm.model';
+import { RealmRecord } from '../models/realm.model';
 import { DomainRecord, selfRegistration } from '../models/domain.model';
 import { DEFAULT_TOKEN_POLICY, localDomainRecord } from '../models/realmDefaults';
 import { realmIssuer } from '../../../config';
@@ -39,14 +39,27 @@ export class RealmService {
     return this.realms.findOne({ realmId }, { projection: { _id: 0 } });
   }
 
-  /** By name or by any alias it answers to. Disabled realms resolve, so callers can say why. */
+  /**
+   * By name or by any alias it answers to, WITHOUT case. Disabled realms resolve, so callers can
+   * say why rather than answering "no such realm" to a realm that plainly exists.
+   *
+   * One indexed query for both. It used to lowercase the input, try an exact match, and on a miss
+   * LOAD EVERY REALM and compare them in memory: correct, and a full collection read on the miss
+   * path, which is the path every request took the moment a realm's own name carried a capital
+   * letter. `name_unique` and `aliases` are declared with the same collation, so this is an index
+   * lookup for both branches of the `$or`.
+   *
+   * The trim stays, because a name arriving with whitespace is a caller's mistake rather than a
+   * different realm. The lowercasing is gone: that was this code doing the collation's job, badly,
+   * since it could only ever match a stored name that was already lower case.
+   */
   async byName(name: string): Promise<RealmRecord | null> {
-    const wanted = name.trim().toLowerCase();
+    const wanted = name.trim();
     if (!wanted) return null;
-    const direct = await this.realms.findOne({ name: wanted }, { projection: { _id: 0 } });
-    if (direct) return direct;
-    const all = await this.realms.find({}, { projection: { _id: 0 } }).toArray();
-    return all.find((realm) => matchesRealmName(realm, wanted)) ?? null;
+    return this.realms.findOne(
+      { $or: [{ name: wanted }, { aliases: wanted }] },
+      { projection: { _id: 0 }, collation: CASE_INSENSITIVE },
+    );
   }
 
   /** The realm a token claims to come from, resolved from its issuer. */
@@ -134,12 +147,21 @@ export class RealmService {
     demoMode?: boolean;
     clientEnforcement?: RealmRecord['clientEnforcement'];
   }): Promise<RealmRecord | RealmRefusal> {
-    const name = input.name.trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+    /**
+     * Kept AS TYPED, capitals included, and checked for clashes without case.
+     *
+     * It used to be lower-cased here, which refused a name the seeder itself uses (`LeafyIdp`) and
+     * meant the API could not create the realm the fixture creates. Casing a slug is a legitimate
+     * choice about how a product's name reads in an issuer URL, and it is not this function's to
+     * make. What must not happen is TWO realms differing only by case, and that is now prevented
+     * where it belongs: `byName` resolves without case and `name_unique` refuses the insert.
+     */
+    const name = input.name.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name)) {
       return {
         status: 400,
         title: 'Not a valid realm name',
-        detail: 'Lowercase letters, digits and dashes, starting with a letter or digit. It becomes part of the issuer URL.',
+        detail: 'Letters, digits and dashes, starting with a letter or digit. It becomes part of the issuer URL, and two realms may not differ only by case.',
       };
     }
     if (await this.byName(name)) {
@@ -161,7 +183,9 @@ export class RealmService {
       aliases: [],
       ...(input.notice ? { notice: input.notice } : {}),
       tokenPolicy: { ...DEFAULT_TOKEN_POLICY, ...input.tokenPolicy },
-      branding: { displayName: input.displayName, ...input.branding },
+      // Only the overrides. `branding.displayName` stays absent unless the caller asked for a
+      // label different from the realm's own name, so the two can never disagree (`brandLabel`).
+      branding: { ...input.branding },
       demoMode: input.demoMode ?? false,
       ...(input.clientEnforcement ? { clientEnforcement: input.clientEnforcement } : {}),
       meta: newMeta('Realm'),

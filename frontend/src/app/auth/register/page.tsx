@@ -12,11 +12,13 @@ import { AuthBackdrop } from '../../../components/AuthBackdrop';
  * product is broken, which is worse than not offering the form at all.
  */
 
-const DEFAULT_REALM = 'leafypay';
+const DEFAULT_REALM = 'LeafyIdp';
 
 export default function RegisterPage() {
   const [realm] = useState(DEFAULT_REALM);
   const [offered, setOffered] = useState<boolean | null>(null);
+  // The realm's own name unless branding overrides it, which is the same order the sign-in
+  // panel reads them in: `branding.displayName` is now present only when it differs.
   const [branding, setBranding] = useState<{ displayName?: string; primaryColor?: string }>({});
   const [form, setForm] = useState({ formattedName: '', userName: '', email: '', password: '', confirm: '' });
   const [busy, setBusy] = useState(false);
@@ -28,7 +30,7 @@ export default function RegisterPage() {
       .then((response) => (response.ok ? response.json() : null))
       .then((context) => {
         setOffered(Boolean(context?.registrationEnabled));
-        setBranding(context?.branding ?? {});
+        setBranding({ displayName: context?.displayName, ...(context?.branding ?? {}) });
       })
       .catch(() => setOffered(false));
   }, [realm]);

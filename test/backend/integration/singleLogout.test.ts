@@ -21,7 +21,15 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const DATA = resolve(__dirname, '../../../backend/data');
-const REALM = 'leafypay';
+/**
+ * Read from the fixture rather than written here.
+ *
+ * It was the literal `'leafypay'`, and it was compared to `identity.realm` in the identity fixture:
+ * renaming the realm left the two disagreeing, and this suite reported "no demo principal is
+ * seeded" for a database full of them. A test that hardcodes a name it also has to match is a test
+ * that breaks on a rename instead of testing one.
+ */
+const REALM = (JSON.parse(readFileSync(resolve(DATA, 'realms.json'), 'utf8')) as Array<{ name: string }>)[0].name;
 const DEMO_PASSWORD = 'demo-password';
 
 interface IdentityFixture {

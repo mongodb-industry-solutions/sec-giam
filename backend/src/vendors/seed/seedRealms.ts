@@ -2,7 +2,7 @@ import { Db } from 'mongodb';
 import { REALM_COLLECTION, DOMAIN_COLLECTION } from '../../shared/models/collections';
 import { RealmRecord } from '../../modules/realm/models/realm.model';
 import { DomainRecord } from '../../modules/realm/models/domain.model';
-import { DEFAULT_TOKEN_POLICY, LOCAL_DOMAIN_NAME, localDomainRecord } from '../../modules/realm/models/realmDefaults';
+import { DEFAULT_TOKEN_POLICY, localDomainRecord } from '../../modules/realm/models/realmDefaults';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
@@ -13,12 +13,33 @@ import { v5 as uuidv5 } from 'uuid';
 const DOMAIN_NAMESPACE = 'd0a7c3e1-5b92-4f18-9c64-8e3a1f7b2d05';
 
 /**
- * The realms and the providers federated inside them.
+ * The realms, and every authentication domain inside each of them.
  *
  * Read from a fixture rather than written here, so adding a realm is data and this file stays
  * industry neutral: nothing in it names a consuming application. The fixture that does name one is
  * the deployment's, not the product's.
  */
+
+interface DomainFixture {
+  /**
+   * Optional. Absent means a stable id derived from the realm and the slug, which is what the
+   * realm's own directory uses: it is created by every realm rather than written out in each
+   * fixture, and deriving it keeps the id the same across reseeds without anybody maintaining it.
+   */
+  domainId?: string;
+  name: string;
+  displayName?: string;
+  protocol: DomainRecord['protocol'];
+  adapter: string;
+  enabled?: boolean;
+  notice?: string;
+  config?: DomainRecord['config'];
+  claimMappings?: DomainRecord['claimMappings'];
+  /** Meaningful for `internal`. A federated path's upstream owns these rules. */
+  authentication?: Partial<NonNullable<DomainRecord['authentication']>>;
+  /** Self-service joining, which only an internal path can describe. */
+  registration?: Partial<NonNullable<DomainRecord['registration']>>;
+}
 
 interface RealmFixture {
   realmId: string;
@@ -30,25 +51,22 @@ interface RealmFixture {
   demoMode?: boolean;
   clientEnforcement?: RealmRecord['clientEnforcement'];
   requiresElevationApproval?: RealmRecord['requiresElevationApproval'];
-  /** Self-registration. Seeded onto the realm's own directory, which is the only path it can describe. */
-  registration?: Partial<NonNullable<DomainRecord['registration']>>;
   tokenPolicy?: Partial<RealmRecord['tokenPolicy']>;
-  /** Overrides for the realm's own directory, which is a domain now rather than realm config. */
-  localAuthentication?: Partial<NonNullable<DomainRecord['authentication']>>;
-  /** Overrides the generic `"{realm} directory"` label the local domain otherwise gets. */
-  localDomainDisplayName?: string;
+  /**
+   * Only what OVERRIDES the realm's own name and nothing that restates it. `displayName` here is
+   * absent unless the rendered label genuinely differs.
+   */
   branding?: Partial<RealmRecord['branding']>;
-  providers?: Array<{
-    domainId: string;
-    name: string;
-    displayName: string;
-    protocol: DomainRecord['protocol'];
-    adapter: string;
-    enabled?: boolean;
-    notice?: string;
-    config?: DomainRecord['config'];
-    claimMappings?: DomainRecord['claimMappings'];
-  }>;
+  /**
+   * Every authentication path into this realm, INCLUDING the realm's own directory.
+   *
+   * Flat on purpose. The internal path used to be described by `localDomainDisplayName`,
+   * `localAuthentication` and `registration` sitting on the realm while the federated ones sat in
+   * an array beside them, which read as though the realm's own directory were a property of the
+   * realm rather than one domain among others. It is one domain among others, and the fixture now
+   * says so. Exactly one entry must have `protocol: "internal"`.
+   */
+  domains: DomainFixture[];
 }
 
 export async function seedRealms(db: Db): Promise<void> {
@@ -72,7 +90,9 @@ export async function seedRealms(db: Db): Promise<void> {
         aliases: fixture.aliases ?? [],
         ...(fixture.notice ? { notice: fixture.notice } : {}),
         tokenPolicy: { ...DEFAULT_TOKEN_POLICY, ...fixture.tokenPolicy },
-        branding: { displayName: fixture.displayName, ...fixture.branding },
+        // No `displayName` copied in. It is only present when the fixture states an override, so
+        // the realm's own name stays the single place the label comes from (see `brandLabel`).
+        branding: { ...fixture.branding },
         demoMode: fixture.demoMode ?? false,
         // Absent in the fixture means the realm inherits the deployment default, which is strict.
         ...(fixture.clientEnforcement ? { clientEnforcement: fixture.clientEnforcement } : {}),
@@ -89,49 +109,65 @@ export async function seedRealms(db: Db): Promise<void> {
     console.log(`  realm:    ${fixture.name} (${issuer}) ${realm.action}`);
 
     /**
-     * P8.3. Every realm gets ONE local domain, always.
+     * Every domain the fixture declares, the realm's own directory included.
      *
-     * Local authentication then resolves through a domain like every other path, instead of through
-     * a branch on the realm that only the local case takes. A realm with one domain shows no
-     * chooser on the sign-in screen, which is a presentation decision rather than a model one.
+     * P8.3 held that every realm gets exactly one internal domain. That is still true, and it is
+     * now CHECKED rather than manufactured: the fixture declares it beside the federated paths and
+     * this refuses a realm that declares none or more than one. Manufacturing it here is what made
+     * the internal path look like a property of the realm.
      */
-    const localId = uuidv5(`domain:${fixture.realmId}:${LOCAL_DOMAIN_NAME}`, DOMAIN_NAMESPACE);
-    const local = await upsertSeed<DomainRecord>(
-      providers,
-      { domainId: localId },
-      localDomainRecord({
-        domainId: localId,
-        realmId: fixture.realmId,
-        tenantId: DEFAULT_TENANT_ID,
-        realmDisplayName: fixture.displayName,
-        domainDisplayName: fixture.localDomainDisplayName,
-        authentication: fixture.localAuthentication,
-        registration: fixture.registration && { selfServiceEnabled: false, autoApprove: false, ...fixture.registration },
-      }),
-      { domainId: localId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
-      'Domain',
-    );
-    console.log(`  domain:   ${fixture.name}/${LOCAL_DOMAIN_NAME} (internal) ${local.action}`);
-
-    for (const provider of fixture.providers ?? []) {
-      const outcome = await upsertSeed(
-        providers,
-        { domainId: provider.domainId },
-        {
-          name: provider.name,
-          displayName: provider.displayName,
-          protocol: provider.protocol,
-          adapter: provider.adapter,
-          enabled: provider.enabled ?? false,
-          ...(provider.notice ? { notice: provider.notice } : {}),
-          config: provider.config ?? {},
-          claimMappings: provider.claimMappings ?? [],
-        },
-        // Inside the realm, not beside it. This is the split the platform's old model conflated.
-        { domainId: provider.domainId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID },
-        'Domain',
+    const internal = fixture.domains.filter((domain) => domain.protocol === 'internal');
+    if (internal.length !== 1) {
+      throw new Error(
+        `realm "${fixture.name}" declares ${internal.length} internal domains, and needs exactly one`,
       );
-      console.log(`  domain:   ${fixture.name}/${provider.name} (${provider.protocol}) ${outcome.action}`);
+    }
+
+    for (const domain of fixture.domains) {
+      // Derived when the fixture omits it, which is how the realm's own directory keeps the id it
+      // has always had without that id being written out by hand in every fixture.
+      const domainId = domain.domainId ?? uuidv5(`domain:${fixture.realmId}:${domain.name}`, DOMAIN_NAMESPACE);
+      const scope = { domainId, realmId: fixture.realmId, tenantId: DEFAULT_TENANT_ID };
+
+      /**
+       * The internal path goes through the shared builder, the federated ones do not.
+       *
+       * Not a special case in the MODEL, which is the distinction that matters: both end up as one
+       * record in one collection, read by the same code. The builder exists because a realm created
+       * at runtime has no fixture to read defaults from, and the two paths must agree on what a
+       * freshly provisioned directory looks like.
+       */
+      const record: Omit<DomainRecord, 'meta'> = domain.protocol === 'internal'
+        ? localDomainRecord({
+          ...scope,
+          name: domain.name,
+          realmDisplayName: fixture.displayName,
+          domainDisplayName: domain.displayName,
+          authentication: domain.authentication,
+          registration: domain.registration && {
+            selfServiceEnabled: false, autoApprove: false, ...domain.registration,
+          },
+        })
+        : {
+          ...scope,
+          name: domain.name,
+          displayName: domain.displayName ?? domain.name,
+          protocol: domain.protocol,
+          adapter: domain.adapter,
+          // A federated path is off until somebody says otherwise: its configuration is usually
+          // incomplete in a fixture, and offering it would fail after it is chosen.
+          enabled: domain.enabled ?? false,
+          ...(domain.notice ? { notice: domain.notice } : {}),
+          config: domain.config ?? {},
+          claimMappings: domain.claimMappings ?? [],
+        };
+
+      // `realmId` and `tenantId` are in `record`, and repeated as the scope `upsertSeed` writes on
+      // an insert. Spreading `record` here would make the update path rewrite them, which is the
+      // one thing a reseed must never move a domain between.
+      const { realmId: _realm, tenantId: _tenant, domainId: _id, ...changes } = record;
+      const outcome = await upsertSeed<DomainRecord>(providers, { domainId }, changes, scope, 'Domain');
+      console.log(`  domain:   ${fixture.name}/${domain.name} (${domain.protocol}) ${outcome.action}`);
     }
   }
 }

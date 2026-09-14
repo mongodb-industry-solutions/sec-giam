@@ -1,6 +1,6 @@
 [
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "customer",
     "displayName": "Customer",
@@ -43,7 +43,7 @@
     }
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "level1_analyst",
     "displayName": "L1 Fraud Analyst",
@@ -84,7 +84,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "level2_investigator",
     "displayName": "L2 Investigator",
@@ -140,7 +140,7 @@
     }
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "security_auditor",
     "displayName": "Security Auditor",
@@ -259,7 +259,7 @@
     }
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "merchant_officer",
     "displayName": "Merchant Officer",
@@ -284,7 +284,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "operations_officer",
     "displayName": "Operations Officer",
@@ -345,7 +345,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "manager",
     "displayName": "Integration Manager",
@@ -441,7 +441,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "leafypay",
     "name": "client_administrator",
     "displayName": "Application Registry Administrator",

@@ -9,7 +9,8 @@ import { Tooltip } from '../../components/Tooltip';
 import { callApi, currentClaims, displayName, isExpired, startOfToday, when, type Claims } from '../../lib/console';
 import { visibleSections } from '../../lib/consoleNav';
 import { useUserInfo } from '../../lib/profile';
-import { CONSOLE_CLIENT_ID, storedRealm } from '../../lib/session';
+import { CONSOLE_CLIENT_ID, setActiveRealm, storedRealm } from '../../lib/session';
+import { readEntryDefaults, type EntryDefaults } from '../../lib/entryParams';
 import { BRAND } from '../../config/brand';
 
 /**
@@ -47,12 +48,31 @@ export default function ConsoleOverviewPage() {
   const [claims, setClaims] = useState<Claims | null>(null);
   const [checked, setChecked] = useState(false);
   const [realm, setRealm] = useState('');
+  const [entry, setEntry] = useState<EntryDefaults>({});
   // The heading names the person, which the token cannot do on its own.
   useUserInfo();
 
   useEffect(() => {
+    /**
+     * `?realm=` and `?domain=` make this screen linkable to the state it should open in.
+     *
+     * Signed in, the realm parameter is the same switch the realm picker performs: the token does
+     * not change, the acting realm does, and whether the caller may act there is decided by the
+     * grant the authority reads on every request. A link cannot widen anything, it can only save
+     * a click that was already available.
+     *
+     * Signed out, both parameters are handed to the sign-in panel as defaults instead.
+     */
+    const defaults = readEntryDefaults(window.location.search);
+    setEntry(defaults);
+
     const found = currentClaims();
-    setClaims(found && !isExpired(found) ? found : null);
+    const live = found && !isExpired(found) ? found : null;
+    setClaims(live);
+    // Without case, so a link spelling the realm differently is not treated as a switch.
+    if (live && defaults.realm && defaults.realm.toLowerCase() !== storedRealm().toLowerCase()) {
+      setActiveRealm(defaults.realm);
+    }
     setRealm(storedRealm());
     setChecked(true);
   }, []);
@@ -112,7 +132,12 @@ export default function ConsoleOverviewPage() {
           else's request: the credential would be collected and nothing would ever be exchanged for a
           token, so this screen would show itself again looking exactly like it had done nothing.
         */}
-        <SignInPanel heading={`${BRAND.full} console`} clientId={CONSOLE_CLIENT_ID} />
+        <SignInPanel
+          heading={`${BRAND.full} console`}
+          clientId={CONSOLE_CLIENT_ID}
+          {...(entry.realm ? { defaultRealm: entry.realm } : {})}
+          defaultDomain={entry.domain}
+        />
         <Link href="/" className="text-xs text-gray-400 transition-colors hover:text-[#00ED64]">
           Back to Mode Selection
         </Link>

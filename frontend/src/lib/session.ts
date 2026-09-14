@@ -58,7 +58,7 @@ const REDIRECT_KEY = 'giam.redirectUri';
 
 // The realm every console call is addressed to. Remembered at sign-in rather than guessed per page,
 // because a page that guesses wrong reads somebody else's realm or nothing at all.
-export const DEFAULT_REALM = 'leafypay';
+export const DEFAULT_REALM = 'LeafyIdp';
 
 function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -107,8 +107,15 @@ export function storedRealm(): string {
   return window.sessionStorage.getItem(ACTIVE_REALM_KEY) || storedHomeRealm();
 }
 
+/**
+ * Whether the console is acting on a realm other than the one that signed this token.
+ *
+ * Compared without case, because the acting realm can now arrive from a link (`/system?realm=`)
+ * and a differently-cased spelling of the home realm is the home realm. Treating it as a second
+ * one would put a cross-realm banner on a screen nobody switched.
+ */
 export function isCrossRealm(): boolean {
-  return storedRealm() !== storedHomeRealm();
+  return storedRealm().toLowerCase() !== storedHomeRealm().toLowerCase();
 }
 
 /** Persists the choice and tells every mounted screen to read its realm again. */

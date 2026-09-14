@@ -1,34 +1,39 @@
 [
   {
     "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
-    "name": "leafypay",
-    "displayName": "Leafy Pay",
+    "name": "LeafyIdp",
+    "displayName": "Leafy IdP",
     "aliases": [
+      "leafypay",
       "local"
     ],
     "enabled": true,
     "demoMode": true,
-    "registration": {
-      "selfServiceEnabled": true,
-      "autoApprove": false
-    },
     "requiresElevationApproval": false,
-    "localDomainDisplayName": "Leafy IdP",
     "tokenPolicy": {
       "accessTokenTtlSeconds": 600
     },
-    "localAuthentication": {
-      "tokenPolicy": {
-        "accessTokenTtlSeconds": 600,
-        "refreshTokenTtlSeconds": 2592000
-      }
-    },
     "branding": {
-      "displayName": "Leafy Pay",
       "primaryColor": "#00ED64",
       "backgroundStyle": "leaf"
     },
-    "providers": [
+    "domains": [
+      {
+        "name": "atlas-id",
+        "protocol": "internal",
+        "adapter": "internal",
+        "enabled": true,
+        "registration": {
+          "selfServiceEnabled": true,
+          "autoApprove": false
+        },
+        "authentication": {
+          "tokenPolicy": {
+            "accessTokenTtlSeconds": 600,
+            "refreshTokenTtlSeconds": 2592000
+          }
+        }
+      },
       {
         "domainId": "d1a2b3c4-0002-0002-0002-000000000002",
         "name": "msentra",

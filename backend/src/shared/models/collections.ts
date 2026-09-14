@@ -222,3 +222,26 @@ export function encryptedCollections(): CollectionSpec[] {
 export function collectionsWithRetiredFields(): CollectionSpec[] {
   return GIAM_COLLECTIONS.filter((spec) => (spec.retiredFields?.length ?? 0) > 0);
 }
+
+/**
+ * How a name typed on the wire is compared to a name in the database: WITHOUT case.
+ *
+ * A realm and a domain are addressed by slug, in a URL path, in a link somebody pasted, in a
+ * fixture and in a form. `LeafyIdp`, `leafyidp` and `LEAFYIDP` are one realm to everybody except a
+ * byte comparison, and a sign-in that fails because a link capitalised a letter is a failure nobody
+ * can diagnose from the error it produces.
+ *
+ * MongoDB's own collation rather than a lowercase shadow field, for two reasons. A shadow field is
+ * a second copy of a value that can drift from the first, and it would have to be written by every
+ * path that ever creates a realm or a domain. And collation is INDEXED: an index declared with this
+ * collation serves a query that specifies the same one at the cost of an ordinary index lookup, so
+ * the case-insensitive read is as cheap as the case-sensitive one it replaces.
+ *
+ * `strength: 2` is the level that ignores case while still distinguishing accents, which is what is
+ * wanted for a slug: `acme` and `ACME` are the same realm, `resume` and `résumé` are not.
+ *
+ * A query MUST pass this to use an index declared with it. A query that forgets falls back to the
+ * default collation and will not match a differently-cased name, so the two always travel together:
+ * see `plannedIndexes` for the declarations and `RealmService.byName` for the read.
+ */
+export const CASE_INSENSITIVE = { locale: 'en', strength: 2 } as const;

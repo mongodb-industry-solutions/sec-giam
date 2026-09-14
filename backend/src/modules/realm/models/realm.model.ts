@@ -25,7 +25,14 @@ export interface RealmRecord extends Scoped {
    * hardcoded special case in a resolver, and here it is a value on the record it belongs to.
    */
   aliases: string[];
-  /** Shown on the sign-in screen. Kept because the platform's domain notice is demo copy that matters. */
+  /**
+   * A line of copy under the whole sign-in screen, about the REALM.
+   *
+   * Deliberately not the same field as `DomainRecord.notice`, which is rendered against one entry
+   * in the domain picker and says why that path is unavailable or what it federates with. Two
+   * notices can be shown at once because they are about different things; neither overrides the
+   * other, and nothing should merge them.
+   */
   notice?: string;
   /**
    * Self-registration moved to `domain.registration` in ADR-002.
@@ -59,7 +66,15 @@ export interface RealmRecord extends Scoped {
    * that does this handles it.
    */
   branding: {
-    displayName: string;
+    /**
+     * Present ONLY when the rendered label differs from `displayName`.
+     *
+     * It used to be seeded as a copy of `displayName` on every realm, which is two fields holding
+     * one value and no rule for which wins once somebody edits one of them. Absent now means "the
+     * realm's own name", so there is exactly one place to change it and an override is visible as
+     * an override.
+     */
+    displayName?: string;
     logoUri?: string;
     primaryColor?: string;
     backgroundStyle?: string;
@@ -100,9 +115,26 @@ export function enforcementFor(realm: Pick<RealmRecord, 'clientEnforcement'>): C
   return realm.clientEnforcement ?? config.app.clientEnforcement;
 }
 
-/** Resolves a name or an alias to a realm. Replaces the platform's hardcoded alias resolver. */
+/**
+ * Whether a realm already in hand answers to this name. The same rule `RealmService.byName` asks
+ * the database for, for a caller that has the record and should not go back for it.
+ *
+ * Case-insensitive, like the query and like the index behind it. Three places state this rule and
+ * they must agree: this function, the `CASE_INSENSITIVE` collation on `name_unique` and `aliases`,
+ * and the `byName` read that passes it.
+ */
 export function matchesRealmName(realm: Pick<RealmRecord, 'name' | 'aliases'>, candidate: string): boolean {
   const wanted = candidate.trim().toLowerCase();
   return realm.name.toLowerCase() === wanted
     || realm.aliases.some((alias) => alias.toLowerCase() === wanted);
+}
+
+/**
+ * The label to render for a realm: its branding override where there is one, its own name otherwise.
+ *
+ * One function rather than the same `??` repeated at each render site, which is how the two fields
+ * drifted into being copies of each other in the first place.
+ */
+export function brandLabel(realm: Pick<RealmRecord, 'displayName' | 'branding'>): string {
+  return realm.branding.displayName ?? realm.displayName;
 }

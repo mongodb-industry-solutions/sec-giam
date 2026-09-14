@@ -46,7 +46,7 @@ export function demoPublicUrl(path = ''): string {
 }
 
 // The realm the simulator walks. One name, so the discovery link and the sign-in card cannot drift.
-export const SIMULATOR_REALM = process.env.NEXT_PUBLIC_GIAM_REALM || 'leafypay';
+export const SIMULATOR_REALM = process.env.NEXT_PUBLIC_GIAM_REALM || 'LeafyIdp';
 
 // Served by the API host, and the one document that proves the endpoints below it are real.
 export const DISCOVERY_URL = `${BACKEND_PUBLIC_URL}/realms/${SIMULATOR_REALM}/.well-known/openid-configuration`;

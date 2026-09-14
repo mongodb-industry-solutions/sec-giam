@@ -134,9 +134,9 @@ export function findAuthorityRole(id: string): AuthorityRoleGuide | undefined {
 
 /** The authority's own resources, and what may be done to each. Shown so a reader can see the shape. */
 export const AUTHORITY_RESOURCES: Array<{ resource: string; actions: string[]; holds: string }> = [
-  { resource: 'realms', actions: ['view', 'manage'], holds: 'An authentication domain: its issuer, its branding, its registration rules.' },
+  { resource: 'realms', actions: ['view', 'manage'], holds: 'A trust boundary: its issuer, its signing keys, its token lifetimes, its branding.' },
   { resource: 'tenants', actions: ['view', 'manage'], holds: 'A partition inside a realm.' },
-  { resource: 'providers', actions: ['view', 'manage'], holds: 'Where a sign-in can come from, and by which protocol.' },
+  { resource: 'providers', actions: ['view', 'manage'], holds: 'An authentication domain: one way into a realm, its protocol and its rules for proving identity.' },
   { resource: 'identities', actions: ['view', 'manage'], holds: 'People, services and workloads, and their lifecycle.' },
   { resource: 'credentials', actions: ['view', 'manage'], holds: 'How a principal proves itself, including registered authenticators.' },
   { resource: 'clients', actions: ['view', 'manage', 'rotateSecret'], holds: 'Registered applications. Reissuing a secret is its own action.' },

@@ -40,7 +40,7 @@ const realms = JSON.parse(readFileSync(resolve(DATA, 'realms.json'), 'utf8')) as
   name: string;
   displayName: string;
   branding?: { displayName?: string; primaryColor?: string };
-  providers?: Array<{ name: string; enabled: boolean; notice?: string }>;
+  domains: Array<{ name: string; protocol: string; enabled?: boolean; notice?: string }>;
 }>;
 
 const REALM = realms[0].name;
@@ -49,7 +49,7 @@ interface LoginContext {
   realm: string;
   displayName: string;
   branding: { displayName?: string; primaryColor?: string };
-  providers: Array<{ name: string; displayName: string; enabled: boolean; notice?: string }>;
+  providers: Array<{ name: string; displayName: string; protocol: string; enabled: boolean; notice?: string }>;
   roster: Array<{ subjectId: string; userName: string; email?: string; role?: string }>;
   registrationEnabled: boolean;
 }
@@ -84,14 +84,14 @@ describe('v39 P9.9: the sign-in screen carries the relying party, not the author
      * v40 P8.5 changed what this list means, deliberately.
      *
      * The sign-in screen is a projection of the realm DOMAIN list, and the realm's own directory is
-     * one domain among the others rather than a special case sitting outside the list. So the count
-     * is the federated providers plus the one local path every realm has.
+     * one domain among the others rather than a special case sitting outside the list. The fixture
+     * now declares it in that same list, so the count is simply the list's length: there is no
+     * "plus one" because there is nothing the seeder adds that the fixture did not ask for.
      *
      * That is the whole point of the widening: a realm with three ways in offers three, and adding
      * a fourth is data rather than a branch in the page.
      */
-    const federated = realms[0].providers ?? [];
-    expect(context.providers.length).toBe(federated.length + 1);
+    expect(context.providers.length).toBe(realms[0].domains.length);
     const local = context.providers.filter((entry) => entry.protocol === 'internal');
     expect(local, 'the realm own directory is not offered as a way in').toHaveLength(1);
   });

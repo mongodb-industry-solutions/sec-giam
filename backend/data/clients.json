@@ -1,6 +1,6 @@
 [
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "oauth001-0000-4000-8000-000000000001",
     "clientName": "Espresso Works",
     "clientType": "confidential",
@@ -51,6 +51,7 @@
     ],
     "serviceIdentity": {
       "kind": "service",
+      "resourceServer": "leafypay",
       "owner": {
         "kind": "merchant",
         "ref": "m0000001-0000-4000-8000-000000000001",
@@ -106,7 +107,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "f1dc0169-4f90-402c-adc8-f7e2c5c0fc7d",
     "clientName": "Leafy Wallet",
     "clientType": "confidential",
@@ -150,7 +151,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "leafypay-backend",
     "clientName": "LeafyPay backend service",
     "clientType": "confidential",
@@ -203,7 +204,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "leafypay-psp",
     "clientName": "LeafyPay, as a registered third party",
     "clientType": "confidential",
@@ -283,7 +284,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "bankcore-backend",
     "clientName": "BankCore backend service",
     "clientType": "confidential",
@@ -327,7 +328,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "bankcore-console",
     "clientName": "BankCore administration console",
     "clientType": "public",
@@ -365,7 +366,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "leafypay-console",
     "clientName": "LeafyPay administration console",
     "clientType": "public",
@@ -406,7 +407,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "giam-console",
     "clientName": "IdP administration console",
     "clientType": "public",
@@ -444,7 +445,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "leafypay-simulator",
     "clientName": "LeafyPay simulator",
     "clientType": "confidential",
@@ -503,7 +504,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "clientId": "another-tpp",
     "clientName": "Another Provider",
     "clientType": "confidential",

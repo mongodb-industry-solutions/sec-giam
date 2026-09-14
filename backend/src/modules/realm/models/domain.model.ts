@@ -12,10 +12,11 @@ import { Meta, Scoped } from '../../../shared/models/base.model';
  * offers three ways in, and the sign-in screen is a projection of that list rather than a branch on
  * whether any providers happen to be configured.
  *
- * Naming note: the ADR calls this discriminator `kind`. It is `protocol` here, with the same
- * meaning and the same values, because the name is already part of a published port contract and
- * renaming it would ripple through the port and its consumers for no gain. `internal` is the ADR's
- * `local`.
+ * Naming note: the discriminator is `protocol`, and that is the settled name. The ADR drafted it as
+ * `kind`; `protocol` won because it says what the value actually is (`oidc`, `saml`, `ldap` are
+ * protocols, and reading `kind: 'saml'` tells you less than reading `protocol: 'saml'`), and because
+ * it is already part of a published port contract. `internal` is the ADR's `local`, for the same
+ * reason: it describes the path rather than where the reader is standing.
  *
  * Adding a third-party provider is still this record plus a claim mapping: no application code, no
  * deployment, no restart. That is the whole argument for brokering rather than every application
@@ -30,7 +31,13 @@ export interface DomainRecord extends Scoped {
   /** Which port implementation handles it. Configuration on the record, never an environment read. */
   adapter: string;
   enabled: boolean;
-  /** Shown when a provider is visible but not yet usable, rather than failing after it is chosen. */
+  /**
+   * A line of copy against THIS entry in the domain picker: why it is not yet usable, or what it
+   * federates with. Shown so a person learns it before choosing rather than after.
+   *
+   * Not a narrowing of `RealmRecord.notice` and not overridden by it. That one is about the realm
+   * and renders under the whole screen; both can be present, and each is about its own subject.
+   */
   notice?: string;
   config: {
     issuer?: string;

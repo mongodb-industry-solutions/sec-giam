@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 import { RealmService } from '../services/realm.service';
 import { DomainRecord } from '../models/domain.model';
-import { DOMAIN_COLLECTION } from '../../../shared/models/collections';
+import { DOMAIN_COLLECTION, CASE_INSENSITIVE } from '../../../shared/models/collections';
 import { authorityAccess, refusal } from '../../authorization/services/authorityAccess';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
@@ -327,8 +327,13 @@ export async function domainController(fastify: FastifyInstance) {
     const body = request.body as Partial<DomainRecord> & { name: string; displayName: string; protocol: DomainRecord['protocol'] };
 
     // The slug is what a sign-in screen and home-realm discovery both resolve on, so a duplicate
-    // would make which path answers depend on document order.
-    if (await domains().findOne({ realmId: reached.realm.realmId, name: body.name }, { projection: { _id: 1 } })) {
+    // would make which path answers depend on document order. Compared WITHOUT case, matching the
+    // collation on `realm_tenant_name_unique`: `atlas-id` and `Atlas-Id` are one path, and letting
+    // the second one through would mean the index refuses the insert after this check passed it.
+    if (await domains().findOne(
+      { realmId: reached.realm.realmId, name: body.name },
+      { projection: { _id: 1 }, collation: CASE_INSENSITIVE },
+    )) {
       audit(reached.realm, reached.subjectId, { action: 'domain.created', outcome: 'failure', cause: 'name_taken' });
       return reply.status(409).send(problem(409, 'That name is already used in this realm'));
     }
@@ -390,8 +395,13 @@ export async function domainController(fastify: FastifyInstance) {
     const existing = await domains().findOne({ realmId: reached.realm.realmId, domainId }, { projection: { _id: 0 } });
     if (!existing) return reply.status(404).send(problem(404, 'No such domain'));
 
-    if (body.name && body.name !== existing.name) {
-      if (await domains().findOne({ realmId: reached.realm.realmId, name: body.name }, { projection: { _id: 1 } })) {
+    // Same comparison as on create, and the outer guard is case-insensitive too: renaming
+    // `atlas-id` to `Atlas-Id` is a re-casing of the same slug, not a move onto a taken one.
+    if (body.name && body.name.toLowerCase() !== existing.name.toLowerCase()) {
+      if (await domains().findOne(
+        { realmId: reached.realm.realmId, name: body.name },
+        { projection: { _id: 1 }, collation: CASE_INSENSITIVE },
+      )) {
         return reply.status(409).send(problem(409, 'That name is already used in this realm'));
       }
     }

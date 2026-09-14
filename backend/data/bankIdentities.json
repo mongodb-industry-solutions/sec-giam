@@ -1,6 +1,6 @@
 [
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0001-operations",
     "userName": "marta.oliveira",
     "kind": "human",
@@ -16,7 +16,7 @@
     "roleName": "bank_operations"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0002-cardofficer",
     "userName": "tomas.reyes",
     "kind": "human",
@@ -32,7 +32,7 @@
     "roleName": "bank_card_officer"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0003-compliance",
     "userName": "ingrid.larsen",
     "kind": "human",
@@ -48,7 +48,7 @@
     "roleName": "bank_compliance"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0004-admin",
     "userName": "samuel.adeyemi",
     "kind": "human",
@@ -64,7 +64,7 @@
     "roleName": "bank_admin"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-cus-0001-holder",
     "userName": "elena.duarte",
     "kind": "human",
@@ -81,7 +81,7 @@
     "accountHolderRef": "hld00001-0000-4000-8000-000000000001"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0006-operations",
     "userName": "nadia.haddad",
     "kind": "human",
@@ -97,7 +97,7 @@
     "roleName": "bank_operations"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0007-cards",
     "userName": "petra.novak",
     "kind": "human",
@@ -113,7 +113,7 @@
     "roleName": "bank_card_officer"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0008-compliance",
     "userName": "owen.bradley",
     "kind": "human",
@@ -129,7 +129,7 @@
     "roleName": "bank_compliance"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-emp-0009-admin",
     "userName": "ruth.nakamura",
     "kind": "human",
@@ -145,7 +145,7 @@
     "roleName": "bank_admin"
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "subjectId": "bank-cus-0010-holder",
     "userName": "viktor.ilyin",
     "kind": "human",

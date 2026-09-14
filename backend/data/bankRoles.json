@@ -1,6 +1,6 @@
 [
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "bankcore",
     "name": "bank_operations",
     "displayName": "Bank Operations",
@@ -44,7 +44,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "bankcore",
     "name": "bank_card_officer",
     "displayName": "Card Officer",
@@ -76,7 +76,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "bankcore",
     "name": "bank_compliance",
     "displayName": "Compliance",
@@ -176,7 +176,7 @@
     }
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "bankcore",
     "name": "bank_admin",
     "displayName": "Bank Administrator",
@@ -280,7 +280,7 @@
     }
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "resourceServer": "bankcore",
     "name": "bank_customer",
     "displayName": "Account Holder",

@@ -21,6 +21,11 @@ PSP_GIAM_ISSUER_URL = https://<authority>/realms/<realm>
 Everything else is discovered. The application hardcodes no path beneath the issuer, because those
 paths belong to the authority and it may reorganise them.
 
+`<realm>` is matched **without case**, and so is a domain slug: `LeafyIdp`, `leafyidp` and
+`LEAFYIDP` address one realm. Two realms may not differ only by case, which is what makes that
+safe. The authority answers with the realm's own spelling, so `iss` is stable no matter how the
+request was written: compare `iss` to the value you configured, not to the casing you sent.
+
 ---
 
 ## 1. Discovery
