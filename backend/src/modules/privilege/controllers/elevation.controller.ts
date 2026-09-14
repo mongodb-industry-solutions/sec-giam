@@ -110,12 +110,12 @@ export async function elevationController(fastify: FastifyInstance) {
 
     const body = request.body as {
       roleName: string; justification: string;
-      scope?: { kind: string; ref: string }; durationSeconds?: number;
+      scopeKind?: string; scopeRef?: string; durationSeconds?: number;
     };
 
     // Whether a reviewer is needed is the realm's policy. A realm that reviews elevations and one
     // that does not are the same build with different configuration.
-    const requiresApproval = (realm as { requiresElevationApproval?: boolean }).requiresElevationApproval ?? true;
+    const requiresApproval = realm.requiresElevationApproval ?? true;
 
     const outcome = await new ElevationService(fastify.db).request(realm, {
       // Always the caller's own. Elevating somebody else is a different act with a different route,
@@ -123,7 +123,16 @@ export async function elevationController(fastify: FastifyInstance) {
       subjectId: caller.subjectId,
       requestedBy: caller.subjectId,
       requiresApproval,
-      ...body,
+      roleName: body.roleName,
+      justification: body.justification,
+      durationSeconds: body.durationSeconds,
+      // The wire body carries `scopeKind`/`scopeRef` as flat fields (see the schema below), never a
+      // nested `scope` object. Reading `body.scope` here left every request unscoped regardless of
+      // what the caller sent, so the duplicate check compared it against the caller's OWN standing
+      // holding of the same role (also unscoped) and refused as "already held" on the very first
+      // attempt: every L2 investigator already holds `level2_investigator` standing, which is the
+      // entire reason they can ask for a case-scoped elevation of it at all.
+      ...(body.scopeKind && body.scopeRef ? { scope: { kind: body.scopeKind, ref: body.scopeRef } } : {}),
     });
     if (isElevationRefusal(outcome)) return reply.status(outcome.status as 400).send(problem(outcome.status, outcome.title, outcome.detail));
     return reply.send(outcome);

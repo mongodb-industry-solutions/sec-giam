@@ -29,6 +29,7 @@ interface RealmFixture {
   enabled?: boolean;
   demoMode?: boolean;
   clientEnforcement?: RealmRecord['clientEnforcement'];
+  requiresElevationApproval?: RealmRecord['requiresElevationApproval'];
   /** Self-registration. Seeded onto the realm's own directory, which is the only path it can describe. */
   registration?: Partial<NonNullable<DomainRecord['registration']>>;
   tokenPolicy?: Partial<RealmRecord['tokenPolicy']>;
@@ -75,6 +76,10 @@ export async function seedRealms(db: Db): Promise<void> {
         demoMode: fixture.demoMode ?? false,
         // Absent in the fixture means the realm inherits the deployment default, which is strict.
         ...(fixture.clientEnforcement ? { clientEnforcement: fixture.clientEnforcement } : {}),
+        // Absent in the fixture means a requested elevation needs a second approver, which is the
+        // safer default (see RealmRecord.requiresElevationApproval).
+        ...(fixture.requiresElevationApproval !== undefined
+          ? { requiresElevationApproval: fixture.requiresElevationApproval } : {}),
       },
       // A realm is its own partition. tenantId survives as a field so the partition key and the
       // option of a real second tenant are preserved; only the tenant collection is gone.

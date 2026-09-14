@@ -81,6 +81,17 @@ export interface RealmRecord extends Scoped {
    * so a wrong secret, a revoked client or a mismatched redirect is still refused.
    */
   clientEnforcement?: ClientEnforcementMode;
+  /**
+   * Whether a requested elevation needs a second principal to approve it before it is in force.
+   *
+   * Absent means yes, which is the safer default for a realm that has never said otherwise. Set to
+   * `false` only for a realm whose own resource server already performs the review before ever
+   * calling this endpoint: the platform's fraud investigation escalation is exactly that case (an L1
+   * escalates, an L2 accepts, and accepting IS the review), and defaulting to `true` there made a
+   * self-service, single-actor grant permanently `pendingApproval`, since nothing else in that flow
+   * calls the separate `/approve` route a second reviewer would use.
+   */
+  requiresElevationApproval?: boolean;
   meta: Meta;
 }
 

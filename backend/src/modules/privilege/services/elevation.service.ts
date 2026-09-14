@@ -193,10 +193,20 @@ export class ElevationService {
       if (!a || !b) return false;
       return a.kind === b.kind && a.ref === b.ref;
     };
-    const duplicate = existingHoldings.some(
+    const duplicate = existingHoldings.find(
       (entry) => entry.roleId === role.roleId && sameScope(entry.scope, input.scope),
     );
     if (duplicate) {
+      // A repeat of the SAME request, by the SAME subject, for the SAME role and scope, grants no
+      // authority the subject does not already hold, so answering it is a re-derivation rather than
+      // a second elevation. Refusing it here is what made the accepting L2's own page reload, or a
+      // second tab, unable to recover the token it already holds: every call after the first read as
+      // an attempt to elevate twice and was refused, even though nothing new was being asked for.
+      // Only requested BY the holder themselves: somebody else asking for a subject's already-held
+      // scope is a different question (why are you asking for what they have), and stays refused.
+      if (input.requestedBy === input.subjectId) {
+        return { ...duplicate, subjectId: input.subjectId };
+      }
       this.audit(realm, {
         action: input.requiresApproval ? 'privilege.requested' : 'privilege.granted',
         outcome: 'failure',

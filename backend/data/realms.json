@@ -12,6 +12,7 @@
       "selfServiceEnabled": true,
       "autoApprove": false
     },
+    "requiresElevationApproval": false,
     "localDomainDisplayName": "Leafy IdP",
     "tokenPolicy": {
       "accessTokenTtlSeconds": 600
