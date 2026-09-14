@@ -23,6 +23,24 @@ export function proxy(request: NextRequest): NextResponse {
   return NextResponse.rewrite(target);
 }
 
+/**
+ * Everything the browser asks for that belongs to the API rather than to the console.
+ *
+ * `/admin/resource-servers` is listed one path at a time on purpose. The catalog write is documented
+ * at that bare address (docs/issuer-contract.md), outside `/api/v1`, while `/admin` itself is where
+ * the console's own pages live, so a blanket `/admin/:path*` would forward the panel to the API and
+ * leave the operator with a 404 instead of a screen. Without these two entries the request stayed in
+ * Next, which answered its own 404 page, and the panel showed that HTML as its error.
+ */
 export const config = {
-  matcher: ['/api/:path*', '/.well-known/:path*', '/realms/:path*', '/health', '/doc', '/doc/:path*'],
+  matcher: [
+    '/api/:path*',
+    '/.well-known/:path*',
+    '/realms/:path*',
+    '/health',
+    '/doc',
+    '/doc/:path*',
+    '/admin/resource-servers',
+    '/admin/resource-servers/:path*',
+  ],
 };
