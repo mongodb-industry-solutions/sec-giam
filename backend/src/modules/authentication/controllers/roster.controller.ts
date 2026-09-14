@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
+import { createHash } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
-import { DirectoryService } from '../../directory/services/directory.service';
-import { activeHoldings, toScimEmails } from '../../directory/models/principal.model';
+import { LoginContextService } from '../services/loginContext.service';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -103,121 +103,55 @@ export async function rosterController(fastify: FastifyInstance) {
             roster: [{ subjectId: 'ada', userName: 'ada.lovelace', displayName: 'Ada Lovelace', role: 'analyst' }],
           }],
         },
+        304: { description: 'Unchanged since the tag the caller presented.' },
         404: { $ref: 'Problem#', description: 'No such realm.' },
       },
     },
   }, async (request, reply) => {
     const { realm: realmName } = request.params as { realm: string };
-    const realmService = new RealmService(fastify.db);
-    const realm = await realmService.byName(realmName);
+    const realm = await new RealmService(fastify.db).byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
 
     const { client_id: clientId, request_id: requestId } = request.query as {
       client_id?: string; request_id?: string;
     };
-    const { ROLE_COLLECTION, TICKET_COLLECTION } = await import('../../../shared/models/collections');
 
     /**
-     * Everything below is independent of everything else here, so it is read at once rather than
-     * as a waterfall: this endpoint is hit by an unauthenticated visitor on every load of the
-     * sign-in screen, and a chain of round trips that were never sequenced ON PURPOSE is exactly
-     * what turns a small answer into a slow one.
-     */
-    const [providers, roster, joining, parked, roles] = await Promise.all([
-      realmService.providersFor(realm.realmId),
-      new DirectoryService(fastify.db).demoRoster(realm.realmId),
-      // Which path accepts joiners, resolved once for the response.
-      realmService.registration(realm.realmId),
-      // The hosted screen is given a request_id, not a client id, so the asking client is resolved
-      // from the parked request rather than from a parameter that screen would have to carry.
-      requestId
-        ? fastify.db.collection(TICKET_COLLECTION).findOne(
-          { realmId: realm.realmId, requestId },
-          { projection: { _id: 0, clientId: 1 } },
-        ) as Promise<{ clientId?: string } | null>
-        : Promise.resolve(null),
-      fastify.db.collection(ROLE_COLLECTION)
-        .find({ realmId: realm.realmId }, { projection: { _id: 0, roleId: 1, name: 1 } })
-        .toArray() as unknown as Promise<Array<{ roleId: string; name: string }>>,
-    ]);
-
-    /**
-     * The role a persona holds, resolved so the screen can offer one ready-made user per role. This
-     * is the "one click per role" affordance the demonstration is built around.
+     * Which application is asking, which is the only thing about the caller that changes the answer:
+     * the client's `demoRoster` names the roles its screen offers.
      *
-     * Read straight off `roster`, not a second principal query: `demoRoster()` already returns
-     * whole principal documents, `roles` embedded and all, so re-querying the SAME collection for
-     * the SAME subjects for the SAME field was a round trip this endpoint never needed, on a screen
-     * an unauthenticated visitor loads before doing anything else. `activeHoldings` is the one place
-     * expiry and a pending approval are already handled, so a lapsed or unapproved holding is
-     * excluded here exactly as it would be anywhere else that asks "what does this subject hold now".
+     * A hosted screen is handed a `request_id` and is not told the client, so it is resolved from
+     * the parked authorization. Read on every request rather than cached with the context: a ticket
+     * is single use and short lived, and the CONTEXT is then cached on the client this resolves to,
+     * which is what makes the cache hit across the many request ids of one session.
      */
-    const assignments = roster.flatMap(
-      (identity) => activeHoldings(identity).map((holding) => ({ subjectId: identity.subjectId, roleId: holding.roleId })),
-    );
+    const { TICKET_COLLECTION } = await import('../../../shared/models/collections');
+    const parked = requestId
+      ? await fastify.db.collection(TICKET_COLLECTION).findOne(
+        { realmId: realm.realmId, requestId },
+        { projection: { _id: 0, clientId: 1 } },
+      ) as { clientId?: string } | null
+      : null;
 
-    const roleNameById = new Map(roles.map((role) => [role.roleId, role.name]));
+    const { view, cached } = await new LoginContextService(fastify.db)
+      .read(realm, parked?.clientId ?? clientId);
 
-    // A persona can hold more than one role: the seed appends the realm administrator to whoever already
-    // administers the realm. Collecting all of them, rather than keeping whichever the driver returned
-    // last, is what stops those personas from being grouped under a role their screen never offers and
-    // then filtered out of their own login list.
-    const rolesBySubject = new Map<string, string[]>();
-    for (const assignment of assignments) {
-      const name = roleNameById.get(assignment.roleId);
-      if (!name) continue;
-      const held = rolesBySubject.get(assignment.subjectId);
-      if (held) held.push(name);
-      else rolesBySubject.set(assignment.subjectId, [name]);
-    }
+    /**
+     * Revalidation, on a body that is identical between loads until the seed changes.
+     *
+     * The screen is loaded again on every redirect through the authority, so an unchanged answer is
+     * worth answering with no body at all. The tag is a digest of the answer rather than a version
+     * counter: nothing here has one, and a digest also covers branding and the domains.
+     */
+    const etag = `W/"${createHash('sha256').update(JSON.stringify(view)).digest('hex').slice(0, 32)}"`;
+    // Seconds, and `private`: it is public data, but a shared cache holding a realm's sign-in screen
+    // is a surprise nobody asked for, and a demo that reseeds must not need a hard refresh.
+    reply.header('Cache-Control', 'private, max-age=30');
+    reply.header('ETag', etag);
+    // Observable, so a stale persona can be attributed instead of guessed at.
+    reply.header('X-Login-Context-Cache', cached ? 'hit' : 'miss');
+    if (request.headers['if-none-match'] === etag) return reply.status(304).send();
 
-    // The roles this client's screen offers. Read from the client record rather than passed in, so a
-    // caller cannot widen its own roster by asking for more.
-    const askingClient = parked?.clientId ?? clientId;
-    const { findOAuthClient } = await import('../../oauth/services/clientAuth.service');
-    const client = askingClient ? await findOAuthClient(fastify.db, realm.realmId, askingClient) : null;
-    const offered = client?.demoRoster;
-
-    // The role this screen should show the persona under: the one it offers, when it offers any of them.
-    const roleFor = (subjectId: string): string | undefined => {
-      const held = rolesBySubject.get(subjectId) ?? [];
-      return (offered && held.find((role) => offered.includes(role))) ?? held[0];
-    };
-
-    return reply.send({
-      realm: realm.name,
-      displayName: realm.displayName,
-      issuer: realm.issuer,
-      ...(realm.notice ? { notice: realm.notice } : {}),
-      // Still one flag at the top level: a sign-in screen asks one question and should not have to
-      // reason about which path answers it. Resolved from the internal path (ADR-002).
-      registrationEnabled: joining.selfServiceEnabled,
-      branding: realm.branding,
-      providers: providers.map((provider) => ({
-        name: provider.name,
-        displayName: provider.displayName,
-        protocol: provider.protocol,
-        enabled: provider.enabled,
-        ...(provider.notice ? { notice: provider.notice } : {}),
-      })),
-      roster: roster
-        // An unknown client, or one that declares nothing, gets every featured persona: that is the
-        // behaviour a realm with no application-specific screen should have.
-        .filter((identity) => {
-          if (!offered) return true;
-          const role = roleFor(identity.subjectId);
-          return Boolean(role && offered.includes(role));
-        })
-        .map((identity) => ({
-          subjectId: identity.subjectId,
-          // The login and the name are different things, and both are useful here: somebody
-          // choosing a persona reads the name, and the field they then type is the login.
-          userName: identity.userName,
-          ...(identity.name?.formatted ? { displayName: identity.name.formatted } : {}),
-          ...(toScimEmails(identity)[0] ? { email: toScimEmails(identity)[0].value } : {}),
-          ...(roleFor(identity.subjectId) ? { role: roleFor(identity.subjectId) as string } : {}),
-          ...(identity.demoNote ? { demoNote: identity.demoNote } : {}),
-        })),
-    });
+    return reply.send(view);
   });
 }

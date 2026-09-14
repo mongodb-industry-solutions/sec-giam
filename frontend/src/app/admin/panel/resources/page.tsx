@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { API_BASE_URL, SIMULATOR_REALM } from '../../../../lib/constants';
-import { getAdminToken, readJsonSafe } from '../../../../lib/adminHelpers';
+import { failureMessage, getAdminToken, readJsonSafe } from '../../../../lib/adminHelpers';
 import {
   type CatalogResourceDraft, type ResourceServerResponse, type ServerDraft,
   draftFromResponse, draftToRegisterBody, emptyServerDraft, serializeDraft,
@@ -49,7 +49,7 @@ export default function ResourcesAdminPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const { data, text } = await readJsonSafe<{ resourceServers: ResourceServerResponse[] }>(res);
-      if (!res.ok || !data) throw new Error(text.trim().slice(0, 200) || res.statusText);
+      if (!res.ok || !data) throw new Error(failureMessage(res, data, text));
       const asDrafts = data.resourceServers.map(draftFromResponse);
       setLoaded(asDrafts);
       setDrafts(asDrafts);
@@ -98,7 +98,7 @@ export default function ResourcesAdminPage() {
         body: JSON.stringify({ realm, ...draftToRegisterBody(draft) }),
       });
       const { data, text } = await readJsonSafe<{ registered: number; deprecated: number }>(res);
-      if (!res.ok || !data) throw new Error(text.trim().slice(0, 200) || res.statusText);
+      if (!res.ok || !data) throw new Error(failureMessage(res, data, text));
       setNotice(`${draft.name}: ${data.registered} permission(s) registered, ${data.deprecated} withdrawn.`);
       if (draft === newServer) { setAdding(false); setNewServer(emptyServerDraft()); }
       await load();

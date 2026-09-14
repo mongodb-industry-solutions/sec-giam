@@ -110,12 +110,12 @@ export async function elevationController(fastify: FastifyInstance) {
 
     const body = request.body as {
       roleName: string; justification: string;
-      scope?: { kind: string; ref: string }; durationSeconds?: number;
+      scopeKind?: string; scopeRef?: string; durationSeconds?: number;
     };
 
     // Whether a reviewer is needed is the realm's policy. A realm that reviews elevations and one
     // that does not are the same build with different configuration.
-    const requiresApproval = (realm as { requiresElevationApproval?: boolean }).requiresElevationApproval ?? true;
+    const requiresApproval = realm.requiresElevationApproval ?? true;
 
     const outcome = await new ElevationService(fastify.db).request(realm, {
       // Always the caller's own. Elevating somebody else is a different act with a different route,
@@ -123,7 +123,16 @@ export async function elevationController(fastify: FastifyInstance) {
       subjectId: caller.subjectId,
       requestedBy: caller.subjectId,
       requiresApproval,
-      ...body,
+      roleName: body.roleName,
+      justification: body.justification,
+      durationSeconds: body.durationSeconds,
+      // The wire body carries `scopeKind`/`scopeRef` as flat fields (see the schema below), never a
+      // nested `scope` object. Reading `body.scope` here left every request unscoped regardless of
+      // what the caller sent, so the duplicate check compared it against the caller's OWN standing
+      // holding of the same role (also unscoped) and refused as "already held" on the very first
+      // attempt: every L2 investigator already holds `level2_investigator` standing, which is the
+      // entire reason they can ask for a case-scoped elevation of it at all.
+      ...(body.scopeKind && body.scopeRef ? { scope: { kind: body.scopeKind, ref: body.scopeRef } } : {}),
     });
     if (isElevationRefusal(outcome)) return reply.status(outcome.status as 400).send(problem(outcome.status, outcome.title, outcome.detail));
     return reply.send(outcome);
@@ -168,6 +177,54 @@ export async function elevationController(fastify: FastifyInstance) {
     const outcome = await new ElevationService(fastify.db).approve(realm, subjectId, roleId, caller.subjectId);
     if (isElevationRefusal(outcome)) return reply.status(outcome.status as 409).send(problem(outcome.status, outcome.title, outcome.detail));
     return reply.send(outcome);
+  });
+
+  fastify.get(`${base}/mine`, {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'holdsOwnElevation',
+      tags: ['privilege'],
+      summary: 'Whether I hold my own in-force elevation for a scope',
+      description:
+        'No applicable standard; privileged access management practice. Proving you hold your own '
+        + 'grant needs no special permission, the same way reading your own profile needs none: it is '
+        + 'the resource server\'s way of checking a caller\'s elevation without giving every holder of '
+        + 'an elevated role the oversight permission that lists everyone\'s.',
+      security: [{ bearerAuth: [] }],
+      params: realmParam,
+      querystring: {
+        type: 'object',
+        required: ['scopeKind', 'scopeRef'],
+        properties: {
+          scopeKind: { type: 'string' },
+          scopeRef: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['inForce'],
+          properties: { inForce: { type: 'boolean' } },
+          description:
+            'Whether the caller holds an in-force elevation for that scope. `false` is an answer '
+            + 'rather than an absence: no elevation, an expired one and one still awaiting a reviewer '
+            + 'are the same thing to a resource server deciding whether to serve the request.',
+          examples: [{ inForce: true }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const realm = await realmOf((request.params as { realm: string }).realm);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const { scopeKind, scopeRef } = request.query as { scopeKind: string; scopeRef: string };
+    const inForce = await new ElevationService(fastify.db)
+      .holdsInForce(realm.realmId, caller.subjectId, { kind: scopeKind, ref: scopeRef });
+    return reply.send({ inForce });
   });
 
   fastify.get(base, {

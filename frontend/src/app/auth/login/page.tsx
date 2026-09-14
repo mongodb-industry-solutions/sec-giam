@@ -7,6 +7,7 @@ import {
   type PendingAuthorization, type SignInPrefill,
 } from '../../../lib/authorizationRequest';
 import { AuthBackdrop } from '../../../components/AuthBackdrop';
+import { readEntryDefaults, type EntryDefaults } from '../../../lib/entryParams';
 
 /**
  * Signing in, and continuing an authorization the authority parked here.
@@ -25,6 +26,7 @@ export default function LoginPage() {
   const [pending, setPending] = useState<PendingAuthorization | null>(null);
   const [realm, setRealm] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<SignInPrefill>({});
+  const [entry, setEntry] = useState<EntryDefaults>({});
   const [returning, setReturning] = useState(false);
 
   useEffect(() => {
@@ -33,9 +35,17 @@ export default function LoginPage() {
     // `login_hint`, and the demo's `prefill_password`, as the authority passed them on. Form prefill
     // only: what is authorized is the ticket's, so filling these cannot alter the request.
     setPrefill(readSignInPrefill(search));
-    // The authority names the realm when it sends somebody here. Guessing it from a client id would
-    // work until two realms registered the same one.
-    setRealm(new URLSearchParams(search).get('realm') ?? 'leafypay');
+    /**
+     * The authority names the realm when it sends somebody here. Guessing it from a client id would
+     * work until two realms registered the same one.
+     *
+     * The same URL may also name a DOMAIN, which opens the picker on one path instead of on the
+     * realm's first enabled one. Presentation only: it cannot alter the authorization request, and
+     * which domain a credential really belongs to is still resolved server side.
+     */
+    const defaults = readEntryDefaults(search);
+    setEntry(defaults);
+    setRealm(defaults.realm ?? 'LeafyIdp');
   }, []);
 
   function handleSignedIn(result: SignedIn) {
@@ -90,6 +100,7 @@ export default function LoginPage() {
     <AuthBackdrop>
       <SignInPanel
         defaultRealm={realm}
+        defaultDomain={entry.domain}
         requestId={pending?.requestId}
         prefill={prefill}
         onSignedIn={handleSignedIn}

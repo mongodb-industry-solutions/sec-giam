@@ -193,10 +193,20 @@ export class ElevationService {
       if (!a || !b) return false;
       return a.kind === b.kind && a.ref === b.ref;
     };
-    const duplicate = existingHoldings.some(
+    const duplicate = existingHoldings.find(
       (entry) => entry.roleId === role.roleId && sameScope(entry.scope, input.scope),
     );
     if (duplicate) {
+      // A repeat of the SAME request, by the SAME subject, for the SAME role and scope, grants no
+      // authority the subject does not already hold, so answering it is a re-derivation rather than
+      // a second elevation. Refusing it here is what made the accepting L2's own page reload, or a
+      // second tab, unable to recover the token it already holds: every call after the first read as
+      // an attempt to elevate twice and was refused, even though nothing new was being asked for.
+      // Only requested BY the holder themselves: somebody else asking for a subject's already-held
+      // scope is a different question (why are you asking for what they have), and stays refused.
+      if (input.requestedBy === input.subjectId) {
+        return { ...duplicate, subjectId: input.subjectId };
+      }
       this.audit(realm, {
         action: input.requiresApproval ? 'privilege.requested' : 'privilege.granted',
         outcome: 'failure',
@@ -347,6 +357,27 @@ export class ElevationService {
   async listInForce(realmId: string): Promise<ElevationView[]> {
     const held = await this.ephemeralHoldings(realmId);
     return held.filter((holding) => isInForce(holding));
+  }
+
+  /**
+   * Whether the SUBJECT ASKING holds their own in-force elevation for a scope, right now.
+   *
+   * `listInForce` answers "who holds elevated access", which is an oversight question and is
+   * permissioned as one: a role has to be granted `elevations:view` to ask it. Proving you hold your
+   * own grant is a different, narrower question a role does not need that permission to ask, the
+   * same way reading your own profile needs no special grant. Without this, the only way a resource
+   * server had to check a caller's elevation was the oversight list, which the caller holding the
+   * elevation was itself never permissioned to call, so the elevation, once granted, could not
+   * actually be exercised.
+   */
+  async holdsInForce(realmId: string, subjectId: string, scope: { kind: string; ref: string }): Promise<boolean> {
+    const principal = await this.principals.findOne(
+      { realmId, subjectId },
+      { projection: { _id: 0, roles: 1 } },
+    );
+    return (principal?.roles ?? []).some(
+      (holding) => holding.scope?.kind === scope.kind && holding.scope?.ref === scope.ref && isInForce(holding),
+    );
   }
 
   /** Everything awaiting a reviewer, so a request cannot sit unnoticed until it expires. */

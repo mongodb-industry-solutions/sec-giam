@@ -42,7 +42,8 @@ export interface LoginContext {
   displayName: string;
   notice?: string;
   registrationEnabled: boolean;
-  branding: { displayName: string; logoUri?: string; primaryColor?: string };
+  /** `displayName` only when the realm renders under a label other than its own name. */
+  branding: { displayName?: string; logoUri?: string; primaryColor?: string };
   providers: Provider[];
   roster: RosterEntry[];
 }
@@ -72,7 +73,8 @@ function byRole(roster: RosterEntry[]): Array<[string, RosterEntry[]]> {
 }
 
 export function SignInPanel({
-  defaultRealm = 'leafypay',
+  defaultRealm = 'LeafyIdp',
+  defaultDomain,
   heading,
   clientId,
   requestId,
@@ -80,6 +82,12 @@ export function SignInPanel({
   onSignedIn,
 }: {
   defaultRealm?: string;
+  /**
+   * The domain to open on, by slug. Ignored when this realm has no such domain, rather than
+   * leaving the picker on nothing: a link naming a path that was removed should still sign people
+   * in through the one the realm does offer.
+   */
+  defaultDomain?: string;
   heading?: string;
   /** Narrows the demo roster to the personas this application should offer. */
   clientId?: string;
@@ -137,7 +145,19 @@ export function SignInPanel({
         // Default to the first enabled path, which is the one a credential can actually be checked
         // against; falling back to the first at all only when none is enabled, so the field is never
         // left pointing at nothing.
-        const preferred = data?.providers.find((provider: Provider) => provider.enabled) ?? data?.providers[0];
+        // The asked-for domain first, then the first enabled path, then the first at all so the
+        // field is never left pointing at nothing. An asked-for path that is disabled is still
+        // honoured: the picker shows its notice, which is more use than silently choosing another.
+        // Matched without case, like the authority resolves a realm and a domain slug: a link that
+        // capitalised a letter should open on the path it names, not silently on another one.
+        const asked = defaultDomain
+          ? data?.providers.find(
+            (provider: Provider) => provider.name.toLowerCase() === defaultDomain.toLowerCase(),
+          )
+          : undefined;
+        const preferred = asked
+          ?? data?.providers.find((provider: Provider) => provider.enabled)
+          ?? data?.providers[0];
         setSelectedProvider(preferred?.name ?? '');
       })
       .catch(() => {
@@ -146,7 +166,7 @@ export function SignInPanel({
         setContextState('unavailable');
       });
     return () => { cancelled = true; };
-  }, [realm, clientId, requestId]);
+  }, [realm, clientId, requestId, defaultDomain]);
 
   async function submit(credentials: { login: string; password: string }) {
     setBusy(true);

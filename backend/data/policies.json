@@ -1,6 +1,6 @@
 [
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "name": "role-administration-allowed",
     "version": 1,
     "status": "active",
@@ -11,7 +11,7 @@
     "reason": "Reading and editing the role catalogue is what administering a realm consists of."
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "name": "role-change-denied",
     "version": 1,
     "status": "active",
@@ -23,7 +23,7 @@
     "reason": "Editing what a role grants is withheld while this policy stands, whatever else allows it. Withdraw the policy deliberately, so widening the authority is a decision somebody made rather than one nobody noticed."
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "name": "session-review-allowed-at-elevated-assurance",
     "version": 1,
     "status": "active",
@@ -34,7 +34,7 @@
     "reason": "Reading where an account is signed in is offered once the sign-in itself reached a second factor."
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "name": "sensitive-transaction-view-requires-elevated-assurance",
     "version": 1,
     "status": "active",

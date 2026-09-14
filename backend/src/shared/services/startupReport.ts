@@ -1,6 +1,7 @@
 import { Db } from 'mongodb';
 import { trailHealth } from '../../modules/audit/services/securityEvent.service';
 import { existsSync } from 'fs';
+import { describeDeployment, capabilityFindings, capabilities } from '../../vendors/mongodb/deployment';
 import { config, keyVaultNamespace, realmIssuer } from '../../config';
 import { REALM_COLLECTION, PRINCIPAL_COLLECTION, KEY_COLLECTION } from '../models/collections';
 
@@ -63,7 +64,16 @@ export function configurationReport(): StartupLine[] {
     // Its own vault with its own keys. Sharing the applications' vault would defeat the extraction.
     { label: 'key vault', value: `${keyVaultNamespace()} (GIAM's own, GIAM's own DEKs)` },
     cryptSharedLine(),
-    { label: 'QE text search', value: config.mongodb.textSearch ? 'on (needs 8.2+)' : 'off, names degrade to equality' },
+    { label: 'deployment', value: describeDeployment() },
+    ...capabilityFindings().map((finding) => ({
+      label: 'compatibility',
+      value: finding.text,
+      level: (finding.warn ? 'warn' : 'info') as 'warn' | 'info',
+    })),
+    {
+      label: 'QE text search',
+      value: capabilities().qeSubstring ? 'on, substring' : 'off, names degrade to equality',
+    },
     { label: 'key custody', value: `${config.keys.provider}, ${config.keys.replicas} declared replica(s)` },
     { label: 'event bus', value: `${config.app.eventBusEngine}, own store` },
     {

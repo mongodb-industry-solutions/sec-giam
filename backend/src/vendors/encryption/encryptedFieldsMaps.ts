@@ -1,6 +1,6 @@
 import type { Binary } from 'mongodb';
 import { PRINCIPAL_COLLECTION } from '../../shared/models/collections';
-import { config } from '../../config';
+import { capabilities } from '../mongodb/deployment';
 
 // What GIAM encrypts at rest, under its OWN DEKs in its OWN vault.
 //
@@ -44,16 +44,23 @@ export const DEK_ALT_NAMES = {
  *
  * On an older cluster the field degrades to equality rather than failing setup, which keeps it
  * encrypted and exactly searchable instead of trading the whole deployment for one query shape.
- * That degradation is `forceEquality`, and it is driven by what the DRIVER actually accepts:
- * `createCollections` catches the refusal and rebuilds the map. It used to be driven by a static
- * configuration flag, which meant the sentence above was false and a deployment on an older
- * `crypt_shared` simply failed setup with `principal` left uncreated.
+ *
+ * That degradation is decided in two places, and either one is enough:
+ *   1. the DEPLOYMENT cannot do it (MONGODB_TYPE / MONGODB_VERSION say below 9.0, or Community,
+ *      which cannot analyse an encrypted query at all). Known before a connection exists;
+ *   2. the DRIVER refuses the query type at create time, which `createCollections` catches and
+ *      rebuilds the map with `forceEquality`. The last-resort net, for a crypt_shared older than
+ *      the server it points at.
+ *
+ * (1) is what a hand-managed flag used to stand in for, badly: it CLAIMED the capability, so a
+ * deployment that declared it on an 8.x cluster failed setup with `principal` left uncreated
+ * instead of degrading. There is no switch for this any more, and so nothing to set wrongly.
  */
 export function buildEncryptedFieldsMaps(
   deks: GiamDeks,
   options: { forceEquality?: boolean } = {},
 ): Record<string, { fields: unknown[] }> {
-  const nameQueries = config.mongodb.textSearch && !options.forceEquality
+  const nameQueries = capabilities().qeSubstring && !options.forceEquality
     ? {
       queryType: 'substring',
       contention: 8,

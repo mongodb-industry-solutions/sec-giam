@@ -18,7 +18,7 @@ import { AuthBackdrop } from '../../../components/AuthBackdrop';
  * signed out of this browser, which is the part they can see and the part they asked for.
  */
 
-const DEFAULT_REALM = 'leafypay';
+const DEFAULT_REALM = 'LeafyIdp';
 
 function safeReturn(raw: string | null): string {
   if (!raw) return '/auth/login';

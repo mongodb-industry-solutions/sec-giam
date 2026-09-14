@@ -8,6 +8,7 @@ import {
   POLICY_COLLECTION,
   SESSION_COLLECTION, GRANT_COLLECTION,
   AUDIT_COLLECTION,
+  CASE_INSENSITIVE,
 } from '../../shared/models/collections';
 
 export interface IndexPlan {
@@ -43,14 +44,37 @@ export function plannedIndexes(): IndexPlan[] {
   const plans: IndexPlan[] = [
     // Realm and federation.
     { collection: REALM_COLLECTION, keys: { realmId: 1 }, options: { name: 'realmId_unique', unique: true } },
-    { collection: REALM_COLLECTION, keys: { name: 1 }, options: { name: 'name_unique', unique: true } },
+    /**
+     * Case-insensitive, and the UNIQUENESS is the important half.
+     *
+     * Without the collation a deployment could hold `Acme` and `acme` as two realms, and a request
+     * naming either would then have two right answers. With it the second one is refused at
+     * creation, which is what makes resolving a name without case a safe thing to do at all.
+     */
+    {
+      collection: REALM_COLLECTION,
+      keys: { name: 1 },
+      options: { name: 'name_unique', unique: true, collation: CASE_INSENSITIVE },
+    },
     // Resolving an issuer URL back to its realm happens on every token verification path.
     { collection: REALM_COLLECTION, keys: { issuer: 1 }, options: { name: 'issuer_unique', unique: true } },
     // The wire alias a caller may use instead of the realm's own name.
-    { collection: REALM_COLLECTION, keys: { aliases: 1 }, options: { name: 'aliases', sparse: true } },
+    // Same collation as `name_unique`: `byName` looks in both with one query, and an index without
+    // it would serve half of that query and scan for the other half.
+    {
+      collection: REALM_COLLECTION,
+      keys: { aliases: 1 },
+      options: { name: 'aliases', sparse: true, collation: CASE_INSENSITIVE },
+    },
 
     { collection: DOMAIN_COLLECTION, keys: { domainId: 1 }, options: { name: 'domainId_unique', unique: true } },
-    { collection: DOMAIN_COLLECTION, keys: { realmId: 1, tenantId: 1, name: 1 }, options: { name: 'realm_tenant_name_unique', unique: true } },
+    // A domain slug is unique inside its realm without case, for the same reason a realm's is:
+    // `atlas-id` and `Atlas-Id` naming two paths into one realm is not a distinction anybody meant.
+    {
+      collection: DOMAIN_COLLECTION,
+      keys: { realmId: 1, tenantId: 1, name: 1 },
+      options: { name: 'realm_tenant_name_unique', unique: true, collation: CASE_INSENSITIVE },
+    },
     // Home-realm discovery resolves an entered email domain to a provider.
     { collection: DOMAIN_COLLECTION, keys: { realmId: 1, 'config.emailDomains': 1 }, options: { name: 'realm_emailDomains', sparse: true } },
 
@@ -251,6 +275,32 @@ export async function createIndexes(db: Db): Promise<void> {
       await db.collection(plan.collection).createIndex(plan.keys, plan.options);
       console.log(`  index:   ${plan.collection}.${plan.options.name}`);
     } catch (err) {
+      /**
+       * The same NAME with different OPTIONS is a redeclaration, and it is rebuilt.
+       *
+       * MongoDB refuses it rather than adapting, which is right of the server and wrong for setup:
+       * changing an index's options in the plan is an ordinary thing to do (this is how
+       * `name_unique` gained its collation), and a deployment holding the old one would otherwise
+       * be stuck until somebody dropped it by hand. Dropping and recreating is what an operator
+       * would do, so setup does it and says so.
+       *
+       * Both refusals, because the server distinguishes them and the distinction does not matter
+       * here: `IndexOptionsConflict` (85) is the same key with different options, and
+       * `IndexKeySpecsConflict` (86) is the same NAME with a different specification, which is
+       * what adding a collation produces.
+       *
+       * Only for a conflict on an index THIS plan declares, and only by its declared name. Any
+       * other failure still throws: a disagreement setup cannot name is one it must not paper over.
+       */
+      const code = (err as { code?: number }).code;
+      const conflict = code === 85 || code === 86;
+      if (conflict) {
+        console.log(`  rebuild: ${plan.collection}.${plan.options.name} (declared options changed)`);
+        await db.collection(plan.collection).dropIndex(plan.options.name);
+        await db.collection(plan.collection).createIndex(plan.keys, plan.options);
+        console.log(`  index:   ${plan.collection}.${plan.options.name}`);
+        continue;
+      }
       // An index that already exists with different options is a real disagreement, not noise: it
       // means the declared plan and the database have drifted, and silence would hide it.
       const reason = err instanceof Error ? err.message : String(err);

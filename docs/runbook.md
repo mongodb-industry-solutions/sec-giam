@@ -30,10 +30,29 @@ Everything is prefixed `GIAM_`. Nothing is derived from another service's config
 | `GIAM_DB_NAME` | Database. Always distinct from any other service's | `giamdb` |
 | `GIAM_DB_KEYVAULT` | Key vault **collection**, inside that same database | `keyVault` |
 | `GIAM_CRYPT_SHARED_LIB_PATH` | Encryption shared library | falls back to the platform value |
-| `GIAM_QE_TEXT_SEARCH` | Substring search on encrypted names. Needs server and library 8.2+ | `true` |
+| `MONGODB_TYPE` | Which MongoDB: `atlas`, `ea` (Enterprise Advanced) or `ce` (Community). `GIAM_DB_TYPE` overrides | `atlas` |
+| `MONGODB_VERSION` | Server version, e.g. `8.2.4`. `GIAM_DB_VERSION` overrides | `8.2.4` |
 
 Sharing a cluster is not sharing a database. GIAM never reads another service's collections and no
 other service reads GIAM's.
+
+### Knowing what the deployment can do
+
+`MONGODB_TYPE` and `MONGODB_VERSION` are the single place a version-sensitive decision is taken
+from. Setup, the seeder and the encrypted-fields map all need an answer *before* they connect, so
+the pair is declared; once a connection exists the cluster is probed and **the probe wins**. A
+declaration that disagrees is reported in the startup log, in `setup:db:validate` and in
+`GET /api/v1/admin/posture`, never silently obeyed.
+
+| Capability | Requires | If absent |
+|---|---|---|
+| Queryable Encryption, automatic | Atlas or `ea`, 7.0+ | **Setup refuses.** Community cannot analyse an encrypted query, so the collection would be built and never readable |
+| Substring search on encrypted names | 9.0+, automatic encryption | Names degrade to equality: still encrypted, still exactly searchable, no search by fragment |
+| Change streams (live-session cache) | A replica set or a sharded cluster | The cache does not start; revocation holds through the authoritative read and the token lifetime |
+| Time series retention | 5.0+ | The audit trail is created without expiry, and the retention is not enforced |
+
+A capability is never configured directly: an operator declares the deployment, and the
+consequences are derived, so no two settings can contradict each other.
 
 ### Key custody
 

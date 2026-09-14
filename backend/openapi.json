@@ -3657,6 +3657,16 @@
               }
             }
           },
+          "304": {
+            "description": "Unchanged since the tag the caller presented.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unchanged since the tag the caller presented."
+                }
+              }
+            }
+          },
           "404": {
             "description": "No such realm.",
             "content": {
@@ -17862,6 +17872,93 @@
         }
       }
     },
+    "/realms/{realm}/elevations/mine": {
+      "get": {
+        "operationId": "holdsOwnElevation",
+        "summary": "Whether I hold my own in-force elevation for a scope",
+        "tags": [
+          "privilege"
+        ],
+        "description": "No applicable standard; privileged access management practice. Proving you hold your own grant needs no special permission, the same way reading your own profile needs none: it is the resource server's way of checking a caller's elevation without giving every holder of an elevated role the oversight permission that lists everyone's.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "scopeKind",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "scopeRef",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether the caller holds an in-force elevation for that scope. `false` is an answer rather than an absence: no elevation, an expired one and one still awaiting a reviewer are the same thing to a resource server deciding whether to serve the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "inForce"
+                  ],
+                  "properties": {
+                    "inForce": {
+                      "type": "boolean"
+                    }
+                  },
+                  "description": "Whether the caller holds an in-force elevation for that scope. `false` is an answer rather than an absence: no elevation, an expired one and one still awaiting a reviewer are the same thing to a resource server deciding whether to serve the request."
+                },
+                "example": {
+                  "inForce": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/realms/{realm}/elevations/{subjectId}/{roleId}": {
       "delete": {
         "operationId": "revokeElevation",
@@ -19409,6 +19506,159 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage/target": {
+      "get": {
+        "operationId": "getAdminStorageTarget",
+        "summary": "What a destructive maintenance command would act on",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. The cluster, the database, the key vault and every collection a rebuild or a drop would remove, with the number of documents each one currently holds. The console shows it inside the confirmation, so the operator confirms against the deployment in front of them rather than against the one they assume is configured. Read only, and the connection string keeps no credential: a screenshot of this travels further than the page.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The target of the destructive commands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The target of the destructive commands.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "host",
+                    "database",
+                    "keyVault",
+                    "deployment",
+                    "reachable",
+                    "collections"
+                  ],
+                  "properties": {
+                    "host": {
+                      "type": "string"
+                    },
+                    "database": {
+                      "type": "string"
+                    },
+                    "keyVault": {
+                      "type": "string"
+                    },
+                    "deployment": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "version"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "reachable": {
+                      "type": "boolean"
+                    },
+                    "unreachableReason": {
+                      "type": "string"
+                    },
+                    "encryptionKeys": {
+                      "type": "integer"
+                    },
+                    "collections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "module",
+                          "kind",
+                          "encrypted"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "module": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "encrypted": {
+                            "type": "boolean"
+                          },
+                          "documents": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "host": "mongodb+srv://cluster0.abcde.mongodb.net",
+                  "database": "giamdb",
+                  "keyVault": "giamdb.keyVault",
+                  "deployment": {
+                    "type": "atlas",
+                    "version": "8.2.4"
+                  },
+                  "reachable": true,
+                  "encryptionKeys": 3,
+                  "collections": [
+                    {
+                      "name": "principal",
+                      "module": "directory",
+                      "kind": "standard",
+                      "encrypted": true,
+                      "documents": 42
+                    }
+                  ]
                 }
               }
             }

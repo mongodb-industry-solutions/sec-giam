@@ -52,6 +52,25 @@ export async function readJsonSafe<T>(res: Response): Promise<{ data: T | null; 
   }
 }
 
+/**
+ * A message a person can act on, from whatever a failed response actually carried.
+ *
+ * The API answers RFC 9457 problems, but a proxy, an ingress or a front end that never forwarded the
+ * request answers plain text or an HTML page, and pasting that body into a banner puts a document's
+ * markup on screen. Prefers the problem's own detail, and falls back to the status.
+ */
+export function failureMessage(res: Response, body: unknown, text: string): string {
+  const problem = body as { detail?: string; title?: string; error?: string } | null;
+  const stated = problem?.detail ?? problem?.title ?? problem?.error;
+  if (stated) return stated;
+  const trimmed = text.trim();
+  // A body that opens as markup describes nothing about this request: say where it stopped instead.
+  if (!trimmed || trimmed.startsWith('<')) {
+    return `The request did not reach the API (HTTP ${res.status} ${res.statusText}).`;
+  }
+  return trimmed.slice(0, 200);
+}
+
 /** True while a proxy/ingress reports no reachable backend (pod restarting, not an app error). */
 export function isUpstreamUnavailable(res: Response): boolean {
   return res.status === 502 || res.status === 503 || res.status === 504;

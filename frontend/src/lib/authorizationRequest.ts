@@ -59,9 +59,9 @@ export interface ConsentScope {
  * What the person is being asked to agree to. Assembled by the authority from the stored request.
  *
  * No authority name here: the screen shows GIAM's own brand for that half, the same fixed identity
- * on every realm, not a per-realm value carried over the wire. A realm like `leafypay` is a shared
- * identity domain for a group of applications, one of which happens to share its display name; that
- * coincidence is not what a person is trusting when they agree to sign in.
+ * on every realm, not a per-realm value carried over the wire. A realm like `LeafyIdp` is a trust
+ * boundary shared by a group of applications, and the application asking is one of them; which one
+ * is asking is what a person is agreeing to, and the realm it happens to answer to is not.
  */
 export interface ConsentPrompt {
   clientName: string;

@@ -7,6 +7,7 @@ import { plannedIndexes, classifyIndex, reconcilable, ExistingIndex } from './cr
 import { assertCryptSharedLib } from '../encryption/qeClient';
 import { findOrphanedDeks } from '../encryption/keyVault';
 import { buildEncryptedFieldsMaps } from '../encryption/encryptedFieldsMaps';
+import { detectDeployment, deployment, capabilities, describeDeployment } from '../mongodb/deployment';
 import { config, keyVaultNamespace } from '../../config';
 
 // warning: converges on the next setup and seed. error: rerun setup. reset: only a rebuild fixes it.
@@ -69,6 +70,35 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
   } catch (err) {
     add('crypt_shared library', false, err instanceof Error ? err.message : String(err));
   }
+
+  /**
+   * The deployment itself, checked before its contents.
+   *
+   * Probed here rather than trusted from the environment: validation exists to find the problems
+   * that otherwise surface as a 503, and a declared version that does not match the cluster is one
+   * of them. `error` and not `reset` for the mismatch, since correcting the environment fixes it;
+   * an edition that cannot encrypt at all is a `reset`, because nothing about this database can be
+   * made right while it stays where it is.
+   */
+  await detectDeployment(db.client);
+  const current = deployment();
+  const caps = capabilities();
+  add('deployment supports automatic Queryable Encryption', caps.automaticEncryption,
+    describeDeployment(current)
+      + (caps.automaticEncryption ? '' : ': encrypted reads cannot work here. Atlas or Enterprise 7.0+ is required'),
+    'reset');
+  add('the declared deployment matches the cluster', !current.mismatch, current.mismatch, 'error');
+  add('substring search on encrypted names', caps.qeSubstring,
+    caps.qeSubstring
+      ? 'available'
+      : `needs server 9.0+ (this is ${current.version.raw}); names are stored with equality only`,
+    'warning');
+  add('change streams are available', caps.changeStreams,
+    caps.changeStreams
+      ? undefined
+      : 'no replica set: the live-session cache cannot start. Revocation still holds through the '
+        + 'authoritative read and the token lifetime',
+    'warning');
 
   const info = await db.listCollections({}, { nameOnly: false }).toArray() as Array<{
     name: string;

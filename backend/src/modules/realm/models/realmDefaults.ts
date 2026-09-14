@@ -61,17 +61,23 @@ export function localDomainRecord(input: {
   domainId: string;
   realmId: string;
   tenantId: string;
+  /**
+   * The slug, when the deployment names its own directory something else. Defaults to
+   * `LOCAL_DOMAIN_NAME`, which is what runtime realm creation uses because it has no fixture to
+   * read a name from.
+   */
+  name?: string;
   realmDisplayName: string;
   /** Overrides the generic `"{realm} directory"` default, for a realm that wants its own directory to read as its own product rather than the platform's generic label. */
   domainDisplayName?: string;
   registration?: { selfServiceEnabled: boolean; autoApprove: boolean };
-  authentication?: NonNullable<DomainRecord['authentication']>;
+  authentication?: Partial<NonNullable<DomainRecord['authentication']>>;
 }): Omit<DomainRecord, 'meta'> {
   return {
     realmId: input.realmId,
     tenantId: input.tenantId,
     domainId: input.domainId,
-    name: LOCAL_DOMAIN_NAME,
+    name: input.name ?? LOCAL_DOMAIN_NAME,
     displayName: input.domainDisplayName ?? `${input.realmDisplayName} directory`,
     protocol: 'internal',
     adapter: 'internal',

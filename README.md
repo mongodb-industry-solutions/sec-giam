@@ -117,7 +117,8 @@ path.
 | `GIAM_DB_NAME` | `giamdb` | GIAM never reads another service's collections. |
 | `GIAM_DB_KEYVAULT` | `keyVault` | A collection inside that same database, with GIAM's own DEKs. |
 | `GIAM_CRYPT_SHARED_LIB_PATH` | falls back to `MONGODB_CRYPT_SHARED_LIB_PATH` | Required. |
-| `GIAM_QE_TEXT_SEARCH` | `true` | Substring search on encrypted names. Needs server and library 8.2+. |
+| `MONGODB_TYPE` | `atlas` | Which MongoDB: `atlas`, `ea` (Enterprise Advanced) or `ce` (Community). Decides what the deployment can do. |
+| `MONGODB_VERSION` | `8.2.4` | Server version. Substring search on encrypted names follows from it (9.0+); there is no separate switch. |
 
 ### The master key
 

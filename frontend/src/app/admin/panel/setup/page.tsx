@@ -1,8 +1,8 @@
 'use client';
 import { useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { API_BASE_URL } from '../../../../lib/constants';
-import { getAdminToken, readSSE, LogEntry, TestSummary as TestSummaryData, downloadText } from '../../../../lib/adminHelpers';
-import { Download, Copy, CheckCheck, CheckCircle2, XCircle, Square } from 'lucide-react';
+import { getAdminToken, readSSE, readJsonSafe, LogEntry, TestSummary as TestSummaryData, downloadText } from '../../../../lib/adminHelpers';
+import { Download, Copy, CheckCheck, CheckCircle2, XCircle, Square, ChevronRight } from 'lucide-react';
 
 const SETUP_LOGS_KEY = 'admin_setup_logs';
 
@@ -672,6 +672,142 @@ function TestSummary({ summary, status }: {
   );
 }
 
+// What a destructive command would act on, as the service resolves it. Read from the API rather than
+// from the console's own configuration: the point of showing it is to describe the deployment that
+// will be changed, not the one the console believes is configured.
+interface StorageTargetCollection {
+  name: string;
+  module: string;
+  kind: string;
+  encrypted: boolean;
+  documents?: number;
+}
+
+interface StorageTarget {
+  host: string;
+  database: string;
+  keyVault: string;
+  deployment: { type: string; version: string };
+  reachable: boolean;
+  unreachableReason?: string;
+  encryptionKeys?: number;
+  collections: StorageTargetCollection[];
+}
+
+/** What each destructive command leaves behind, stated per command so the two are not confused. */
+const AFTERMATH: Record<string, string> = {
+  'setup:db:reset': 'The collections, indexes and encryption keys are created again, empty. The load step has to be run afterwards.',
+  'setup:db:drop': 'Nothing is created again. The database stops existing until setup is run.',
+};
+
+function TargetDetails({ cmd }: { cmd: CommandDef }) {
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<StorageTarget | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || target || error) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/v1/admin/storage/target`, {
+          headers: { Authorization: `Bearer ${getAdminToken() ?? ''}` },
+        });
+        const { data, text } = await readJsonSafe<StorageTarget & { detail?: string }>(res);
+        if (!res.ok || !data) throw new Error(data?.detail ?? (text.trim().slice(0, 120) || res.statusText));
+        if (!cancelled) setTarget(data);
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, target, error]);
+
+  const totalDocuments = target?.collections.reduce((sum, c) => sum + (c.documents ?? 0), 0);
+
+  return (
+    <div className="mb-6 rounded-lg border border-gray-800 bg-gray-950/60">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-300 hover:text-white"
+      >
+        <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`} />
+        {open ? 'Hide what this affects' : 'Show what this affects'}
+        <span className="ml-auto font-mono text-[11px] text-gray-500">server, database, collections</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-800 px-3 py-3 space-y-3">
+          {!target && !error && <p className="text-xs text-gray-500">Reading the target…</p>}
+          {error && <p className="text-xs text-red-400 break-all">The target could not be read: {error}</p>}
+
+          {target && (
+            <>
+              <dl className="space-y-1 text-[11px] font-mono">
+                <TargetRow label="Server"     value={target.host} />
+                <TargetRow label="Database"   value={target.database} />
+                <TargetRow label="Key vault"  value={target.keyVault} />
+                <TargetRow label="Deployment" value={`${target.deployment.type} ${target.deployment.version}`} />
+                {target.encryptionKeys !== undefined && (
+                  <TargetRow label="Data keys" value={`${target.encryptionKeys} (deleted with the vault)`} />
+                )}
+              </dl>
+
+              {!target.reachable && (
+                <p className="text-[11px] text-yellow-400">
+                  The cluster is not reachable, so no document count is shown: {target.unreachableReason}
+                </p>
+              )}
+
+              <div>
+                <p className="text-[11px] text-gray-400 mb-1">
+                  Collections removed{totalDocuments !== undefined && target.reachable
+                    ? `: ${target.collections.length}, holding ${totalDocuments} documents`
+                    : `: ${target.collections.length}`}
+                </p>
+                <div className="max-h-48 overflow-y-auto rounded border border-gray-800">
+                  <table className="w-full text-[11px] font-mono">
+                    <tbody>
+                      {target.collections.map((c) => (
+                        <tr key={c.name} className="border-b border-gray-800/60 last:border-0">
+                          <td className="px-2 py-1 text-gray-200">{c.name}</td>
+                          <td className="px-2 py-1 text-gray-500">{c.module}</td>
+                          <td className="px-2 py-1 text-gray-500">
+                            {c.encrypted ? 'encrypted' : c.kind === 'standard' ? '' : c.kind}
+                          </td>
+                          <td className="px-2 py-1 text-right text-gray-300">
+                            {c.documents === undefined ? '?' : c.documents}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                The whole database is dropped, so the indexes and the Queryable Encryption metadata
+                collections go with it. Nothing outside <code className="text-gray-300">{target.database}</code>{' '}
+                is touched: the applications keep their own database and their own key vault.
+                {AFTERMATH[cmd.id] ? ` ${AFTERMATH[cmd.id]}` : ''}
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TargetRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-[84px] flex-shrink-0 text-gray-500">{label}</dt>
+      <dd className="text-gray-200 break-all">{value}</dd>
+    </div>
+  );
+}
+
 function ConfirmModal({ cmd, onConfirm, onCancel }: {
   cmd: CommandDef;
   onConfirm: () => void;
@@ -683,7 +819,7 @@ function ConfirmModal({ cmd, onConfirm, onCancel }: {
       onClick={onCancel}
     >
       <div
-        className="bg-gray-900 border border-red-900/60 rounded-xl p-6 max-w-md w-full shadow-2xl"
+        className="bg-gray-900 border border-red-900/60 rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-4">
@@ -698,7 +834,9 @@ function ConfirmModal({ cmd, onConfirm, onCancel }: {
           <code className="text-red-400 text-xs font-mono">npm run {cmd.id}</code>
         </div>
 
-        <p className="text-gray-300 text-sm mb-6 leading-relaxed">{cmd.confirmMessage}</p>
+        <p className="text-gray-300 text-sm mb-4 leading-relaxed">{cmd.confirmMessage}</p>
+
+        <TargetDetails cmd={cmd} />
 
         <div className="flex gap-3 justify-end">
           <button

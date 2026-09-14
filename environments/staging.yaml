@@ -44,10 +44,17 @@ env:
   # master key is a secret below, not a KMS ARN, because no KMS is provisioned in this namespace.
   GIAM_KMS_PROVIDER: local
 
-  # ── Queryable Encryption ───────────────────────────────────────────────────────────────────────
-  # Substring search on encrypted names needs crypt_shared 8.2+ AND server 8.2+. The image ships
-  # 8.2.4; turn this off if the cluster behind MONGODB_URI is older, or reads return 500.
-  GIAM_QE_TEXT_SEARCH: "true"
+  # ── The MongoDB deployment ─────────────────────────────────────────────────────────────────────
+  # What setup and the seeder reason from before they connect. Reconciled against the live cluster
+  # on connect, and the cluster wins; a disagreement is reported in the startup log and in
+  # GET /api/v1/admin/posture rather than silently obeyed.
+  #   MONGODB_TYPE     atlas | ea (Enterprise Advanced) | ce (Community)
+  # Community cannot perform automatic Queryable Encryption, and setup refuses to build there.
+  MONGODB_TYPE: atlas
+  MONGODB_VERSION: "8.2.4"
+
+  # Substring search on encrypted names has no switch of its own: it follows from the version above
+  # (9.0+ with automatic encryption), and degrades to equality below it.
 
 envSecrets:
   # Shared with the other releases in this namespace: same cluster, different database. The secret

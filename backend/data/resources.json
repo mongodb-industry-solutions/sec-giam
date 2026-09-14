@@ -1,6 +1,6 @@
 [
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "name": "authority",
     "audience": "authority",
     "displayName": "Leafy IdP Authority API",
@@ -89,7 +89,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "name": "bankcore",
     "audience": "bankcore",
     "displayName": "Partner Bank Core Banking API",
@@ -158,7 +158,7 @@
     ]
   },
   {
-    "realm": "leafypay",
+    "realm": "LeafyIdp",
     "name": "leafypay",
     "audience": "leafypay",
     "displayName": "Leafy Pay Core API",
