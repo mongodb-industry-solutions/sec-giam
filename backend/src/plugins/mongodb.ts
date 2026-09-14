@@ -7,6 +7,7 @@ import { getQEClient, closeQEClient } from '../vendors/encryption/qeClient';
 import { initEventBus, getEventBus } from '../vendors/eventbus';
 import { bindPolicyEvaluators } from '../modules/authorization/services/policyEvaluators';
 import { SessionWatch } from '../modules/authorization/services/sessionWatch';
+import { detectDeployment, describeDeployment, capabilities } from '../vendors/mongodb/deployment';
 import { config, keyVaultNamespace } from '../config';
 
 declare module 'fastify' {
@@ -30,6 +31,9 @@ function sanitizeUri(uri: string): { server: string; database: string } {
 
 async function connectAndWire(fastify: FastifyInstance): Promise<void> {
   const client = await getQEClient();
+  // What this cluster can do, before anything is wired against it. A reload re-probes, because the
+  // reload exists precisely for the case where the cluster behind the connection string changed.
+  await detectDeployment(client);
   const db = client.db(config.mongodb.dbName);
   fastify.db = db;
   fastify.dbError = null;
@@ -50,9 +54,11 @@ async function connectAndWire(fastify: FastifyInstance): Promise<void> {
    * running without it.
    */
   await stopSessionWatch();
-  sessionWatch = new SessionWatch(db);
+  // Asked of the capability set rather than attempted and caught: on a standalone the answer is
+  // known in advance, and an expected condition should not have to arrive as an exception.
+  sessionWatch = capabilities().changeStreams ? new SessionWatch(db) : null;
   try {
-    await sessionWatch.start();
+    await sessionWatch?.start();
   } catch {
     // Recorded by the caller's startup report rather than thrown: the cache is an optimisation and
     // `isLive` returns null while it is unready, which callers already treat as "go and read".
@@ -105,7 +111,7 @@ export async function reloadDbRuntime(fastify: FastifyInstance): Promise<{ steps
   await teardownRuntime();
   steps.push('torn down: event bus and the cached encrypted client');
   await connectAndWire(fastify);
-  steps.push(`re-wired against database "${config.mongodb.dbName}"`);
+  steps.push(`re-wired against database "${config.mongodb.dbName}" on ${describeDeployment()}`);
 
   try {
     const dekCount = await fastify.db.collection(config.mongodb.keyVaultCollection).countDocuments();

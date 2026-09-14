@@ -70,6 +70,11 @@ services:
       GIAM_DB_URI: ${GIAM_DB_URI:-mongodb://mongo:27017/?replicaSet=rs0&directConnection=true}
       GIAM_DB_NAME: ${GIAM_DB_NAME:-giamdb}
       GIAM_DB_KEYVAULT: ${GIAM_DB_KEYVAULT:-keyVault}
+      # Which MongoDB this is, so setup can pick the features it supports BEFORE it connects. Matches
+      # the enterprise 8.2 image above. Reconciled against the live cluster on connect, and the
+      # cluster wins, so a stale value here is reported rather than obeyed.
+      MONGODB_TYPE: ${MONGODB_TYPE:-ea}
+      MONGODB_VERSION: ${MONGODB_VERSION:-8.2.4}
       # In-network, for the services that resolve discovery server side.
       GIAM_BASE_URL: ${GIAM_BASE_URL:-http://giam:8080}
       # Browser facing, and what a realm issuer URL is built from: it ends up inside every token as

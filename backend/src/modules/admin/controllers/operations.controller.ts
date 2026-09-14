@@ -45,6 +45,12 @@ const SENSITIVE_KEY = [
 const PLAIN_KEYS = new Set([
   'GIAM_DB_NAME',
   'GIAM_DB_KEYVAULT',
+  // Which cluster GIAM is compiled against, in effect. Masking these hides the pair an operator
+  // opens this page to reconcile against what the posture report says was detected.
+  'GIAM_DB_TYPE',
+  'GIAM_DB_VERSION',
+  'MONGODB_TYPE',
+  'MONGODB_VERSION',
   'GIAM_CRYPT_SHARED_LIB_PATH',
   'MONGODB_CRYPT_SHARED_LIB_PATH',
   'GIAM_KEY_PROVIDER',

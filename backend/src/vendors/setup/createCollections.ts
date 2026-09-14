@@ -1,6 +1,7 @@
 import { Db } from 'mongodb';
 import { GIAM_COLLECTIONS, AUDIT_COLLECTION } from '../../shared/models/collections';
 import { buildEncryptedFieldsMaps, GiamDeks } from '../encryption/encryptedFieldsMaps';
+import { capabilities, describeDeployment } from '../mongodb/deployment';
 import { config } from '../../config';
 
 /**
@@ -14,6 +15,23 @@ import { config } from '../../config';
  * encrypted-fields map needs `--reset`, and the runbook says so.
  */
 export async function createCollections(db: Db, deks: GiamDeks, reset = false): Promise<void> {
+  /**
+   * Refuse before creating anything, on a deployment that cannot encrypt.
+   *
+   * Gated on AUTOMATIC encryption and not merely on Queryable Encryption. Community can hold a QE
+   * collection but cannot analyse a query against one, so setup would succeed, the seeder would
+   * write, and every principal read would then fail on a database that looks correctly built. The
+   * failure belongs here, where one corrected variable fixes it, and not at the first login.
+   */
+  if (!capabilities().automaticEncryption) {
+    throw new Error(
+      `${describeDeployment()} cannot perform automatic Queryable Encryption, and GIAM will not `
+      + 'create a principal collection it could never read.\n'
+      + '  Point GIAM_DB_URI / MONGODB_URI at Atlas or Enterprise Advanced 7.0+, and correct '
+      + 'MONGODB_TYPE / MONGODB_VERSION to match.',
+    );
+  }
+
   const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
   const maps = buildEncryptedFieldsMaps(deks);
 
@@ -83,7 +101,13 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
        * implemented it, and a deployment could not say what its retention actually was.
        */
       const retentionDays = config.app.auditRetentionDays;
-      const expireAfterSeconds = retentionDays > 0 ? retentionDays * 86_400 : undefined;
+      const expireAfterSeconds = retentionDays > 0 && capabilities().timeSeriesExpiry
+        ? retentionDays * 86_400
+        : undefined;
+      if (retentionDays > 0 && !capabilities().timeSeriesExpiry) {
+        console.warn(`  warn:    ${spec.name}: this server cannot expire a time series, so the `
+          + `${retentionDays} day retention is NOT enforced. Evidence accumulates without limit.`);
+      }
       await db.createCollection(spec.name, {
         timeseries: { timeField: 'ts', metaField: 'meta', granularity: 'seconds' },
         ...(expireAfterSeconds ? { expireAfterSeconds } : {}),

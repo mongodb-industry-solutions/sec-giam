@@ -1,5 +1,6 @@
 import { existsSync } from 'fs';
 import { keyProviders } from '../../../shared/ports';
+import { deployment, capabilities } from '../../../vendors/mongodb/deployment';
 import { config, ClientEnforcementMode } from '../../../config';
 
 /**
@@ -61,6 +62,19 @@ export interface PostureReport {
     keyVault: string;
     encryptionLibraryPresent: boolean;
     queryableTextSearch: boolean;
+    /**
+     * WHICH MongoDB is behind the connection, and whether that was declared or probed.
+     *
+     * Part of the posture and not merely of the log: which features protect the data depends on the
+     * deployment, so an assessor reading this report has to be able to see that Queryable Encryption
+     * is genuinely in force and not silently degraded by an edition that cannot perform it.
+     */
+    deployment: {
+      type: string;
+      version: string;
+      source: 'declared' | 'detected';
+      replicaSet: boolean;
+    };
   };
   /**
    * How each realm treats a client that has not registered.
@@ -181,6 +195,30 @@ export function buildPostureReport(input: PostureInput): PostureReport {
     });
   }
 
+  /**
+   * An edition that cannot perform automatic encryption is a CONFIDENTIALITY finding, not a feature
+   * gap: Community holds the encrypted collection but cannot analyse a query against it, so the
+   * deployment neither reads its own principals nor protects them the way PCI DSS 3.5 assumes.
+   */
+  const current = deployment();
+  if (!capabilities().automaticEncryption) {
+    findings.push({
+      code: 'deployment_cannot_encrypt',
+      level: 'degraded',
+      detail: `MongoDB ${current.type} ${current.version.raw} cannot perform automatic Queryable `
+        + 'Encryption, so every read of an encrypted principal field fails.',
+      remedy: 'Point GIAM at Atlas or Enterprise Advanced running 7.0 or later.',
+    });
+  }
+  if (current.mismatch) {
+    findings.push({
+      code: 'deployment_declaration_mismatch',
+      level: 'degraded',
+      detail: current.mismatch,
+      remedy: 'Correct MONGODB_TYPE and MONGODB_VERSION, which setup reasons from before it connects.',
+    });
+  }
+
   if (!input.databaseReachable) {
     findings.push({
       code: 'storage_unreachable',
@@ -213,7 +251,13 @@ export function buildPostureReport(input: PostureInput): PostureReport {
       reachable: input.databaseReachable,
       keyVault: `${config.mongodb.dbName}.${config.mongodb.keyVaultCollection}`,
       encryptionLibraryPresent,
-      queryableTextSearch: config.mongodb.textSearch,
+      queryableTextSearch: capabilities().qeSubstring,
+      deployment: {
+        type: current.type,
+        version: current.version.raw,
+        source: current.source,
+        replicaSet: current.replicaSet,
+      },
     },
     clientRegistration: {
       defaultMode: config.app.clientEnforcement,

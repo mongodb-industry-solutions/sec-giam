@@ -4,6 +4,7 @@ import { createCollections } from './createCollections';
 import { createIndexes } from './createIndexes';
 import { provisionGiamDeks, findOrphanedDeks } from '../encryption/keyVault';
 import { getQEClient, closeQEClient, assertCryptSharedLib } from '../encryption/qeClient';
+import { detectDeployment, describeDeployment, capabilityFindings } from '../mongodb/deployment';
 import { config, keyVaultNamespace } from '../../config';
 
 // Works regardless of CWD: npm --prefix changes it to backend/.
@@ -25,7 +26,21 @@ export async function runSetup(reset = false): Promise<void> {
   const client = await getQEClient();
   try {
     const db = client.db(config.mongodb.dbName);
-    console.log(`Connected to the GIAM database "${config.mongodb.dbName}"\n`);
+    console.log(`Connected to the GIAM database "${config.mongodb.dbName}"`);
+
+    /**
+     * Before anything is created, learn what this deployment can do.
+     *
+     * Deliberately first: the encrypted-fields map is built from these capabilities, and a
+     * collection created with the wrong map cannot be corrected without a `--reset`. Declared
+     * values got us this far; from here the cluster's own answer is in force.
+     */
+    await detectDeployment(client);
+    console.log(`deployment:   ${describeDeployment()}`);
+    for (const finding of capabilityFindings()) {
+      console.log(`  ${finding.warn ? '!' : '·'} ${finding.text}`);
+    }
+    console.log('');
 
     // A database whose vault was dropped points at DEKs that no longer exist. Fail here with the
     // remedy instead of at the first encrypted read with a driver-level message.

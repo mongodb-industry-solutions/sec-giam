@@ -9,6 +9,7 @@ import { seedClients } from './seedClients';
 import { retireDeclaredFields } from './upsertSeed';
 import { REALM_COLLECTION } from '../../shared/models/collections';
 import { getQEClient, closeQEClient } from '../encryption/qeClient';
+import { detectDeployment, describeDeployment } from '../mongodb/deployment';
 import { config } from '../../config';
 
 dotenv.config({ path: resolve(__dirname, '../../../../../.env') });
@@ -22,7 +23,11 @@ export async function runSeed(): Promise<void> {
   const client = await getQEClient();
   try {
     const db = client.db(config.mongodb.dbName);
-    console.log(`Seeding the GIAM database "${config.mongodb.dbName}"\n`);
+    // The seeder WRITES encrypted principal fields, so it needs the same capability answer setup
+    // used. Probed rather than assumed, for the same reason: a declaration nobody checked is how a
+    // seed run ends up writing against a map the collection does not have.
+    await detectDeployment(client);
+    console.log(`Seeding the GIAM database "${config.mongodb.dbName}" on ${describeDeployment()}\n`);
     // Realms first: every other record is partitioned by one, so nothing can be written before them.
     await seedRealms(db);
     // Keys after realms: a key belongs to a realm, and a realm with none can neither sign nor be

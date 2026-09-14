@@ -82,14 +82,28 @@ export const config = {
     // always distinct, and GIAM never reads another service's collections.
     uri: giamEnv('DB_URI') ?? env('MONGODB_URI', '')!,
     dbName: giamEnv('DB_NAME', 'giamdb')!,
+    /**
+     * WHICH MongoDB this is, and which version. Read by `vendors/mongodb/deployment`, which turns
+     * the pair into the capability set every version-sensitive decision is taken from.
+     *
+     * Shared with the rest of the platform in the same way the connection string is: one cluster
+     * sets MONGODB_TYPE and MONGODB_VERSION once, and a deployment that gives GIAM its own cluster
+     * overrides them with GIAM_DB_TYPE and GIAM_DB_VERSION. Declared rather than assumed, because
+     * setup and the seeder must reason about capability BEFORE they connect; both are reconciled
+     * against the live cluster once a connection exists, and the cluster wins.
+     */
+    type: giamEnv('DB_TYPE') ?? env('MONGODB_TYPE', 'atlas')!,
+    version: giamEnv('DB_VERSION') ?? env('MONGODB_VERSION', '8.2.4')!,
     // The key vault is a COLLECTION inside that same database: one connection, one lifecycle, and a
     // reset rebuilds vault and data together with no second cleanup path to forget.
     keyVaultCollection: giamEnv('DB_KEYVAULT', 'keyVault')!,
     cryptSharedLibPath: giamEnv('CRYPT_SHARED_LIB_PATH')
       ?? env('MONGODB_CRYPT_SHARED_LIB_PATH', '')!,
-    // QE substring search needs crypt_shared 8.2+ and server 8.2+. Off, the searched field degrades to
-    // equality: still encrypted, still exactly searchable, and setup still succeeds on an older cluster.
-    textSearch: bool(giamEnv('QE_TEXT_SEARCH'), true),
+    // v44 RETIRED GIAM_QE_TEXT_SEARCH. Substring search on encrypted names is not a preference: it
+    // is available on server 9.0+ with automatic encryption and unavailable below, which the type
+    // and version above already answer. A second switch could only ever disagree with them, and a
+    // deployment that set it to true on an 8.x cluster failed setup rather than degrading.
+    // `vendors/mongodb/deployment` derives it now.
   },
 
   kms: {
