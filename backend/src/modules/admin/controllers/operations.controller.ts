@@ -16,7 +16,9 @@ import {
 import {
   aggregateSummaries, resolveTestSequence, resolveTestStrategy, TestSummary,
 } from '../services/testRunners';
-import { config } from '../../../config';
+import { config, keyVaultNamespace } from '../../../config';
+import { GIAM_COLLECTIONS } from '../../../shared/models/collections';
+import { deployment } from '../../../vendors/mongodb/deployment';
 
 /**
  * The operations surface the console drives: sign in, run maintenance, watch the logs, read the
@@ -131,6 +133,18 @@ function writeEnvKey(key: string, value: string): void {
   }
 
   fs.writeFileSync(ENV_PATH, updated.join(eol), 'utf-8');
+}
+
+/**
+ * The cluster a destructive command would act on, with no credential in it.
+ *
+ * Only the scheme and the hosts: that is what an operator checks before dropping a database, and a
+ * user name is neither needed for the check nor safe in a screenshot.
+ */
+function storageHostLabel(uri: string): string {
+  if (!uri) return 'not configured';
+  const match = /^(mongodb(?:\+srv)?:\/\/)(?:[^@/]*@)?([^/?#]+)/.exec(uri);
+  return match ? `${match[1]}${match[2]}` : 'unrecognised connection string';
 }
 
 /** A small in-memory limiter. Enough to make a password guess expensive without a shared store. */
@@ -599,6 +613,116 @@ export async function operationsController(fastify: FastifyInstance) {
     appendLog(`[${new Date().toISOString()}] ADMIN configuration key "${key}" changed from ${request.ip}`);
 
     return reply.send({ updated: true, reloadRequired: true });
+  });
+
+  fastify.get('/storage/target', {
+    preHandler: requireAdmin,
+    schema: {
+      operationId: 'getAdminStorageTarget',
+      tags: ['admin'],
+      summary: 'What a destructive maintenance command would act on',
+      description:
+        `${NO_STANDARD} The cluster, the database, the key vault and every collection a rebuild or a `
+        + 'drop would remove, with the number of documents each one currently holds. The console '
+        + 'shows it inside the confirmation, so the operator confirms against the deployment in '
+        + 'front of them rather than against the one they assume is configured. Read only, and the '
+        + 'connection string keeps no credential: a screenshot of this travels further than the page.',
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: {
+          description: 'The target of the destructive commands.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['host', 'database', 'keyVault', 'deployment', 'reachable', 'collections'],
+          properties: {
+            host: { type: 'string' },
+            database: { type: 'string' },
+            keyVault: { type: 'string' },
+            deployment: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['type', 'version'],
+              properties: { type: { type: 'string' }, version: { type: 'string' } },
+            },
+            reachable: { type: 'boolean' },
+            unreachableReason: { type: 'string' },
+            encryptionKeys: { type: 'integer' },
+            collections: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['name', 'module', 'kind', 'encrypted'],
+                properties: {
+                  name: { type: 'string' },
+                  module: { type: 'string' },
+                  kind: { type: 'string' },
+                  encrypted: { type: 'boolean' },
+                  // Absent when the cluster is unreachable: no count is better than a wrong one.
+                  documents: { type: 'integer' },
+                },
+              },
+            },
+          },
+          examples: [{
+            host: 'mongodb+srv://cluster0.abcde.mongodb.net',
+            database: 'giamdb',
+            keyVault: 'giamdb.keyVault',
+            deployment: { type: 'atlas', version: '8.2.4' },
+            reachable: true,
+            encryptionKeys: 3,
+            collections: [{ name: 'principal', module: 'directory', kind: 'standard', encrypted: true, documents: 42 }],
+          }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid operator credential.' },
+        429: { $ref: 'Problem#', description: 'Too many requests from this address.' },
+        503: { $ref: 'Problem#', description: 'The operations surface is not configured.' },
+      },
+    },
+  }, async (request, reply) => {
+    const limit = limitOperations(request.ip ?? 'unknown');
+    if (!limit.allowed) {
+      reply.header('Retry-After', String(limit.retryAfter));
+      return reply.status(429).send(problem(429, 'Too Many Requests', `Retry after ${limit.retryAfter}s.`));
+    }
+
+    const reachable = fastify.dbError === null;
+    const current = deployment();
+
+    // Counted one by one rather than through a single command, so one unreadable collection reports
+    // itself as unknown instead of blanking the whole list the operator is confirming against.
+    async function count(name: string): Promise<number | undefined> {
+      if (!reachable) return undefined;
+      try {
+        return await fastify.db.collection(name).countDocuments();
+      } catch {
+        return undefined;
+      }
+    }
+
+    const collections = await Promise.all(GIAM_COLLECTIONS.map(async (spec) => {
+      const documents = await count(spec.name);
+      return {
+        name: spec.name,
+        module: spec.module,
+        kind: spec.kind,
+        encrypted: Boolean(spec.encrypted),
+        ...(documents === undefined ? {} : { documents }),
+      };
+    }));
+
+    const encryptionKeys = await count(config.mongodb.keyVaultCollection);
+
+    return reply.send({
+      host: storageHostLabel(config.mongodb.uri),
+      database: config.mongodb.dbName,
+      keyVault: keyVaultNamespace(),
+      deployment: { type: current.type, version: current.version.raw },
+      reachable,
+      ...(reachable ? {} : { unreachableReason: fastify.dbError ?? 'The database is not reachable.' }),
+      ...(encryptionKeys === undefined ? {} : { encryptionKeys }),
+      collections,
+    });
   });
 
   fastify.post('/restart', {

@@ -19533,6 +19533,159 @@
         }
       }
     },
+    "/api/v1/admin/storage/target": {
+      "get": {
+        "operationId": "getAdminStorageTarget",
+        "summary": "What a destructive maintenance command would act on",
+        "tags": [
+          "admin"
+        ],
+        "description": "No applicable standard. The cluster, the database, the key vault and every collection a rebuild or a drop would remove, with the number of documents each one currently holds. The console shows it inside the confirmation, so the operator confirms against the deployment in front of them rather than against the one they assume is configured. Read only, and the connection string keeps no credential: a screenshot of this travels further than the page.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The target of the destructive commands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The target of the destructive commands.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "host",
+                    "database",
+                    "keyVault",
+                    "deployment",
+                    "reachable",
+                    "collections"
+                  ],
+                  "properties": {
+                    "host": {
+                      "type": "string"
+                    },
+                    "database": {
+                      "type": "string"
+                    },
+                    "keyVault": {
+                      "type": "string"
+                    },
+                    "deployment": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "version"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "reachable": {
+                      "type": "boolean"
+                    },
+                    "unreachableReason": {
+                      "type": "string"
+                    },
+                    "encryptionKeys": {
+                      "type": "integer"
+                    },
+                    "collections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "module",
+                          "kind",
+                          "encrypted"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "module": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "encrypted": {
+                            "type": "boolean"
+                          },
+                          "documents": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "host": "mongodb+srv://cluster0.abcde.mongodb.net",
+                  "database": "giamdb",
+                  "keyVault": "giamdb.keyVault",
+                  "deployment": {
+                    "type": "atlas",
+                    "version": "8.2.4"
+                  },
+                  "reachable": true,
+                  "encryptionKeys": 3,
+                  "collections": [
+                    {
+                      "name": "principal",
+                      "module": "directory",
+                      "kind": "standard",
+                      "encrypted": true,
+                      "documents": 42
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid operator credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The operations surface is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/restart": {
       "post": {
         "operationId": "restartAdminTarget",
