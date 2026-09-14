@@ -9,6 +9,7 @@ import { bindPolicyEvaluators } from '../modules/authorization/services/policyEv
 import { SessionWatch } from '../modules/authorization/services/sessionWatch';
 import { detectDeployment, describeDeployment, capabilities } from '../vendors/mongodb/deployment';
 import { config, keyVaultNamespace } from '../config';
+import { forgetLoginContexts } from '../modules/authentication/services/loginContext.service';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -110,6 +111,10 @@ export async function reloadDbRuntime(fastify: FastifyInstance): Promise<{ steps
 
   await teardownRuntime();
   steps.push('torn down: event bus and the cached encrypted client');
+  // The sign-in context is held for seconds against the roster it read; an operator reloading after
+  // a reseed is asking to see the new personas now, not on the next expiry.
+  forgetLoginContexts();
+  steps.push('dropped: the cached sign-in context');
   await connectAndWire(fastify);
   steps.push(`re-wired against database "${config.mongodb.dbName}" on ${describeDeployment()}`);
 

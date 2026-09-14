@@ -3657,6 +3657,16 @@
               }
             }
           },
+          "304": {
+            "description": "Unchanged since the tag the caller presented.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unchanged since the tag the caller presented."
+                }
+              }
+            }
+          },
           "404": {
             "description": "No such realm.",
             "content": {
