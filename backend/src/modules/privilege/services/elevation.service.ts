@@ -359,6 +359,27 @@ export class ElevationService {
     return held.filter((holding) => isInForce(holding));
   }
 
+  /**
+   * Whether the SUBJECT ASKING holds their own in-force elevation for a scope, right now.
+   *
+   * `listInForce` answers "who holds elevated access", which is an oversight question and is
+   * permissioned as one: a role has to be granted `elevations:view` to ask it. Proving you hold your
+   * own grant is a different, narrower question a role does not need that permission to ask, the
+   * same way reading your own profile needs no special grant. Without this, the only way a resource
+   * server had to check a caller's elevation was the oversight list, which the caller holding the
+   * elevation was itself never permissioned to call, so the elevation, once granted, could not
+   * actually be exercised.
+   */
+  async holdsInForce(realmId: string, subjectId: string, scope: { kind: string; ref: string }): Promise<boolean> {
+    const principal = await this.principals.findOne(
+      { realmId, subjectId },
+      { projection: { _id: 0, roles: 1 } },
+    );
+    return (principal?.roles ?? []).some(
+      (holding) => holding.scope?.kind === scope.kind && holding.scope?.ref === scope.ref && isInForce(holding),
+    );
+  }
+
   /** Everything awaiting a reviewer, so a request cannot sit unnoticed until it expires. */
   async listPending(realmId: string): Promise<ElevationView[]> {
     const held = await this.ephemeralHoldings(realmId);

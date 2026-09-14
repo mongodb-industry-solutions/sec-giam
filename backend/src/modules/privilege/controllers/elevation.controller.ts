@@ -179,6 +179,54 @@ export async function elevationController(fastify: FastifyInstance) {
     return reply.send(outcome);
   });
 
+  fastify.get(`${base}/mine`, {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'holdsOwnElevation',
+      tags: ['privilege'],
+      summary: 'Whether I hold my own in-force elevation for a scope',
+      description:
+        'No applicable standard; privileged access management practice. Proving you hold your own '
+        + 'grant needs no special permission, the same way reading your own profile needs none: it is '
+        + 'the resource server\'s way of checking a caller\'s elevation without giving every holder of '
+        + 'an elevated role the oversight permission that lists everyone\'s.',
+      security: [{ bearerAuth: [] }],
+      params: realmParam,
+      querystring: {
+        type: 'object',
+        required: ['scopeKind', 'scopeRef'],
+        properties: {
+          scopeKind: { type: 'string' },
+          scopeRef: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['inForce'],
+          properties: { inForce: { type: 'boolean' } },
+          description:
+            'Whether the caller holds an in-force elevation for that scope. `false` is an answer '
+            + 'rather than an absence: no elevation, an expired one and one still awaiting a reviewer '
+            + 'are the same thing to a resource server deciding whether to serve the request.',
+          examples: [{ inForce: true }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const caller = request.principal!;
+    const realm = await realmOf((request.params as { realm: string }).realm);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const { scopeKind, scopeRef } = request.query as { scopeKind: string; scopeRef: string };
+    const inForce = await new ElevationService(fastify.db)
+      .holdsInForce(realm.realmId, caller.subjectId, { kind: scopeKind, ref: scopeRef });
+    return reply.send({ inForce });
+  });
+
   fastify.get(base, {
     preHandler: requirePrincipal,
     schema: {

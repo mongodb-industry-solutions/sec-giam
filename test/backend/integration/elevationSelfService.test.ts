@@ -114,4 +114,41 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
     expect(repeated.grantedAt).toBe(first.grantedAt);
     expect(repeated.scope).toEqual(first.scope);
   });
+  /**
+   * Proving your OWN elevation, which is the question the holder can actually ask.
+   *
+   * `GET /elevations` is oversight ("who holds elevated access") and is permissioned as one:
+   * `elevations:view`, which `level2_investigator` does not hold and should not. So the only check
+   * available to a resource server was one the caller holding the elevation was itself refused,
+   * and an elevation that cannot be checked cannot be exercised. `/elevations/mine` answers the
+   * narrower question, about the subject in the token and no other.
+   */
+  it('lets the holder prove their own elevation without the oversight permission', async () => {
+    if (!live) return;
+    const headers = { authorization: `Bearer ${token}` };
+    const mine = async (ref: string) => {
+      const response = await fetch(
+        `${GIAM}/realms/leafypay/elevations/mine?scopeKind=case&scopeRef=${encodeURIComponent(ref)}`,
+        { headers, signal: AbortSignal.timeout(20000) },
+      );
+      expect(response.status).toBe(200);
+      return (await response.json() as { inForce: boolean }).inForce;
+    };
+
+    // Granted above by the earlier cases in this file, which share CASE.
+    await request();
+    expect(await mine(CASE)).toBe(true);
+    // A scope nobody was elevated for. `false` rather than a refusal: the absence IS the answer.
+    expect(await mine(`${CASE}-never-granted`)).toBe(false);
+
+    /**
+     * And the narrow question does not smuggle in the wide one.
+     *
+     * If this ever stops being 403, the holder of any elevated role can enumerate everybody else's,
+     * which is the reason the two questions are separate routes rather than one with a flag.
+     */
+    const oversight = await fetch(`${GIAM}/realms/leafypay/elevations`, { headers, signal: AbortSignal.timeout(20000) });
+    expect(oversight.status).toBe(403);
+  });
+
 });
