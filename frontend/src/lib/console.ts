@@ -2,7 +2,8 @@
 
 import { apiUrl } from './env';
 import {
-  PERMISSIONS_KEY, PROFILE_KEY, REALM_CHANGED_EVENT, storedHomeRealm, storedRealm, storedToken, storedUserName,
+  PERMISSIONS_KEY, PROFILE_KEY, REALM_CHANGED_EVENT, clearSession,
+  storedHomeRealm, storedRealm, storedToken, storedUserName,
 } from './session';
 
 /**
@@ -183,8 +184,15 @@ export async function loadPermissions(): Promise<MyPermissions | null> {
       return info;
     })
     .catch((err) => {
-      // Degrading to "nothing granted" is deliberate: a console that cannot ask still works, it just
-      // shows less rather than guessing.
+      /**
+       * Degrading to "nothing granted" is deliberate for a failure that is not about the credential:
+       * a console that cannot ask still works, it just shows less rather than guessing.
+       *
+       * It was ALSO what happened on a 401, and there it was wrong: a refused token is not a
+       * narrower set of permissions, and rendering it as one is indistinguishable from authority
+       * having been withdrawn. `callApi` now ends the session on a 401 before this runs, so the
+       * shell asks for a sign-in instead of quietly hiding half the console.
+       */
       console.warn('[console] effective permissions unavailable, gated screens stay hidden:', err);
       return null;
     })
@@ -335,6 +343,25 @@ export async function callApi<T>(path: string, options: CallOptions = {}): Promi
 
   if (!response.ok) {
     const problem = await response.json().catch(() => null) as { detail?: string; title?: string } | null;
+    /**
+     * A 401 ENDS the session here, rather than being reported and otherwise ignored.
+     *
+     * The token was refused, so every screen behind it is about to fail the same way, and one of
+     * those failures is invisible: `loadPermissions` degrades a refusal to "nothing granted", and
+     * `can()` then hides Realms, Domains, Principals, Roles, Policies, Resources, Keys and
+     * Privileged access. A manager whose session had expired was shown a console that looked like
+     * it had taken their authority away, with the real cause printed on whichever panel happened to
+     * render its own error.
+     *
+     * Clearing announces the change, so the shell repaints as signed out and offers the sign-in
+     * panel the message already tells them to use. The error is still thrown: the page that asked
+     * decides what to say while that happens.
+     *
+     * Only 401. A 403 is an answer about authority and must NOT end a session, and a 5xx or an
+     * unreachable service is a failure of the authority rather than of the credential: degrading
+     * quietly is right for those, which is why that behaviour stays where it is.
+     */
+    if (response.status === 401) clearSession();
     throw new ApiError(response.status, messageFor(response.status, problem?.detail ?? problem?.title ?? '', subject));
   }
   if (response.status === 204) return undefined as T;
