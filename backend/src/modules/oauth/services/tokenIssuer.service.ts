@@ -19,6 +19,7 @@ import { newMeta } from '../../../shared/models/base.model';
 import { SOFT_ADMISSION_SCOPE } from './clientAuth.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { attenuate, claimsSize } from './attenuate';
+import { accountHolderForAudience } from './accountHolderBinding';
 
 /**
  * The claim-set ceiling for an access token, in bytes.
@@ -71,7 +72,7 @@ export interface IssueTokensInput {
    * `tokenPolicy` narrows this issuance's lifetimes. A token issued with no `subjectProfile` (or one
    * with no `domainId`, e.g. a workload with none) carries neither.
    */
-  subjectProfile?: Pick<PrincipalRecord, 'userName' | 'name' | 'primaryEmail' | 'domainId'>;
+  subjectProfile?: Pick<PrincipalRecord, 'userName' | 'name' | 'primaryEmail' | 'domainId' | 'accountHolderRefs'>;
   /**
    * The flow this issuance belongs to, carried as the `txn` claim.
    *
@@ -287,6 +288,11 @@ export class TokenIssuer {
         requestedPermissions: undefined,
         roles: undefined,
         accountHolderRef: undefined,
+        // The per-audience bindings are the same authority by another name, so the reduction has to
+        // strip both or it strips neither.
+        ...(request.subjectProfile
+          ? { subjectProfile: { ...request.subjectProfile, accountHolderRefs: undefined } }
+          : {}),
         includeRefreshToken: false,
       }
       : request;
@@ -398,6 +404,11 @@ export class TokenIssuer {
       : {};
 
     const audience = await this.audienceFor(realm, client, input.resources);
+    const accountHolder = accountHolderForAudience(
+      input.subjectProfile?.accountHolderRefs,
+      input.accountHolderRef,
+      audience,
+    );
     const authorizationDetails = grant ? authorizationDetailsFor(grant as GrantRecord, audience) : [];
 
     /**
@@ -515,7 +526,7 @@ export class TokenIssuer {
       ...(administrable.length ? { admin_realms: administrable } : {}),
       // Carried so a resource server can bind a person to their own records without asking the
       // authority what the reference names. The authority never resolves it either.
-      ...(input.accountHolderRef ? { account_holder: input.accountHolderRef } : {}),
+      ...(accountHolder ? { account_holder: accountHolder } : {}),
       ...(input.actor ? { act: input.actor } : {}),
       /**
        * The consent record, present whenever one exists, and regardless of how the target resource

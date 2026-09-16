@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { CredentialsPanel } from '../../../components/CredentialsPanel';
+import { PasswordChangeForm } from '../../../components/PasswordChangeForm';
 import { storedToken } from '../../../lib/session';
 
 /**
@@ -42,13 +43,15 @@ export default function CredentialsPage() {
     <main className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="mx-auto max-w-2xl space-y-5">
         <div>
-          <h1 className="text-2xl font-semibold text-mongodb-dark">Your authenticators</h1>
+          <h1 className="text-2xl font-semibold text-mongodb-dark">Your credentials</h1>
           <p className="mt-2 text-sm text-gray-600">
-            Devices that can approve a sign-in for you. Only the public half of each key is ever stored
-            here, so this list cannot be used to sign in as you.
+            Your password, and the devices that can approve a sign-in for you. Only the public half of
+            each device key is ever stored here, so the authenticator list cannot be used to sign in
+            as you.
           </p>
         </div>
 
+        <PasswordChangeForm />
         <CredentialsPanel />
 
         <Link href="/system" className="inline-block text-xs text-gray-500 hover:text-mongodb-dark">

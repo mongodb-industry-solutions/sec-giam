@@ -348,6 +348,10 @@ describe('v39 P6: a person receives the permissions their role grants', () => {
       .effectivePermissions(realm!.realmId, customer!.subjectId, 'leafypay');
 
     expect(resolved.scopeKind).toBe('self');
-    expect(resolved.roles).toEqual(['customer']);
+    // Every LeafyPay customer is also a BankCore account holder now: the same person, named by a
+    // different reference at each institution (see `accountHolderBinding.ts`). `roles` names every
+    // role the subject holds in the realm, not only the ones the requested audience enforces, so
+    // `bank_customer` belongs in this list even though only `leafypay`'s permissions are asked for.
+    expect(resolved.roles.sort()).toEqual(['bank_customer', 'customer']);
   });
 });

@@ -44,6 +44,8 @@ interface IdentityFixture {
   roleName?: string;
   /** Binds an account holder to their own records, for a self-scoped role. */
   accountHolderRef?: string;
+  /** The same binding per resource server, keyed by audience, for a person known to more than one. */
+  accountHolderRefs?: Record<string, string>;
   owner?: { kind: string; ref: string; displayName?: string };
   workload?: PrincipalRecord['workload'];
 }
@@ -118,6 +120,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
         demoFeatured: Boolean(fixture.demoFeatured),
         ...(fixture.demoNote ? { demoNote: fixture.demoNote } : {}),
         ...(fixture.accountHolderRef ? { accountHolderRef: fixture.accountHolderRef } : {}),
+        ...(fixture.accountHolderRefs ? { accountHolderRefs: fixture.accountHolderRefs } : {}),
         domainId,
       },
       { subjectId: fixture.subjectId, realmId, tenantId: DEFAULT_TENANT_ID },

@@ -1,4 +1,4 @@
-import { AppWindow, Eye, ShieldHalf, SlidersHorizontal, type LucideIcon } from 'lucide-react';
+import { AppWindow, Eye, ShieldHalf, SlidersHorizontal, UserRound, type LucideIcon } from 'lucide-react';
 
 /**
  * What each role over this authority is FOR, written for a person.
@@ -9,9 +9,15 @@ import { AppWindow, Eye, ShieldHalf, SlidersHorizontal, type LucideIcon } from '
  * withheld, because a reader who has just been refused something needs to know whether that was a
  * decision or a defect.
  *
- * Note what is absent: the roles that carry no authority permission at all. A customer, an analyst, an
+ * Note what is absent: the APPLICATION roles that carry no authority permission at all. An analyst, an
  * investigator or a merchant officer administers nothing here, which is why they are described on the
  * overview as a group rather than given a page each.
+ *
+ * The customer is listed, and is the one entry that holds no permission. It is here because holding
+ * none is not the same as having no standing: every principal may read its own profile, manage its own
+ * authenticators, end its own sessions and withdraw its own consents, and those are the rights the
+ * customer is the clearest illustration of. A reader who signs in as one and finds an almost empty
+ * console should be told that is the design, not a role that failed to load.
  */
 
 export interface RoleAbility {
@@ -125,6 +131,30 @@ export const AUTHORITY_ROLE_GUIDE: AuthorityRoleGuide[] = [
     ],
     separation:
       'A deliberately narrow widening. It removes the ownership filter on one registry and grants nothing else, which is the smallest role in the system and the clearest illustration of why permissions are pairs of resource and action rather than levels.',
+  },
+  {
+    id: 'customer',
+    label: 'Customer',
+    icon: UserRound,
+    headline: 'Holds no permission over this authority, and still has rights here: their own record, their own factors, their own sessions, their own consents.',
+    who: 'An account holder of an application. They are the subject this authority exists to identify, not somebody who administers it.',
+    origin: 'An application role, held over the payment provider and the bank. It carries no authority permission at all, which is the point.',
+    purpose:
+      'Every role above answers what somebody may do to OTHER people’s records. This one answers what anybody may do to their own, which needs no role: the self-service paths check that the caller is the subject and stop there. That is why the console looks almost empty when a customer signs in, and why the little it does show is theirs.',
+    can: [
+      { what: 'Read and correct their own profile', why: 'Under GDPR Art. 15 and 16 this is a right, not a permission an administrator grants. It resolves from the token’s subject, so there is nothing to ask for and nothing to widen.' },
+      { what: 'Register, replace and retire their own authenticators', why: 'A person has to be able to add a passkey or retire a lost one without asking an administrator, or the recovery path becomes the weakest part of the sign-in.' },
+      { what: 'See where they are signed in, and end a session', why: 'The same reason an administrator can end one: a sign-in somebody no longer recognises has to be stoppable by whoever noticed it first.' },
+      { what: 'Review and withdraw what they consented to', why: 'RFC 6749 authorisation seen from the person who gave it. A withdrawn grant is kept rather than deleted, so "what did I once allow" stays answerable.' },
+      { what: 'Hold a record at more than one institution', why: 'The same person is a customer of the payment provider and an account holder at the bank. Each names them by its own reference, and the token carries the one belonging to whoever it is addressed to.' },
+    ],
+    cannot: [
+      { what: 'Read anybody else’s record, at any of the paths above', why: 'The subject is taken from the token, never from the request. Naming another principal is refused rather than quietly rewritten, so the boundary is visible to whoever just met it.' },
+      { what: 'See the realm, its roles, its policies or its keys', why: 'They administer nothing here. The nav does not offer those sections rather than offering them and answering 403, because a menu that promises authority the token does not carry is a worse answer than an absent entry.' },
+      { what: 'Grant themselves anything', why: 'Every widening is a role assignment, and assigning one is an authority the customer does not hold. There is no self-service path to more.' },
+    ],
+    separation:
+      'The floor the whole model rests on. If a role were needed to read one’s own profile, then somebody would have to hold the power to withhold it; making self-service unconditional means the only thing a role can ever widen is reach over OTHER people, which is exactly the thing worth reviewing.',
   },
 ];
 

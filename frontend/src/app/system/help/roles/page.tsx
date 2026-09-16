@@ -6,11 +6,15 @@ import { SectionHeader } from '../../../../components/SectionHeader';
 import { AUTHORITY_ROLE_GUIDE } from '../../../../config/authorityRoleGuide';
 
 /**
- * The directory of roles over the authority itself.
+ * The directory of roles over the authority itself, plus the customer.
  *
- * Only four, because most roles in the platform administer an application and hold nothing here. Saying
- * that out loud matters: a reader who cannot find their own role on this page should learn that this is
+ * Short, because most roles in the platform administer an application and hold nothing here. Saying that
+ * out loud matters: a reader who cannot find their own role on this page should learn that this is
  * expected rather than conclude the page is incomplete.
+ *
+ * The customer is the exception and is listed deliberately. It holds no permission either, but unlike an
+ * analyst it is a role people actually sign in to this console with, and what it may do here (its own
+ * profile, factors, sessions and consents) is a question the page was being asked and did not answer.
  */
 
 export default function AuthorityHelpRoles() {
@@ -19,12 +23,14 @@ export default function AuthorityHelpRoles() {
       <SectionHeader
         icon={ShieldHalf}
         title="Roles"
-        description="Who may administer this authority, and the reasoning behind every line they cannot cross."
+        description="Who may administer this authority, what anybody signed in may do regardless, and the reasoning behind every line neither may cross."
         info={
           <>
-            These are the roles with permissions over the authority’s own objects. Most roles in the platform have
-            none: an analyst, an investigator, a merchant officer or a customer administers an application and holds
-            nothing here, which is why they are absent rather than listed as empty.
+            These are the roles with permissions over the authority’s own objects, and the customer, which has none.
+            It is listed because holding no permission is not the same as having no standing: anybody signed in may
+            read their own record, manage their own factors, end their own sessions and withdraw their own consents.
+            The remaining application roles are absent rather than listed as empty: an analyst, an investigator or a
+            merchant officer administers an application and holds nothing here.
           </>
         }
       />

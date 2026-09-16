@@ -45,6 +45,14 @@ interface IdentityFixture {
   subjectId: string;
   roleName?: string;
   /**
+   * Further roles held in the SAME realm, on the same terms as `roleName`.
+   *
+   * One person is a customer of the payment provider and an account holder at the bank, and those
+   * are two roles over two resource servers, not one role that happens to be read twice. Kept apart
+   * from `realmGrants`, which is about administering ANOTHER realm.
+   */
+  additionalRoles?: string[];
+  /**
    * Roles held in the principal's OWN realm that grant administration of another one.
    *
    * The record stays where the principal is, and its scope names the realm it reaches. That is what
@@ -290,7 +298,6 @@ export async function seedAuthorization(
     if (!identity.roleName) continue;
     const realmId = realmIdByName.get(identity.realm);
     if (!realmId) continue;
-    const id = roleId(realmId, identity.roleName);
     const known = roleFixtures.some(
       (role) => role.name === identity.roleName && role.realm === identity.realm,
     );
@@ -304,7 +311,7 @@ export async function seedAuthorization(
       principals,
       { realmId, subjectId: identity.subjectId },
       {
-        roleId: id,
+        roleId: roleId(realmId, identity.roleName),
         grantedAt: SEED_GRANTED_AT,
         // No expiry: a permanent holding. An elevation carries one, and that single difference is
         // what makes the same entry shape serve both.
@@ -409,4 +416,53 @@ export async function seedAuthorization(
   console.log(`  role: ${roleCount}`);
   console.log(`  roleHolding: ${assigned} (+${crossRealm} naming another realm)`);
   console.log(`  realmAdministrator: ${administrators}`);
+}
+
+/**
+ * The roles a principal holds BESIDES the one their own fixture names, assigned once every role
+ * catalogue is seeded.
+ *
+ * A separate pass because the roles involved belong to a different resource server than the fixture
+ * that names them: an account holder of the payment provider is also an account holder at the bank,
+ * and the bank's catalogue is seeded after the provider's. Validating inside the first pass would
+ * fail on a role that is merely not written yet.
+ *
+ * Validated against the seeded ROLE COLLECTION rather than a fixture list, so what is checked is
+ * what a permission check will actually find.
+ */
+export async function seedAdditionalRoles(db: Db, identityFixtureNames: string[]): Promise<void> {
+  const realms = await db.collection(REALM_COLLECTION)
+    .find({}, { projection: { _id: 0, realmId: 1, name: 1 } })
+    .toArray() as unknown as Array<{ realmId: string; name: string }>;
+  const realmIdByName = new Map(realms.map((realm) => [realm.name, realm.realmId]));
+
+  const seeded = await db.collection(ROLE_COLLECTION)
+    .find({}, { projection: { _id: 0, roleId: 1 } })
+    .toArray() as unknown as Array<{ roleId: string }>;
+  const known = new Set(seeded.map((role) => role.roleId));
+
+  const principals = db.collection<PrincipalRecord>(PRINCIPAL_COLLECTION);
+  let assigned = 0;
+
+  for (const fixtureName of identityFixtureNames) {
+    const fixtures = readSeedFile<IdentityFixture[]>(fixtureName);
+    for (const identity of fixtures) {
+      for (const roleName of identity.additionalRoles ?? []) {
+        const realmId = realmIdByName.get(identity.realm);
+        if (!realmId) throw new Error(`${fixtureName} names realm "${identity.realm}", which is not seeded`);
+        const id = roleId(realmId, roleName);
+        if (!known.has(id)) {
+          throw new Error(`${fixtureName} assigns unknown role "${roleName}" in realm "${identity.realm}"`);
+        }
+        await upsertHolding(
+          principals,
+          { realmId, subjectId: identity.subjectId },
+          { roleId: id, grantedAt: SEED_GRANTED_AT },
+        );
+        assigned += 1;
+      }
+    }
+  }
+
+  console.log(`  authorization: ${assigned} additional role holding(s)`);
 }

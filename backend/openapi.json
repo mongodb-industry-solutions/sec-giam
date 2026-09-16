@@ -3734,11 +3734,11 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -3879,11 +3879,11 @@
             }
           },
           "401": {
-            "description": "The proof did not verify.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -3993,11 +3993,131 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/credentials/password": {
+      "post": {
+        "operationId": "changePassword",
+        "summary": "Change your own password",
+        "tags": [
+          "authentication"
+        ],
+        "description": "No applicable standard; self-service counterpart of the administrative reset. Requires the current password, checked against the same policy self-registration enforces. Neither password is ever returned or logged.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "currentPassword",
+                  "newPassword",
+                  "newPasswordConfirmation"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "description": "What signs the caller in today."
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8
+                  },
+                  "newPasswordConfirmation": {
+                    "type": "string",
+                    "description": "Repeated so a typo is caught here rather than at the next sign-in."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "changed"
+                  ],
+                  "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "changed": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The new password fails the policy, repeats the current one, or does not match its confirmation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token for this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current password does not match.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No password credential to change; this principal signs in another way.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4083,11 +4203,11 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4245,11 +4365,11 @@
             }
           },
           "401": {
-            "description": "The proof did not verify.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4501,11 +4621,11 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4717,11 +4837,11 @@
             }
           },
           "401": {
-            "description": "The proof did not verify.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4820,11 +4940,11 @@
             }
           },
           "401": {
-            "description": "The refusal was not authorised.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
