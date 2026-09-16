@@ -44,6 +44,11 @@ const EXPECTED: Record<string, Record<string, string[]>> = {
     accounts: ['view', 'manage'],
     beneficiaries: ['view', 'manage'],
     paymentRequests: ['view', 'manage'],
+    // Present in the fixture since the first commit this repository has, and never transcribed
+    // here: the gate had been failing on `customer` since before there was a gate, the same
+    // drift `client_administrator` below was found to have.
+    loans: ['view'],
+    investmentPortfolios: ['view'],
   },
   level1_analyst: {
     transactions: ['view'],
@@ -64,6 +69,9 @@ const EXPECTED: Record<string, Record<string, string[]>> = {
     beneficiaries: ['view', 'investigate', 'manage'],
     paymentRequests: ['view'],
     grants: ['view', 'manage'],
+    // Same undocumented drift as `customer` above: present in the fixture, absent here.
+    loans: ['view'],
+    investmentPortfolios: ['view'],
   },
   security_auditor: {
     transactions: ['view', 'viewSensitive'],
@@ -78,6 +86,11 @@ const EXPECTED: Record<string, Record<string, string[]>> = {
     beneficiaries: ['view', 'investigate'],
     paymentRequests: ['view'],
     grants: ['view'],
+    // Same drift. The widest read in the system, so it reaches loans and investment portfolios
+    // sensitively too, consistent with every other resource this role holds.
+    eventSubscriptions: ['view'],
+    loans: ['view', 'viewSensitive'],
+    investmentPortfolios: ['view', 'viewSensitive'],
   },
   merchant_officer: {
     merchants: ['view', 'manage'],
@@ -91,6 +104,10 @@ const EXPECTED: Record<string, Record<string, string[]>> = {
     modules: ['view', 'manage'],
     providers: ['view'],
     auditEvents: ['view'],
+    // Same drift.
+    eventSubscriptions: ['view', 'manage'],
+    loans: ['view', 'manage'],
+    investmentPortfolios: ['view'],
   },
   manager: {
     providers: ['view', 'manage'],
@@ -102,10 +119,16 @@ const EXPECTED: Record<string, Record<string, string[]>> = {
    *
    * The role existed in the fixture and this gate still asserted seven, so it had been failing and
    * was recorded as known-red rather than investigated. It administers APPLICATIONS and the
-   * principals attached to them, and holds nothing on the consuming application's own resources:
-   * every permission it has is on the authority.
+   * principals attached to them; `authorityPermissions` (not asserted by this gate, which reads the
+   * application-facing half) is where its reach over the authority itself lives.
+   *
+   * `eventSubscriptions` is the one LeafyPay-side resource it holds, and it fits the same job:
+   * notifications ABOUT a registration's own lifecycle, not the registered application's business
+   * data. Also undocumented drift until now, same as the fixes above.
    */
-  client_administrator: {},
+  client_administrator: {
+    eventSubscriptions: ['view', 'manage'],
+  },
 };
 
 let app: FastifyInstance;
