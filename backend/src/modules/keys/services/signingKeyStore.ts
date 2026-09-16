@@ -1,4 +1,4 @@
-import { Db } from 'mongodb';
+import { Db, UpdateFilter } from 'mongodb';
 import { KEY_COLLECTION } from '../../../shared/models/collections';
 import { KeyRecord, assertNoPlaintextPrivateKey } from '../models/key.model';
 import { SigningKeyStore } from './keyRing.service';
@@ -27,7 +27,14 @@ export class MongoSigningKeyStore implements SigningKeyStore {
     // key could reach the database, and after it there is nothing left to catch it.
     assertNoPlaintextPrivateKey(record);
     const { kid, ...rest } = record;
-    await this.collection.updateOne({ kid }, { $set: rest, $setOnInsert: { kid } }, { upsert: true });
+    // The record is authoritative for `notAfter`, so a record without one CLEARS it rather than
+    // leaving the stored value behind. A `$set` of the present fields alone let a withdrawal date
+    // written by a sweep outlive the republication that undid the sweep: the key signed again and
+    // never came back into the published set, which empties the key set while tokens keep being
+    // minted. Callers that mean to keep a withdrawal date carry it on the record they pass.
+    const update: UpdateFilter<KeyRecord> = { $set: rest, $setOnInsert: { kid } };
+    if (rest.notAfter === undefined) update.$unset = { notAfter: '' };
+    await this.collection.updateOne({ kid }, update, { upsert: true });
   }
 
   async findByKid(kid: string): Promise<KeyRecord | null> {
@@ -39,7 +46,12 @@ export class MongoSigningKeyStore implements SigningKeyStore {
   }
 
   async renewLease(kid: string, leaseExpiresAt: string): Promise<void> {
-    await this.collection.updateOne({ kid }, { $set: { leaseExpiresAt, signingEligible: true } });
+    // A renewed lease says the owning replica is alive, which also withdraws the withdrawal: the key
+    // is live again, so the date that would take it out of the published set is removed with it.
+    await this.collection.updateOne(
+      { kid },
+      { $set: { leaseExpiresAt, signingEligible: true }, $unset: { notAfter: '' } },
+    );
   }
 
   async markIneligible(kid: string, notAfter: string): Promise<void> {
