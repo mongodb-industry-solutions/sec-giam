@@ -103,7 +103,7 @@ export async function enrollmentController(fastify: FastifyInstance) {
           properties: { challenge: { type: 'string' }, expiresIn: { type: 'integer' } },
           examples: [{ challenge: 'eyJ…', expiresIn: 300 }],
         },
-        401: { $ref: 'OAuthError#', description: 'No valid access token.' },
+        401: { $ref: 'Problem#', description: 'No valid access token for this realm.' },
       },
     },
   }, async (request, reply) => {
@@ -127,7 +127,7 @@ export async function enrollmentController(fastify: FastifyInstance) {
       response: {
         200: { ...credentialView, description: 'The registered credential.' },
         400: { $ref: 'OAuthError#', description: 'The challenge or the algorithm is invalid.' },
-        401: { $ref: 'OAuthError#', description: 'The proof did not verify.' },
+        401: { $ref: 'Problem#', description: 'No valid access token for this realm.' },
         409: { $ref: 'OAuthError#', description: 'That credential id is already registered.' },
       },
     },
@@ -170,7 +170,7 @@ export async function enrollmentController(fastify: FastifyInstance) {
             }],
           }],
         },
-        401: { $ref: 'OAuthError#', description: 'No valid access token.' },
+        401: { $ref: 'Problem#', description: 'No valid access token for this realm.' },
       },
     },
   }, async (request, reply) => {
@@ -197,7 +197,7 @@ export async function enrollmentController(fastify: FastifyInstance) {
         // Answered with the retired credential rather than an empty 204, so the caller can show what
         // it just retired without a second read, and the operation documents an example like the rest.
         200: { ...credentialView, description: 'Retired.' },
-        401: { $ref: 'OAuthError#', description: 'No valid access token.' },
+        401: { $ref: 'Problem#', description: 'No valid access token for this realm.' },
         404: { $ref: 'OAuthError#', description: 'No such credential for this caller.' },
       },
     },
@@ -234,7 +234,7 @@ export async function enrollmentController(fastify: FastifyInstance) {
       response: {
         200: { ...credentialView, description: 'The replacement credential.' },
         400: { $ref: 'OAuthError#', description: 'The challenge or the algorithm is invalid.' },
-        401: { $ref: 'OAuthError#', description: 'The proof did not verify.' },
+        401: { $ref: 'Problem#', description: 'No valid access token for this realm.' },
         404: { $ref: 'OAuthError#', description: 'No such credential for this caller.' },
       },
     },
