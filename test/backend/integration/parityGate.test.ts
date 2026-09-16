@@ -84,9 +84,10 @@ describe('v39 P5.8: the population is what it was', () => {
      * 68 came across; the 69th was added so every role offers two demo personas; the 70th arrived
      * with the `client_administrator` role and this number was NOT updated, so the gate had been
      * failing and was filed as known-red rather than read. Updated in v40, which is what the
-     * instruction below always asked for.
+     * instruction below always asked for. The 71st is Antonio Membrides: a customer, and the owner
+     * of LeafyPay's and BankCore's own platform clients.
      */
-    expect(identities).toHaveLength(70);
+    expect(identities).toHaveLength(71);
     // And every one distinct. Equal to the count above rather than a second literal, so the two can
     // never disagree: a duplicated subject id would otherwise satisfy the length and go unnoticed.
     expect(new Set(identities.map((identity) => identity.subjectId)).size).toBe(identities.length);
@@ -120,7 +121,8 @@ describe('v39 P5.8: the population is what it was', () => {
     // one holder to two deliberately: a sign-in screen offering a single named person cannot
     // demonstrate a role.
     expect(histogram).toEqual({
-      customer: 56,
+      // 57th: Antonio Membrides.
+      customer: 57,
       level1_analyst: 2,
       level2_investigator: 2,
       security_auditor: 2,
