@@ -253,6 +253,18 @@ export function can(claims: Claims | null, resource: string, action: string): bo
   return (cachedPermissions()?.permissions ?? []).includes(wanted);
 }
 
+/**
+ * Whether this principal reaches OTHER principals' records with a permission, not just their own.
+ *
+ * `can` answers the permission alone, which is the wrong question for any surface that serves both
+ * tiers: the authority gates those on the permission AND the realm-wide scope of the role holding
+ * it (`authorityAccess.realmWide`). A screen gating on `can` alone offers an ordinary user a control
+ * the API then refuses. This is the console's copy of the same conjunction, so the two agree.
+ */
+export function canReachOthers(claims: Claims | null, resource: string, action: string): boolean {
+  return can(claims, resource, action) && cachedPermissions()?.scopeKind === 'all';
+}
+
 // Offered only when the claims say the person administers identity, so the console never advertises
 // a surface that would refuse them.
 export function administersIdentity(claims: Claims | null): boolean {
