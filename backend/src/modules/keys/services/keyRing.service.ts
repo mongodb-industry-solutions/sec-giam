@@ -148,10 +148,16 @@ export class KeyRing {
    * is somebody else's, and claiming liveness on its behalf would be a lie the sweep then trusts.
    */
   async renewOwnLeases(realmId: string): Promise<number> {
+    // A key this replica owns that a sweep marked for withdrawal is included, not skipped: the sweep
+    // read a lapsed lease as "the replica is gone", and this replica saying otherwise is precisely
+    // what undoes it. `renewLease` clears the withdrawal date with the lease. A key an operator
+    // RETIRED is `deprecated` rather than `active` and is never picked up here, and a key ROTATED
+    // out carries `rotatedAt` and is excluded too: both withdrawals are deliberate, and a heartbeat
+    // that reversed them would keep a replaced key in the set forever.
     const mine = (await this.store.listByRealm(realmId)).filter((record) => (
       record.instanceId === config.keys.instanceId
       && record.status === 'active'
-      && !record.notAfter
+      && !record.rotatedAt
     ));
     for (const record of mine) await this.renewLease(record.kid);
     return mine.length;
@@ -197,7 +203,12 @@ export class KeyRing {
     for (const record of await this.store.listByRealm(realmId)) {
       const lease = record.leaseExpiresAt ? Date.parse(record.leaseExpiresAt) : null;
       if (lease !== null && lease < now && record.signingEligible) {
-        await this.store.markIneligible(record.kid, new Date(lease + grace).toISOString());
+        // The grace runs from the sweep, not from the moment the lease lapsed. Counting it from the
+        // lapse means a replica that was down longer than the grace comes back to a key whose
+        // publication window is already over, so the sweep unpublishes it on the same pass and the
+        // grace protects nothing. What it exists for is the tokens still in flight, and those are
+        // measured from now.
+        await this.store.markIneligible(record.kid, new Date(now + grace).toISOString());
         retired.push(record.kid);
         continue;
       }

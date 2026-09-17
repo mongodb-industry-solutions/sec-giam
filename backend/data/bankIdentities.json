@@ -78,7 +78,7 @@
     "lifecycleState": "active",
     "demoFeatured": true,
     "roleName": "bank_customer",
-    "accountHolderRef": "hld00001-0000-4000-8000-000000000001"
+    "accountHolderRef": "hld00073-0000-4000-8000-000000000073"
   },
   {
     "realm": "LeafyIdp",
@@ -158,6 +158,7 @@
     "active": true,
     "lifecycleState": "active",
     "demoFeatured": true,
-    "roleName": "bank_customer"
+    "roleName": "bank_customer",
+    "accountHolderRef": "hld00074-0000-4000-8000-000000000074"
   }
 ]

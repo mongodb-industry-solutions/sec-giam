@@ -252,10 +252,17 @@ export function SignInPanel({
         <div className="mb-2 text-4xl">
           <img src="/app-icon.png" alt={`${BRAND.full} Icon`} className="mx-auto h-20 w-20" />
         </div>
-        <h1 className="text-2xl font-bold text-[#001E2B]">
-          {heading ?? context?.branding.displayName ?? context?.displayName ?? BRAND.full}
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">Application Mode: Sign In</p>
+        {/*
+          The TITLE names the system doing the signing in, not the realm being signed into: this is
+          GIAM's own page, and a first-time visitor reading "Leafy IdP" here with no other context
+          had no way to tell that from the name of the application they came from. The realm is what
+          the subtitle is for.
+        */}
+        <h1 className="text-2xl font-bold text-[#001E2B]">{heading ?? BRAND.full}</h1>
+        <p className="mt-1 text-sm font-medium text-gray-700">
+          {context?.branding.displayName ?? context?.displayName ?? 'Signing in'}
+        </p>
+        <p className="mt-0.5 text-xs text-gray-500">Application Mode: Sign In</p>
       </div>
 
       <form

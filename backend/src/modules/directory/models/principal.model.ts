@@ -236,6 +236,19 @@ export interface PrincipalRecord extends Scoped {
    */
   accountHolderRef?: string;
 
+  /**
+   * The same binding, one reference per resource server, keyed by that server's audience.
+   *
+   * A person is an account holder at more than one institution, and each institution names them
+   * with its OWN reference: the payment provider's party id is not the bank's account holder id.
+   * One field could only ever carry one of them, so a token addressed to the bank carried the
+   * provider's reference and the bank filtered its records by something that names nothing there.
+   *
+   * `accountHolderRef` stays as the default for an audience not listed here, so a principal bound
+   * to a single application needs nothing new.
+   */
+  accountHolderRefs?: Record<string, string>;
+
   /** Offered on the sign-in roster. Also the only set impersonation may ever target. */
   demoFeatured?: boolean;
 

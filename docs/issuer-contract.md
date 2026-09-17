@@ -170,11 +170,23 @@ offer, and the useful set differs sharply per application:
 | The provider's own portal | its staff and its customers | a merchant signs in as a customer who owns one |
 | A third party's app | customers only | its testers are users, never the provider's back office |
 | The authority's console | who administers identity, who audits it, one ordinary user | the rest administer nothing here |
-| The bank | its own staff and account holders | no provider role exists in that realm at all |
+| The bank | its own staff and account holders | the roles are the bank's own, whoever else the person is elsewhere |
 
 Two properties matter. The list comes from the **client record**, never from the query, so a caller
 cannot widen its own roster by asking for more. And a client that declares nothing gets every featured
 persona in the realm, which is what a realm with no application-specific screen should do.
+
+### One person, several institutions
+
+A persona is not confined to one application. The demo customers hold `customer` over the payment
+provider AND `bank_customer` over the bank, so the same four people appear on the provider's screen,
+the merchant's, the authority's console and the bank's, each under the role that screen offers. The
+roster needed no change for this: it groups by role, and a person holding two is shown under whichever
+the asking client declares.
+
+What DID need saying is which record they are: each institution names the same person by its own
+reference, so the principal carries `accountHolderRefs` keyed by resource server audience and the
+`account_holder` claim is resolved from it per token. See `token-contract.md`.
 
 Every offered role carries **at least two** personas, so a screen demonstrates a role rather than a
 person.

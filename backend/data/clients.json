@@ -37,13 +37,8 @@
       },
       {
         "kind": "principal",
-        "ref": "a1000102-0000-4000-8000-000000000102",
-        "displayName": "Nina Berg"
-      },
-      {
-        "kind": "principal",
-        "ref": "a1000070-0000-4000-8000-000000000070",
-        "displayName": "Alex Rivera"
+        "ref": "ec06cbfa-96e2-4867-892b-b74987e78d7a",
+        "displayName": "Luis Fernandez"
       }
     ],
     "demoRoster": [
@@ -139,8 +134,8 @@
       },
       {
         "kind": "principal",
-        "ref": "a1000102-0000-4000-8000-000000000102",
-        "displayName": "Nina Berg"
+        "ref": "a1000058-0000-4000-8000-000000000058",
+        "displayName": "Amara Okafor"
       }
     ],
     "demoRoster": [
@@ -200,6 +195,13 @@
         "name": "openid",
         "description": "Confirm who you are",
         "required": true
+      }
+    ],
+    "owners": [
+      {
+        "kind": "principal",
+        "ref": "a1000077-0000-4000-8000-000000000077",
+        "displayName": "Antonio Membrides"
       }
     ]
   },
@@ -281,6 +283,13 @@
         "name": "demo-credits",
         "description": "Use demonstration credits"
       }
+    ],
+    "owners": [
+      {
+        "kind": "principal",
+        "ref": "a1000077-0000-4000-8000-000000000077",
+        "displayName": "Antonio Membrides"
+      }
     ]
   },
   {
@@ -325,6 +334,13 @@
         "description": "Confirm who you are",
         "required": true
       }
+    ],
+    "owners": [
+      {
+        "kind": "principal",
+        "ref": "a1000077-0000-4000-8000-000000000077",
+        "displayName": "Antonio Membrides"
+      }
     ]
   },
   {
@@ -363,6 +379,13 @@
     ],
     "audience": [
       "bankcore"
+    ],
+    "owners": [
+      {
+        "kind": "principal",
+        "ref": "a1000077-0000-4000-8000-000000000077",
+        "displayName": "Antonio Membrides"
+      }
     ]
   },
   {
@@ -404,6 +427,13 @@
     ],
     "audience": [
       "leafypay"
+    ],
+    "owners": [
+      {
+        "kind": "principal",
+        "ref": "a1000077-0000-4000-8000-000000000077",
+        "displayName": "Antonio Membrides"
+      }
     ]
   },
   {
@@ -500,6 +530,13 @@
       {
         "name": "email",
         "description": "Read your email address"
+      }
+    ],
+    "owners": [
+      {
+        "kind": "principal",
+        "ref": "a1000077-0000-4000-8000-000000000077",
+        "displayName": "Antonio Membrides"
       }
     ]
   },

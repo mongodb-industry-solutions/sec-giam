@@ -16,7 +16,14 @@
     "demoFeatured": true,
     "roleName": "customer",
     "accountHolderRef": "b0000001-0000-4000-8000-000000000001",
-    "demoNote": "merchant owner: Espresso Works Ltd"
+    "demoNote": "Espresso Works Ltd",
+    "accountHolderRefs": {
+      "leafypay": "b0000001-0000-4000-8000-000000000001",
+      "bankcore": "hld00075-0000-4000-8000-000000000075"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -34,7 +41,14 @@
     "lifecycleState": "active",
     "demoFeatured": true,
     "roleName": "customer",
-    "accountHolderRef": "b0000002-0000-4000-8000-000000000002"
+    "accountHolderRef": "b0000002-0000-4000-8000-000000000002",
+    "accountHolderRefs": {
+      "leafypay": "b0000002-0000-4000-8000-000000000002",
+      "bankcore": "hld00002-0000-4000-8000-000000000002"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -143,7 +157,14 @@
     "demoFeatured": true,
     "roleName": "customer",
     "accountHolderRef": "b0000058-0000-4000-8000-000000000058",
-    "demoNote": "merchant owner: Leafy Wallet"
+    "demoNote": "Leafy Wallet",
+    "accountHolderRefs": {
+      "leafypay": "b0000058-0000-4000-8000-000000000058",
+      "bankcore": "hld00076-0000-4000-8000-000000000076"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -161,7 +182,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000059-0000-4000-8000-000000000059"
+    "accountHolderRef": "b0000059-0000-4000-8000-000000000059",
+    "accountHolderRefs": {
+      "leafypay": "b0000059-0000-4000-8000-000000000059",
+      "bankcore": "hld00059-0000-4000-8000-000000000059"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -179,7 +207,14 @@
     "lifecycleState": "active",
     "demoFeatured": true,
     "roleName": "customer",
-    "accountHolderRef": "b0000060-0000-4000-8000-000000000060"
+    "accountHolderRef": "b0000060-0000-4000-8000-000000000060",
+    "accountHolderRefs": {
+      "leafypay": "b0000060-0000-4000-8000-000000000060",
+      "bankcore": "hld00060-0000-4000-8000-000000000060"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -197,7 +232,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000061-0000-4000-8000-000000000061"
+    "accountHolderRef": "b0000061-0000-4000-8000-000000000061",
+    "accountHolderRefs": {
+      "leafypay": "b0000061-0000-4000-8000-000000000061",
+      "bankcore": "hld00061-0000-4000-8000-000000000061"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -305,7 +347,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000071-0000-4000-8000-000000000071"
+    "accountHolderRef": "b0000071-0000-4000-8000-000000000071",
+    "accountHolderRefs": {
+      "leafypay": "b0000071-0000-4000-8000-000000000071",
+      "bankcore": "hld00071-0000-4000-8000-000000000071"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -323,7 +372,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000072-0000-4000-8000-000000000072"
+    "accountHolderRef": "b0000072-0000-4000-8000-000000000072",
+    "accountHolderRefs": {
+      "leafypay": "b0000072-0000-4000-8000-000000000072",
+      "bankcore": "hld00072-0000-4000-8000-000000000072"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -377,7 +433,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000003-0000-4000-8000-000000000003"
+    "accountHolderRef": "b0000003-0000-4000-8000-000000000003",
+    "accountHolderRefs": {
+      "leafypay": "b0000003-0000-4000-8000-000000000003",
+      "bankcore": "hld00003-0000-4000-8000-000000000003"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -395,7 +458,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000004-0000-4000-8000-000000000004"
+    "accountHolderRef": "b0000004-0000-4000-8000-000000000004",
+    "accountHolderRefs": {
+      "leafypay": "b0000004-0000-4000-8000-000000000004",
+      "bankcore": "hld00004-0000-4000-8000-000000000004"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -413,7 +483,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000005-0000-4000-8000-000000000005"
+    "accountHolderRef": "b0000005-0000-4000-8000-000000000005",
+    "accountHolderRefs": {
+      "leafypay": "b0000005-0000-4000-8000-000000000005",
+      "bankcore": "hld00005-0000-4000-8000-000000000005"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -431,7 +508,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000006-0000-4000-8000-000000000006"
+    "accountHolderRef": "b0000006-0000-4000-8000-000000000006",
+    "accountHolderRefs": {
+      "leafypay": "b0000006-0000-4000-8000-000000000006",
+      "bankcore": "hld00006-0000-4000-8000-000000000006"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -449,7 +533,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000007-0000-4000-8000-000000000007"
+    "accountHolderRef": "b0000007-0000-4000-8000-000000000007",
+    "accountHolderRefs": {
+      "leafypay": "b0000007-0000-4000-8000-000000000007",
+      "bankcore": "hld00007-0000-4000-8000-000000000007"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -467,7 +558,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000008-0000-4000-8000-000000000008"
+    "accountHolderRef": "b0000008-0000-4000-8000-000000000008",
+    "accountHolderRefs": {
+      "leafypay": "b0000008-0000-4000-8000-000000000008",
+      "bankcore": "hld00008-0000-4000-8000-000000000008"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -485,7 +583,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000009-0000-4000-8000-000000000009"
+    "accountHolderRef": "b0000009-0000-4000-8000-000000000009",
+    "accountHolderRefs": {
+      "leafypay": "b0000009-0000-4000-8000-000000000009",
+      "bankcore": "hld00009-0000-4000-8000-000000000009"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -503,7 +608,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000010-0000-4000-8000-000000000010"
+    "accountHolderRef": "b0000010-0000-4000-8000-000000000010",
+    "accountHolderRefs": {
+      "leafypay": "b0000010-0000-4000-8000-000000000010",
+      "bankcore": "hld00010-0000-4000-8000-000000000010"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -522,7 +634,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000011-0000-4000-8000-000000000011"
+    "accountHolderRef": "b0000011-0000-4000-8000-000000000011",
+    "accountHolderRefs": {
+      "leafypay": "b0000011-0000-4000-8000-000000000011",
+      "bankcore": "hld00011-0000-4000-8000-000000000011"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -540,7 +659,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000012-0000-4000-8000-000000000012"
+    "accountHolderRef": "b0000012-0000-4000-8000-000000000012",
+    "accountHolderRefs": {
+      "leafypay": "b0000012-0000-4000-8000-000000000012",
+      "bankcore": "hld00012-0000-4000-8000-000000000012"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -558,7 +684,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000013-0000-4000-8000-000000000013"
+    "accountHolderRef": "b0000013-0000-4000-8000-000000000013",
+    "accountHolderRefs": {
+      "leafypay": "b0000013-0000-4000-8000-000000000013",
+      "bankcore": "hld00013-0000-4000-8000-000000000013"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -576,7 +709,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000014-0000-4000-8000-000000000014"
+    "accountHolderRef": "b0000014-0000-4000-8000-000000000014",
+    "accountHolderRefs": {
+      "leafypay": "b0000014-0000-4000-8000-000000000014",
+      "bankcore": "hld00014-0000-4000-8000-000000000014"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -595,7 +735,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000015-0000-4000-8000-000000000015"
+    "accountHolderRef": "b0000015-0000-4000-8000-000000000015",
+    "accountHolderRefs": {
+      "leafypay": "b0000015-0000-4000-8000-000000000015",
+      "bankcore": "hld00015-0000-4000-8000-000000000015"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -613,7 +760,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000016-0000-4000-8000-000000000016"
+    "accountHolderRef": "b0000016-0000-4000-8000-000000000016",
+    "accountHolderRefs": {
+      "leafypay": "b0000016-0000-4000-8000-000000000016",
+      "bankcore": "hld00016-0000-4000-8000-000000000016"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -631,7 +785,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000017-0000-4000-8000-000000000017"
+    "accountHolderRef": "b0000017-0000-4000-8000-000000000017",
+    "accountHolderRefs": {
+      "leafypay": "b0000017-0000-4000-8000-000000000017",
+      "bankcore": "hld00017-0000-4000-8000-000000000017"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -650,7 +811,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000018-0000-4000-8000-000000000018"
+    "accountHolderRef": "b0000018-0000-4000-8000-000000000018",
+    "accountHolderRefs": {
+      "leafypay": "b0000018-0000-4000-8000-000000000018",
+      "bankcore": "hld00018-0000-4000-8000-000000000018"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -668,7 +836,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000019-0000-4000-8000-000000000019"
+    "accountHolderRef": "b0000019-0000-4000-8000-000000000019",
+    "accountHolderRefs": {
+      "leafypay": "b0000019-0000-4000-8000-000000000019",
+      "bankcore": "hld00019-0000-4000-8000-000000000019"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -686,7 +861,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000020-0000-4000-8000-000000000020"
+    "accountHolderRef": "b0000020-0000-4000-8000-000000000020",
+    "accountHolderRefs": {
+      "leafypay": "b0000020-0000-4000-8000-000000000020",
+      "bankcore": "hld00020-0000-4000-8000-000000000020"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -704,7 +886,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000021-0000-4000-8000-000000000021"
+    "accountHolderRef": "b0000021-0000-4000-8000-000000000021",
+    "accountHolderRefs": {
+      "leafypay": "b0000021-0000-4000-8000-000000000021",
+      "bankcore": "hld00021-0000-4000-8000-000000000021"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -722,7 +911,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000022-0000-4000-8000-000000000022"
+    "accountHolderRef": "b0000022-0000-4000-8000-000000000022",
+    "accountHolderRefs": {
+      "leafypay": "b0000022-0000-4000-8000-000000000022",
+      "bankcore": "hld00022-0000-4000-8000-000000000022"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -741,7 +937,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000023-0000-4000-8000-000000000023"
+    "accountHolderRef": "b0000023-0000-4000-8000-000000000023",
+    "accountHolderRefs": {
+      "leafypay": "b0000023-0000-4000-8000-000000000023",
+      "bankcore": "hld00023-0000-4000-8000-000000000023"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -759,7 +962,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000024-0000-4000-8000-000000000024"
+    "accountHolderRef": "b0000024-0000-4000-8000-000000000024",
+    "accountHolderRefs": {
+      "leafypay": "b0000024-0000-4000-8000-000000000024",
+      "bankcore": "hld00024-0000-4000-8000-000000000024"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -778,7 +988,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000025-0000-4000-8000-000000000025"
+    "accountHolderRef": "b0000025-0000-4000-8000-000000000025",
+    "accountHolderRefs": {
+      "leafypay": "b0000025-0000-4000-8000-000000000025",
+      "bankcore": "hld00025-0000-4000-8000-000000000025"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -796,7 +1013,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000026-0000-4000-8000-000000000026"
+    "accountHolderRef": "b0000026-0000-4000-8000-000000000026",
+    "accountHolderRefs": {
+      "leafypay": "b0000026-0000-4000-8000-000000000026",
+      "bankcore": "hld00026-0000-4000-8000-000000000026"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -815,7 +1039,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000027-0000-4000-8000-000000000027"
+    "accountHolderRef": "b0000027-0000-4000-8000-000000000027",
+    "accountHolderRefs": {
+      "leafypay": "b0000027-0000-4000-8000-000000000027",
+      "bankcore": "hld00027-0000-4000-8000-000000000027"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -833,7 +1064,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000028-0000-4000-8000-000000000028"
+    "accountHolderRef": "b0000028-0000-4000-8000-000000000028",
+    "accountHolderRefs": {
+      "leafypay": "b0000028-0000-4000-8000-000000000028",
+      "bankcore": "hld00028-0000-4000-8000-000000000028"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -852,7 +1090,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000029-0000-4000-8000-000000000029"
+    "accountHolderRef": "b0000029-0000-4000-8000-000000000029",
+    "accountHolderRefs": {
+      "leafypay": "b0000029-0000-4000-8000-000000000029",
+      "bankcore": "hld00029-0000-4000-8000-000000000029"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -870,7 +1115,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000030-0000-4000-8000-000000000030"
+    "accountHolderRef": "b0000030-0000-4000-8000-000000000030",
+    "accountHolderRefs": {
+      "leafypay": "b0000030-0000-4000-8000-000000000030",
+      "bankcore": "hld00030-0000-4000-8000-000000000030"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -888,7 +1140,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000031-0000-4000-8000-000000000031"
+    "accountHolderRef": "b0000031-0000-4000-8000-000000000031",
+    "accountHolderRefs": {
+      "leafypay": "b0000031-0000-4000-8000-000000000031",
+      "bankcore": "hld00031-0000-4000-8000-000000000031"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -906,7 +1165,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000032-0000-4000-8000-000000000032"
+    "accountHolderRef": "b0000032-0000-4000-8000-000000000032",
+    "accountHolderRefs": {
+      "leafypay": "b0000032-0000-4000-8000-000000000032",
+      "bankcore": "hld00032-0000-4000-8000-000000000032"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -924,7 +1190,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000033-0000-4000-8000-000000000033"
+    "accountHolderRef": "b0000033-0000-4000-8000-000000000033",
+    "accountHolderRefs": {
+      "leafypay": "b0000033-0000-4000-8000-000000000033",
+      "bankcore": "hld00033-0000-4000-8000-000000000033"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -942,7 +1215,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000034-0000-4000-8000-000000000034"
+    "accountHolderRef": "b0000034-0000-4000-8000-000000000034",
+    "accountHolderRefs": {
+      "leafypay": "b0000034-0000-4000-8000-000000000034",
+      "bankcore": "hld00034-0000-4000-8000-000000000034"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -961,7 +1241,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000035-0000-4000-8000-000000000035"
+    "accountHolderRef": "b0000035-0000-4000-8000-000000000035",
+    "accountHolderRefs": {
+      "leafypay": "b0000035-0000-4000-8000-000000000035",
+      "bankcore": "hld00035-0000-4000-8000-000000000035"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -979,7 +1266,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000036-0000-4000-8000-000000000036"
+    "accountHolderRef": "b0000036-0000-4000-8000-000000000036",
+    "accountHolderRefs": {
+      "leafypay": "b0000036-0000-4000-8000-000000000036",
+      "bankcore": "hld00036-0000-4000-8000-000000000036"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -997,7 +1291,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000037-0000-4000-8000-000000000037"
+    "accountHolderRef": "b0000037-0000-4000-8000-000000000037",
+    "accountHolderRefs": {
+      "leafypay": "b0000037-0000-4000-8000-000000000037",
+      "bankcore": "hld00037-0000-4000-8000-000000000037"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1015,7 +1316,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000038-0000-4000-8000-000000000038"
+    "accountHolderRef": "b0000038-0000-4000-8000-000000000038",
+    "accountHolderRefs": {
+      "leafypay": "b0000038-0000-4000-8000-000000000038",
+      "bankcore": "hld00038-0000-4000-8000-000000000038"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1033,7 +1341,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000039-0000-4000-8000-000000000039"
+    "accountHolderRef": "b0000039-0000-4000-8000-000000000039",
+    "accountHolderRefs": {
+      "leafypay": "b0000039-0000-4000-8000-000000000039",
+      "bankcore": "hld00039-0000-4000-8000-000000000039"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1051,7 +1366,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000040-0000-4000-8000-000000000040"
+    "accountHolderRef": "b0000040-0000-4000-8000-000000000040",
+    "accountHolderRefs": {
+      "leafypay": "b0000040-0000-4000-8000-000000000040",
+      "bankcore": "hld00040-0000-4000-8000-000000000040"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1069,7 +1391,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000041-0000-4000-8000-000000000041"
+    "accountHolderRef": "b0000041-0000-4000-8000-000000000041",
+    "accountHolderRefs": {
+      "leafypay": "b0000041-0000-4000-8000-000000000041",
+      "bankcore": "hld00041-0000-4000-8000-000000000041"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1087,7 +1416,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000042-0000-4000-8000-000000000042"
+    "accountHolderRef": "b0000042-0000-4000-8000-000000000042",
+    "accountHolderRefs": {
+      "leafypay": "b0000042-0000-4000-8000-000000000042",
+      "bankcore": "hld00042-0000-4000-8000-000000000042"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1105,7 +1441,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000043-0000-4000-8000-000000000043"
+    "accountHolderRef": "b0000043-0000-4000-8000-000000000043",
+    "accountHolderRefs": {
+      "leafypay": "b0000043-0000-4000-8000-000000000043",
+      "bankcore": "hld00043-0000-4000-8000-000000000043"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1124,7 +1467,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000044-0000-4000-8000-000000000044"
+    "accountHolderRef": "b0000044-0000-4000-8000-000000000044",
+    "accountHolderRefs": {
+      "leafypay": "b0000044-0000-4000-8000-000000000044",
+      "bankcore": "hld00044-0000-4000-8000-000000000044"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1142,7 +1492,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000045-0000-4000-8000-000000000045"
+    "accountHolderRef": "b0000045-0000-4000-8000-000000000045",
+    "accountHolderRefs": {
+      "leafypay": "b0000045-0000-4000-8000-000000000045",
+      "bankcore": "hld00045-0000-4000-8000-000000000045"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1160,7 +1517,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000046-0000-4000-8000-000000000046"
+    "accountHolderRef": "b0000046-0000-4000-8000-000000000046",
+    "accountHolderRefs": {
+      "leafypay": "b0000046-0000-4000-8000-000000000046",
+      "bankcore": "hld00046-0000-4000-8000-000000000046"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1178,7 +1542,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000047-0000-4000-8000-000000000047"
+    "accountHolderRef": "b0000047-0000-4000-8000-000000000047",
+    "accountHolderRefs": {
+      "leafypay": "b0000047-0000-4000-8000-000000000047",
+      "bankcore": "hld00047-0000-4000-8000-000000000047"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1196,7 +1567,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000048-0000-4000-8000-000000000048"
+    "accountHolderRef": "b0000048-0000-4000-8000-000000000048",
+    "accountHolderRefs": {
+      "leafypay": "b0000048-0000-4000-8000-000000000048",
+      "bankcore": "hld00048-0000-4000-8000-000000000048"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1214,7 +1592,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000049-0000-4000-8000-000000000049"
+    "accountHolderRef": "b0000049-0000-4000-8000-000000000049",
+    "accountHolderRefs": {
+      "leafypay": "b0000049-0000-4000-8000-000000000049",
+      "bankcore": "hld00049-0000-4000-8000-000000000049"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1233,7 +1618,14 @@
     "lifecycleState": "active",
     "demoFeatured": false,
     "roleName": "customer",
-    "accountHolderRef": "b0000050-0000-4000-8000-000000000050"
+    "accountHolderRef": "b0000050-0000-4000-8000-000000000050",
+    "accountHolderRefs": {
+      "leafypay": "b0000050-0000-4000-8000-000000000050",
+      "bankcore": "hld00050-0000-4000-8000-000000000050"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ]
   },
   {
     "realm": "LeafyIdp",
@@ -1268,5 +1660,31 @@
     "lifecycleState": "active",
     "roleName": "client_administrator",
     "phone": "+1 323 555 0102"
+  },
+  {
+    "realm": "LeafyIdp",
+    "subjectId": "a1000077-0000-4000-8000-000000000077",
+    "userName": "antonio.membrides",
+    "kind": "human",
+    "email": "antonio.membrides@back.es",
+    "phone": "+34 611 222 333",
+    "name": {
+      "formatted": "Antonio Membrides",
+      "givenName": "Antonio",
+      "familyName": "Membrides"
+    },
+    "active": true,
+    "lifecycleState": "active",
+    "demoFeatured": true,
+    "roleName": "customer",
+    "accountHolderRef": "b0000077-0000-4000-8000-000000000077",
+    "accountHolderRefs": {
+      "leafypay": "b0000077-0000-4000-8000-000000000077",
+      "bankcore": "hld00077-0000-4000-8000-000000000077"
+    },
+    "additionalRoles": [
+      "bank_customer"
+    ],
+    "demoNote": "LeafyPay & BankCore"
   }
 ]

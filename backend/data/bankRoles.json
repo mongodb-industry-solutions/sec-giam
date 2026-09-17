@@ -284,11 +284,14 @@
     "resourceServer": "bankcore",
     "name": "bank_customer",
     "displayName": "Account Holder",
-    "description": "An account holder at this bank, seeing their own accounts, balances and movements directly.",
+    "description": "Account holder at this bank. Their own registered details, their own accounts, their own movements and their own issued cards, and nothing belonging to anybody else.",
     "scopeKind": "self",
     "builtin": true,
     "sodRationale": "Needs no consent, because there is no third party in the arrangement: this is their own data at their own institution. What they do need is to be unable to reach anybody else's, which the self scope binds by subject rather than by role.",
     "permissions": {
+      "accountHolders": [
+        "view"
+      ],
       "accounts": [
         "view"
       ],

@@ -3734,11 +3734,11 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -3879,11 +3879,11 @@
             }
           },
           "401": {
-            "description": "The proof did not verify.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -3993,11 +3993,238 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/credentials/password/policy": {
+      "get": {
+        "operationId": "passwordPolicy",
+        "summary": "The rules a new password must satisfy",
+        "tags": [
+          "authentication"
+        ],
+        "description": "No applicable standard; PCI DSS 8.3.6-adjacent, which expects the password requirements to be communicated rather than discovered by being refused. The same policy `POST /credentials/password` and self-registration enforce, resolved from the directory this realm owns. Null when the realm authenticates through an upstream that sets its own.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The policy in force, or nulls when this realm sets none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The policy in force, or nulls when this realm sets none.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "policy"
+                  ],
+                  "properties": {
+                    "policy": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "required": [
+                        "minLength",
+                        "requireUppercase",
+                        "requireNumber",
+                        "requireSymbol",
+                        "historyDepth"
+                      ],
+                      "properties": {
+                        "minLength": {
+                          "type": "integer"
+                        },
+                        "requireUppercase": {
+                          "type": "boolean"
+                        },
+                        "requireNumber": {
+                          "type": "boolean"
+                        },
+                        "requireSymbol": {
+                          "type": "boolean",
+                          "description": "Anything that is not a letter, a digit or whitespace. Deliberately broad."
+                        },
+                        "historyDepth": {
+                          "type": "integer",
+                          "description": "How many previous credentials may not be reused. Zero means no history is kept."
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "policy": {
+                    "minLength": 8,
+                    "requireUppercase": false,
+                    "requireNumber": false,
+                    "requireSymbol": false,
+                    "historyDepth": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token for this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/credentials/password": {
+      "post": {
+        "operationId": "changePassword",
+        "summary": "Change your own password",
+        "tags": [
+          "authentication"
+        ],
+        "description": "No applicable standard; self-service counterpart of the administrative reset. Requires the current password, checked against the same policy self-registration enforces. Neither password is ever returned or logged.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "currentPassword",
+                  "newPassword",
+                  "newPasswordConfirmation"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "description": "What signs the caller in today."
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8
+                  },
+                  "newPasswordConfirmation": {
+                    "type": "string",
+                    "description": "Repeated so a typo is caught here rather than at the next sign-in."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "changed"
+                  ],
+                  "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "changed": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The new password fails the policy, repeats the current one, or does not match its confirmation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token for this realm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current password does not match.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No password credential to change; this principal signs in another way.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4083,11 +4310,11 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4245,11 +4472,11 @@
             }
           },
           "401": {
-            "description": "The proof did not verify.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4501,11 +4728,11 @@
             }
           },
           "401": {
-            "description": "No valid access token.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4717,11 +4944,11 @@
             }
           },
           "401": {
-            "description": "The proof did not verify.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4820,11 +5047,11 @@
             }
           },
           "401": {
-            "description": "The refusal was not authorised.",
+            "description": "No valid access token for this realm.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/def-1"
+                  "$ref": "#/components/schemas/def-0"
                 }
               }
             }
@@ -4992,6 +5219,24 @@
           },
           {
             "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Matches the user name, the formatted name or the subject id of the person signed in. Requires a realm-wide role, because it is a question about other people."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "clientId",
+            "required": false,
+            "description": "Only sessions holding a token for this application. Needs no realm-wide role: narrowing your OWN sessions to one application is still a question about yourself."
+          },
+          {
+            "schema": {
               "type": "integer",
               "default": 0
             },
@@ -5036,7 +5281,8 @@
                   "required": [
                     "sessions",
                     "total",
-                    "scope"
+                    "scope",
+                    "applications"
                   ],
                   "properties": {
                     "sessions": {
@@ -5085,6 +5331,12 @@
                             },
                             "description": "Every application holding a token from this session, and therefore told when it ends."
                           },
+                          "applications": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "current": {
                             "type": "boolean",
                             "description": "True for the session the calling token was issued under."
@@ -5113,6 +5365,9 @@
                           "clientIds": [
                             "giam-console"
                           ],
+                          "applications": [
+                            "Identity Console"
+                          ],
                           "current": true,
                           "origin": {
                             "addressFingerprint": "3f9c1a7e",
@@ -5131,6 +5386,26 @@
                         "realm"
                       ],
                       "description": "What was actually answered, which may be narrower than what was asked."
+                    },
+                    "applications": {
+                      "type": "array",
+                      "description": "Every application registered in this realm, so a filter can offer them by name. From the registry rather than from the page: derived from the page it would shrink as soon as one was chosen and the filter could not be undone.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "clientId",
+                          "clientName"
+                        ],
+                        "properties": {
+                          "clientId": {
+                            "type": "string"
+                          },
+                          "clientName": {
+                            "type": "string"
+                          }
+                        }
+                      }
                     }
                   }
                 },
@@ -5146,6 +5421,9 @@
                       "clientIds": [
                         "giam-console"
                       ],
+                      "applications": [
+                        "Identity Console"
+                      ],
                       "current": true,
                       "origin": {
                         "addressFingerprint": "3f9c1a7e",
@@ -5154,7 +5432,13 @@
                     }
                   ],
                   "total": 1,
-                  "scope": "mine"
+                  "scope": "mine",
+                  "applications": [
+                    {
+                      "clientId": "giam-console",
+                      "clientName": "Identity Console"
+                    }
+                  ]
                 }
               }
             }
@@ -5193,6 +5477,249 @@
       }
     },
     "/realms/{realm}/sessions/{sessionId}": {
+      "get": {
+        "operationId": "getSession",
+        "summary": "One session in full",
+        "tags": [
+          "sessions"
+        ],
+        "description": "No applicable standard. The session, who it belongs to, and the authentication context it was established under. Reachable for your own always, and for somebody else with a realm-wide role; an unreachable one answers 404 rather than 403 so session identifiers cannot be enumerated. No token is returned: none is stored, and a bearer token on a read surface would make viewing a session equivalent to using it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "realm",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session, its owner, and how it was authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The session, its owner, and how it was authenticated.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "session",
+                    "owner",
+                    "authentication"
+                  ],
+                  "properties": {
+                    "session": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "sessionId",
+                        "subjectId",
+                        "createdAt",
+                        "lastSeenAt",
+                        "expiresAt",
+                        "idleExpiresAt",
+                        "clientIds",
+                        "current"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "subjectId": {
+                          "type": "string"
+                        },
+                        "userName": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "lastSeenAt": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "description": "Absolute end, regardless of activity."
+                        },
+                        "idleExpiresAt": {
+                          "type": "string",
+                          "description": "Rolling end, moved forward on use."
+                        },
+                        "clientIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Every application holding a token from this session, and therefore told when it ends."
+                        },
+                        "applications": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "current": {
+                          "type": "boolean",
+                          "description": "True for the session the calling token was issued under."
+                        },
+                        "origin": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "description": "Coarse only. The address and the user agent are stored hashed, never raw, so a session record is not a place personal data accumulates.",
+                          "properties": {
+                            "addressFingerprint": {
+                              "type": "string"
+                            },
+                            "deviceFingerprint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "example": {
+                        "sessionId": "c41a7de0-90b1-4c1e-9f2a-8d5b3e7c0a12",
+                        "subjectId": "a1000070-0000-4000-8000-000000000070",
+                        "createdAt": "2026-08-31T08:41:00.000Z",
+                        "lastSeenAt": "2026-08-31T09:58:00.000Z",
+                        "expiresAt": "2026-08-31T20:41:00.000Z",
+                        "idleExpiresAt": "2026-08-31T10:28:00.000Z",
+                        "clientIds": [
+                          "giam-console"
+                        ],
+                        "applications": [
+                          "Identity Console"
+                        ],
+                        "current": true,
+                        "origin": {
+                          "addressFingerprint": "3f9c1a7e",
+                          "deviceFingerprint": "b21d80f4"
+                        }
+                      }
+                    },
+                    "owner": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "description": "Who the session belongs to. Deliberately no email or phone: both are encrypted personal data, and a session page is not a reason to decrypt them. The identity page is where a principal is read, and a caller links to it rather than restating it here.",
+                      "required": [
+                        "subjectId"
+                      ],
+                      "properties": {
+                        "subjectId": {
+                          "type": "string"
+                        },
+                        "userName": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "description": "A person or a workload."
+                        },
+                        "active": {
+                          "type": "boolean"
+                        },
+                        "lifecycleState": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "authentication": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "description": "How this session was established, and what governs the tokens issued under it.",
+                      "required": [
+                        "epoch",
+                        "refreshGeneration",
+                        "tokensStored"
+                      ],
+                      "properties": {
+                        "domainId": {
+                          "type": "string",
+                          "description": "The authentication path used."
+                        },
+                        "domainName": {
+                          "type": "string"
+                        },
+                        "establishedForClientId": {
+                          "type": "string",
+                          "description": "The application the session was opened for."
+                        },
+                        "establishedForClientName": {
+                          "type": "string"
+                        },
+                        "acr": {
+                          "type": "string",
+                          "description": "NIST SP 800-63 assurance level reached."
+                        },
+                        "amr": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "RFC 8176 methods used."
+                        },
+                        "credentialId": {
+                          "type": "string",
+                          "description": "The factor that authenticated."
+                        },
+                        "ticketId": {
+                          "type": "string",
+                          "description": "The authorization request this session came from."
+                        },
+                        "epoch": {
+                          "type": "integer",
+                          "description": "Tokens issued below this are retired. Raising it revokes every outstanding token of this principal without listing any of them."
+                        },
+                        "refreshGeneration": {
+                          "type": "integer",
+                          "description": "RFC 9700 rotation with reuse detection. A refresh token presenting a lower generation is treated as theft and ends the session."
+                        },
+                        "tokensStored": {
+                          "type": "boolean",
+                          "description": "Always false, and stated rather than omitted: this authority records no token, so there is no per-token history here and none is being withheld."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No live session this caller can reach.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "terminateSession",
         "summary": "End a session everywhere",
@@ -5291,6 +5818,163 @@
           },
           "404": {
             "description": "No such live session this caller can reach.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realms/{realm}/sessions/terminate": {
+      "post": {
+        "operationId": "terminateSessions",
+        "summary": "End several sessions at once",
+        "tags": [
+          "sessions"
+        ],
+        "description": "Standard-adjacent: each termination is delivered as an OpenID Connect Back-Channel Logout 1.0 notification, exactly as ending one is. Reports an outcome per session; a session this caller cannot reach and one that has already gone are both reported as `notFound`, so a batch cannot be used to discover which identifiers are real.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionIds"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "sessionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "description": "Capped at the page size a caller can select, so this cannot become a way to sweep a realm in one call."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "in": "path",
+            "name": "realm",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What happened to each session named.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "What happened to each session named.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "results",
+                    "terminated",
+                    "wasCurrentSession"
+                  ],
+                  "properties": {
+                    "terminated": {
+                      "type": "integer",
+                      "description": "How many actually ended."
+                    },
+                    "wasCurrentSession": {
+                      "type": "boolean",
+                      "description": "True when the caller ended their own session among them, so the caller is now signed out."
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "sessionId",
+                          "outcome"
+                        ],
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "terminated",
+                              "notFound"
+                            ]
+                          },
+                          "revokedTokens": {
+                            "type": "integer"
+                          },
+                          "notified": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "notificationFailures": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "terminated": 2,
+                  "wasCurrentSession": false,
+                  "results": [
+                    {
+                      "sessionId": "c41a7de0-90b1-4c1e-9f2a-8d5b3e7c0a12",
+                      "outcome": "terminated",
+                      "revokedTokens": 0,
+                      "notified": [
+                        "giam-console"
+                      ],
+                      "notificationFailures": []
+                    },
+                    {
+                      "sessionId": "0d9b1f44-2a77-4e2a-9d31-6b0c5a9f7e11",
+                      "outcome": "notFound"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/def-0"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such realm.",
             "content": {
               "application/json": {
                 "schema": {

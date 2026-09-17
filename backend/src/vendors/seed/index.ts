@@ -3,7 +3,7 @@ import { resolve } from 'path';
 import { seedRealms } from './seedRealms';
 import { seedKeys } from './seedKeys';
 import { seedIdentities } from './seedIdentities';
-import { seedAuthorization } from './seedAuthorization';
+import { seedAuthorization, seedAdditionalRoles } from './seedAuthorization';
 import { seedPolicies } from './seedPolicies';
 import { seedClients } from './seedClients';
 import { retireDeclaredFields } from './upsertSeed';
@@ -42,6 +42,10 @@ export async function runSeed(): Promise<void> {
     // Roles and their assignments. After principals, since an assignment names one.
     await seedAuthorization(db);
     await seedAuthorization(db, 'bankRoles.json', 'bankIdentities.json');
+    // Last of the assignments: the roles a principal holds over ANOTHER resource server, which only
+    // exist once both catalogues above are written. This is what makes one person a customer of the
+    // payment provider and an account holder at the bank without being two principals.
+    await seedAdditionalRoles(db, ['identities.json', 'bankIdentities.json']);
     // Policies after roles, because the pair only means anything together: a policy narrows what a
     // role granted, and one seeded over an empty role catalogue would demonstrate nothing.
     await seedPolicies(db);
