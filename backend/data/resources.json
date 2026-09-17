@@ -240,6 +240,11 @@
         "description": "External or federated identity sources a realm trusts."
       },
       {
+        "name": "subjects",
+        "displayName": "Subjects",
+        "description": "Acting as another real person's subject via token exchange, scoped to this resource server."
+      },
+      {
         "name": "transactions",
         "displayName": "Transactions",
         "description": "Payment and transfer records a customer, analyst or investigator can view."

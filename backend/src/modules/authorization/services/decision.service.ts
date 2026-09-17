@@ -1,6 +1,6 @@
 import { Db } from 'mongodb';
 import {
-  ROLE_COLLECTION, PRINCIPAL_COLLECTION, RESOURCE_COLLECTION, REALM_COLLECTION,
+  ROLE_COLLECTION, PRINCIPAL_COLLECTION, CREDENTIAL_COLLECTION, RESOURCE_COLLECTION, REALM_COLLECTION,
 } from '../../../shared/models/collections';
 import {
   RoleRecord, EffectivePermission,
@@ -10,6 +10,7 @@ import { ResourceRecord, parsePermission, permissionString } from '../models/res
 import {
   PrincipalRecord, RoleHolding, activeHoldings,
 } from '../../directory/models/principal.model';
+import { CredentialRecord } from '../../directory/models/credential.model';
 
 /**
  * The decision point: what a principal may actually do, right now.
@@ -46,6 +47,23 @@ export class DecisionService {
       .findOne({ realmId, subjectId }, { projection: { _id: 0, roles: 1 } });
     if (!principal) return [];
     return activeHoldings(principal);
+  }
+
+  /**
+   * ADR-004: live role holdings for the CREDENTIAL itself, or `null` when it has none of its own.
+   *
+   * `null`, not `[]`, is the fallback signal: an empty array from a credential that HAS an opinion
+   * (an explicit `roles: []`) is indistinguishable from one that never set the field at all, and
+   * only the latter should fall back to the owning principal. Read through `activeHoldings`, the
+   * exact function a principal's own holdings are read through, so composition and expiry cannot
+   * drift between the two documents they are asked of.
+   */
+  private async liveCredentialHoldings(realmId: string, credentialId: string): Promise<RoleHolding[] | null> {
+    const credential = await this.db
+      .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
+      .findOne({ realmId, credentialId }, { projection: { _id: 0, roles: 1 } });
+    if (!credential?.roles || credential.roles.length === 0) return null;
+    return activeHoldings(credential);
   }
 
   /**
@@ -106,13 +124,19 @@ export class DecisionService {
    * Scoped to the audience deliberately. A token carries only what its audience enforces, so a
    * principal's authority at one application never travels inside a token meant for another, and the
    * claim stays small enough to belong in a token at all.
+   *
+   * ADR-004: `credentialId`, when given, is asked FIRST. A credential holding its own `roles` is
+   * authoritative for a token authenticated with it and REPLACES the principal's, never adds to
+   * them; a credential with nothing of its own (every credential before this existed, and every one
+   * that never opts in) falls back to the principal exactly as before.
    */
   async effectivePermissions(
     realmId: string,
     subjectId: string,
     audience: string,
+    credentialId?: string,
   ): Promise<{ permissions: EffectivePermission[]; roles: string[]; scopeKind: 'self' | 'all' }> {
-    return this.effectivePermissionsIn(realmId, subjectId, audience, realmId);
+    return this.effectivePermissionsIn(realmId, subjectId, audience, realmId, credentialId);
   }
 
   /**
@@ -128,13 +152,15 @@ export class DecisionService {
     subjectId: string,
     audience: string,
     targetRealmId: string,
+    credentialId?: string,
   ): Promise<{ permissions: EffectivePermission[]; roles: string[]; scopeKind: 'self' | 'all' }> {
     // Which resource TYPES this audience enforces, so a token carries only what its audience
     // checks. A permission is `resource:action`, and the resource half names a resource record; the
     // ones belonging to an audience are its children, which is what parentResourceId is for.
     const enforced = await this.typesFor(homeRealmId, audience);
 
-    const held = await this.liveHoldings(homeRealmId, subjectId);
+    const held = (credentialId ? await this.liveCredentialHoldings(homeRealmId, credentialId) : null)
+      ?? await this.liveHoldings(homeRealmId, subjectId);
     const assignments = held.filter((assignment) => holdingAppliesIn(assignment, homeRealmId, targetRealmId));
     const roles = await this.resolveRoles(homeRealmId, assignments.map((assignment) => assignment.roleId));
 
@@ -169,15 +195,21 @@ export class DecisionService {
     };
   }
 
-  /** A single decision, for the paths that ask rather than read a claim. */
+  /**
+   * A single decision, for the paths that ask rather than read a claim.
+   *
+   * ADR-004: `credentialId`, when given, narrows the decision to what THAT credential holds, exactly
+   * as `effectivePermissions` does.
+   */
   async check(
     realmId: string,
     subjectId: string,
     audience: string,
     resource: string,
     action: string,
+    credentialId?: string,
   ): Promise<{ effect: 'allow' | 'deny'; reason: string }> {
-    return this.checkIn(realmId, subjectId, audience, resource, action, realmId);
+    return this.checkIn(realmId, subjectId, audience, resource, action, realmId, credentialId);
   }
 
   /** The same decision, about a named target realm. */
@@ -188,9 +220,10 @@ export class DecisionService {
     resource: string,
     action: string,
     targetRealmId: string,
+    credentialId?: string,
   ): Promise<{ effect: 'allow' | 'deny'; reason: string }> {
     const { permissions, roles } = await this.effectivePermissionsIn(
-      homeRealmId, subjectId, audience, targetRealmId,
+      homeRealmId, subjectId, audience, targetRealmId, credentialId,
     );
     // One string comparison, because a permission IS the string. Building it here rather than
     // comparing two halves is what keeps every spelling of a permission identical.

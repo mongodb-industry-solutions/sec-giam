@@ -25,6 +25,16 @@ export type BackchannelDeliveryMode = 'poll' | 'ping' | 'push';
 
 export interface OAuthClient extends Scoped {
   clientId: string;
+  /**
+   * The `credential` document this view was projected from.
+   *
+   * ADR-004: this is what a decision resolves a credential-scoped grant against. Absent for
+   * `provisionalClient`'s soft-admission stand-in, which is built in memory and never written and so
+   * has no `credential` document to name; every OTHER client is projected by `clientFromCredential`
+   * and always has one. Either way, an absent `credentialId` falls back to the owning principal's
+   * roles exactly as every client behaved before this field existed.
+   */
+  credentialId?: string;
   /** bcrypt. Absent on a public client, which relies on PKCE instead. */
   clientSecretHash?: string;
   clientSecretPrefix?: string;
@@ -145,6 +155,7 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
   return {
     realmId: credential.realmId,
     tenantId: credential.tenantId,
+    credentialId: credential.credentialId,
     clientId: credential.clientId as string,
     ...(credential.hash ? { clientSecretHash: credential.hash } : {}),
     ...(credential.secretPrefix ? { clientSecretPrefix: credential.secretPrefix } : {}),

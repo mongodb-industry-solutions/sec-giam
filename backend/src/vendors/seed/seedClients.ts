@@ -10,7 +10,7 @@ import { OAuthClient } from '../../modules/oauth/models/client.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import { RoleRecord } from '../../modules/authorization/models/authorization.model';
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
-import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
+import { upsertSeed, upsertHolding, upsertCredentialHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { CredentialRecord } from '../../modules/directory/models/credential.model';
 import { ResourceRecord, permissionString } from '../../modules/authorization/models/resource.model';
 import { clientMetadata } from '../../modules/oauth/models/client.model';
@@ -74,6 +74,20 @@ interface ClientFixture {
     permissions?: Record<string, string[]>;
   };
   /**
+   * ADR-004: a grant belonging to THIS credential, not to the principal it authenticates as.
+   *
+   * Distinct from `serviceIdentity`'s `roleName`/`permissions`, which is the principal's own and
+   * every credential the principal ever registers inherits: this is for the opposite case, a
+   * capability one specific registration needs and the principal should not carry by default.
+   * Requires `serviceIdentity` on the same fixture, because a credential's grant is meaningless
+   * without a principal to fall back to when it is absent.
+   */
+  credentialIdentity?: {
+    roleName: string;
+    resourceServer?: string;
+    permissions: Record<string, string[]>;
+  };
+  /**
    * What this client's resource server tells a person each scope means.
    *
    * On the fixture because the vocabulary is the deployment's. `required` marks a scope the flow
@@ -102,6 +116,97 @@ interface ResourceServerFixture {
 /** The display half of a catalog row, or nothing when the fixture does not describe it. */
 function labelFor(meta?: { displayName: string; description: string }) {
   return meta ? { displayName: meta.displayName, description: meta.description } : {};
+}
+
+/**
+ * Registers a resource server (if not already registered) and the resource TYPES a set of
+ * permissions names on it, then returns those permissions as `resource:action` strings.
+ *
+ * Shared between a principal's `serviceIdentity.permissions` and a credential's own
+ * `credentialIdentity.permissions` (ADR-004): both declare a machine's authority the same way an
+ * application's roles do, so the decision point resolves either without a special case, and this is
+ * the one place that registration happens rather than twice with a chance to drift.
+ */
+async function registerPermittedResources(
+  db: Db,
+  realmId: string,
+  fixtureRealm: string,
+  serverName: string,
+  permissions: Record<string, string[]>,
+  scopeDescriptions: ClientFixture['scopeDescriptions'],
+  serverMeta: Map<string, ResourceServerFixture>,
+  typeMeta: Map<string, { name: string; displayName: string; description: string }>,
+): Promise<string[]> {
+  const serverId = uuidv5(`resource-server:${realmId}:${serverName}`, AUTHORIZATION_NAMESPACE);
+
+  // The resource server, if the roles seeder has not already created it. A permission pointing at a
+  // server that does not exist is unenforceable and invisible: the decision point could not scope it
+  // to an audience, so it would silently travel in every token instead of one.
+  await upsertSeed<ResourceRecord>(
+    db.collection<ResourceRecord>(RESOURCE_COLLECTION),
+    { resourceId: serverId },
+    {
+      name: serverName,
+      audience: serverName,
+      ...labelFor(serverMeta.get(`${fixtureRealm}|${serverName}`)),
+      kind: 'api',
+      catalogVersion: 0,
+      actions: [],
+      // What each scope MEANS, from the fixture. A consent screen that lists `payments:read` and
+      // asks for agreement has obtained a click rather than consent.
+      ...(scopeDescriptions ? { scopes: scopeDescriptions } : {}),
+      status: 'active',
+      validationMode: 'hybrid',
+      registeredAt: SEED_GRANTED_AT,
+    },
+    { resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
+    'Resource',
+  );
+
+  const held: string[] = [];
+  const actionsByType = new Map<string, Set<string>>();
+  for (const [resource, actions] of Object.entries(permissions)) {
+    for (const action of actions) {
+      const declared = actionsByType.get(resource) ?? new Set<string>();
+      declared.add(action);
+      actionsByType.set(resource, declared);
+      held.push(permissionString(resource, action));
+    }
+  }
+  for (const [type, actions] of actionsByType) {
+    /**
+     * Keyed on the server's ID, matching `seedAuthorization`.
+     *
+     * This derived from the server NAME while the roles seeder derived from its uuid, so the same
+     * logical resource was written twice under two different ids. The published catalog then listed
+     * five enforcement points twice, and worse, the two documents each owned their own `actions`:
+     * which verbs a resource declared depended on which of the two a reader happened to load. One
+     * derivation, in both places, or they drift again.
+     */
+    const childId = uuidv5(`resource:${realmId}:${serverId}:${type}`, AUTHORIZATION_NAMESPACE);
+    await upsertSeed<ResourceRecord>(
+      db.collection<ResourceRecord>(RESOURCE_COLLECTION),
+      { resourceId: childId },
+      {
+        name: type,
+        ...labelFor(typeMeta.get(`${fixtureRealm}|${serverName}|${type}`)),
+        actions: [...actions].sort(),
+        catalogVersion: 1,
+        status: 'active',
+      },
+      {
+        resourceId: childId,
+        realmId,
+        tenantId: DEFAULT_TENANT_ID,
+        kind: 'object',
+        parentResourceId: serverId,
+        registeredAt: SEED_GRANTED_AT,
+      },
+      'Resource',
+    );
+  }
+
+  return held;
 }
 
 export async function seedClients(db: Db): Promise<void> {
@@ -216,119 +321,86 @@ export async function seedClients(db: Db): Promise<void> {
     );
     serviceCount += 1;
 
-    if (!fixture.serviceIdentity.roleName) continue;
+    if (fixture.serviceIdentity.roleName) {
+      // Ordinary catalog rows, identical in shape to an application's, so the decision point
+      // resolves a service exactly as it resolves a person. That is the point of granting one at
+      // all: if a machine needed its own mechanism, the two halves would be free to drift and one
+      // of them would end up without an audit trail.
+      const held = await registerPermittedResources(
+        db, realmId, fixture.realm,
+        fixture.serviceIdentity.resourceServer ?? fixture.realm,
+        fixture.serviceIdentity.permissions ?? {},
+        fixture.scopeDescriptions, serverMeta, typeMeta,
+      );
 
-    // The permissions a machine holds, on the resource server that enforces them.
-    //
-    // Ordinary catalog rows, identical in shape to an application's, so the decision point resolves a
-    // service exactly as it resolves a person. That is the point of granting one at all: if a machine
-    // needed its own mechanism, the two halves would be free to drift and one of them would end up
-    // without an audit trail.
-    const serverName = fixture.serviceIdentity.resourceServer ?? fixture.realm;
-    const serverId = uuidv5(`resource-server:${realmId}:${serverName}`, AUTHORIZATION_NAMESPACE);
-
-    // The resource server, if the roles seeder has not already created it. A permission pointing at a
-    // server that does not exist is unenforceable and invisible: the decision point could not scope
-    // it to an audience, so it would silently travel in every token instead of one.
-    await upsertSeed<ResourceRecord>(
-      db.collection<ResourceRecord>(RESOURCE_COLLECTION),
-      { resourceId: serverId },
-      {
-        name: serverName,
-        audience: serverName,
-        ...labelFor(serverMeta.get(`${fixture.realm}|${serverName}`)),
-        kind: 'api',
-        catalogVersion: 0,
-        actions: [],
-        // What each scope MEANS, from the fixture. A consent screen that lists `payments:read` and
-        // asks for agreement has obtained a click rather than consent.
-        ...(fixture.scopeDescriptions ? { scopes: fixture.scopeDescriptions } : {}),
-        status: 'active',
-        validationMode: 'hybrid',
-        registeredAt: SEED_GRANTED_AT,
-      },
-      { resourceId: serverId, realmId, tenantId: DEFAULT_TENANT_ID },
-      'Resource',
-    );
-
-    /**
-     * The machine's permissions, as strings, with each resource TYPE declared as a resource.
-     *
-     * Ordinary catalog entries, identical in shape to an application's, so the decision point
-     * resolves a service exactly as it resolves a person. That is the point of granting one at all:
-     * if a machine needed its own mechanism, the two halves would drift and one would end up wrong.
-     */
-    const held: string[] = [];
-    const actionsByType = new Map<string, Set<string>>();
-    for (const [resource, actions] of Object.entries(fixture.serviceIdentity.permissions ?? {})) {
-      for (const action of actions) {
-        const declared = actionsByType.get(resource) ?? new Set<string>();
-        declared.add(action);
-        actionsByType.set(resource, declared);
-        held.push(permissionString(resource, action));
-      }
-    }
-    for (const [type, actions] of actionsByType) {
-      /**
-       * Keyed on the server's ID, matching `seedAuthorization`.
-       *
-       * This derived from the server NAME while the roles seeder derived from its uuid, so the same
-       * logical resource was written twice under two different ids. The published catalog then
-       * listed five enforcement points twice, and worse, the two documents each owned their own
-       * `actions`: which verbs a resource declared depended on which of the two a reader happened
-       * to load. One derivation, in both places, or they drift again.
-       */
-      const childId = uuidv5(`resource:${realmId}:${serverId}:${type}`, AUTHORIZATION_NAMESPACE);
-      await upsertSeed<ResourceRecord>(
-        db.collection<ResourceRecord>(RESOURCE_COLLECTION),
-        { resourceId: childId },
+      // The role a service holds, named for what the machine does rather than for who it is.
+      const roleId = uuidv5(`service-role:${realmId}:${fixture.serviceIdentity.roleName}`, CLIENT_NAMESPACE);
+      await upsertSeed<RoleRecord>(
+        roles,
+        { roleId },
         {
-          name: type,
-          ...labelFor(typeMeta.get(`${fixture.realm}|${serverName}|${type}`)),
-          actions: [...actions].sort(),
-          catalogVersion: 1,
-          status: 'active',
+          name: fixture.serviceIdentity.roleName,
+          displayName: fixture.serviceIdentity.roleName.replace(/_/g, ' '),
+          description: 'Held by a non-human principal. Resolved through the same decision point as any other role.',
+          permissions: held,
+          scopeKind: 'all',
+          builtin: true,
+          sodRationale:
+            'A machine identity is never a second-class record. It has an owner, a lifecycle and an '
+            + 'audit trail, and its authority is a role like anyone else\'s rather than an implicit '
+            + 'consequence of holding a credential.',
         },
-        {
-          resourceId: childId,
-          realmId,
-          tenantId: DEFAULT_TENANT_ID,
-          kind: 'object',
-          parentResourceId: serverId,
-          registeredAt: SEED_GRANTED_AT,
-        },
-        'Resource',
+        { roleId, realmId, tenantId: DEFAULT_TENANT_ID },
+        'Role',
+      );
+
+      // The service principal holds its role like anyone else: authority is never an implicit
+      // consequence of holding a credential.
+      await upsertHolding(
+        identities,
+        { realmId, subjectId: fixture.clientId },
+        { roleId, grantedAt: SEED_GRANTED_AT },
       );
     }
 
-    // The role a service holds, named for what the machine does rather than for who it is.
-    const roleId = uuidv5(`service-role:${realmId}:${fixture.serviceIdentity.roleName}`, CLIENT_NAMESPACE);
-    await upsertSeed<RoleRecord>(
-      roles,
-      { roleId },
-      {
-        name: fixture.serviceIdentity.roleName,
-        displayName: fixture.serviceIdentity.roleName.replace(/_/g, ' '),
-        description: 'Held by a non-human principal. Resolved through the same decision point as any other role.',
-        permissions: held,
-        scopeKind: 'all',
-        builtin: true,
-        sodRationale:
-          'A machine identity is never a second-class record. It has an owner, a lifecycle and an '
-          + 'audit trail, and its authority is a role like anyone else\'s rather than an implicit '
-          + 'consequence of holding a credential.',
-      },
-      { roleId, realmId, tenantId: DEFAULT_TENANT_ID },
-      'Role',
-    );
+    if (fixture.credentialIdentity) {
+      // ADR-004: a grant belonging to the REGISTRATION, not to the principal it authenticates as.
+      // Registered through the exact same pipeline as the principal's own, so a reader of the
+      // published catalog cannot tell the two apart by shape, only by which document holds them.
+      const held = await registerPermittedResources(
+        db, realmId, fixture.realm,
+        fixture.credentialIdentity.resourceServer ?? fixture.realm,
+        fixture.credentialIdentity.permissions,
+        fixture.scopeDescriptions, serverMeta, typeMeta,
+      );
 
-    // The service principal holds its role like anyone else: authority is never an implicit
-    // consequence of holding a credential.
-    await upsertHolding(
-      identities,
-      { realmId, subjectId: fixture.clientId },
-      { roleId, grantedAt: SEED_GRANTED_AT },
-    );
+      const roleId = uuidv5(`credential-role:${realmId}:${fixture.credentialIdentity.roleName}`, CLIENT_NAMESPACE);
+      await upsertSeed<RoleRecord>(
+        roles,
+        { roleId },
+        {
+          name: fixture.credentialIdentity.roleName,
+          displayName: fixture.credentialIdentity.roleName.replace(/_/g, ' '),
+          description:
+            'Held by ONE credential, not by the principal it authenticates as (ADR-004). A different '
+            + 'credential of the same principal, present or future, does not hold this.',
+          permissions: held,
+          scopeKind: 'all',
+          builtin: true,
+          sodRationale:
+            'The narrowest capability wins by default: a principal is not widened just because one '
+            + 'of its registrations needs one specific thing.',
+        },
+        { roleId, realmId, tenantId: DEFAULT_TENANT_ID },
+        'Role',
+      );
+
+      await upsertCredentialHolding(
+        clients,
+        { realmId, credentialId: uuidv5(`oauth-client:${realmId}:${fixture.clientId}`, CLIENT_NAMESPACE) },
+        { roleId, grantedAt: SEED_GRANTED_AT },
+      );
+    }
   }
 
   console.log(`  client: ${clientCount}`);

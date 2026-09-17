@@ -152,7 +152,8 @@
     "clientType": "confidential",
     "redirectUris": [],
     "grantTypes": [
-      "client_credentials"
+      "client_credentials",
+      "urn:ietf:params:oauth:grant-type:token-exchange"
     ],
     "scope": "openid",
     "requirePkce": false,
@@ -177,6 +178,15 @@
         ]
       },
       "displayName": "LeafyPay backend service"
+    },
+    "credentialIdentity": {
+      "roleName": "card_charge_actor",
+      "resourceServer": "leafypay",
+      "permissions": {
+        "subjects": [
+          "actAs"
+        ]
+      }
     },
     "demoRoster": [
       "customer",

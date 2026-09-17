@@ -300,7 +300,17 @@ export class BackchannelService {
     // handled request cannot be replayed to move the counter or to re-approve.
     const claimed = await this.requests.updateOne(
       { realmId: realm.realmId, authReqId, status: 'pending' },
-      { $set: { status: 'approved', 'meta.lastModified': new Date().toISOString() } },
+      {
+        $set: {
+          status: 'approved',
+          // ADR-004: which credential approved this, mirroring what the redirect flow's consent
+          // approval already copies from the session onto its own ticket. Without it, a token
+          // minted from this request could only ever read the PRINCIPAL's roles, never a narrower
+          // grant held by the authenticator that actually signed the approval.
+          credentialId: credential.credentialId,
+          'meta.lastModified': new Date().toISOString(),
+        },
+      },
     );
     if (claimed.matchedCount === 0) return rejected('not_pending');
 
