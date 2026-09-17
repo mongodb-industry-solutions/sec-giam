@@ -125,7 +125,7 @@ const DEMO_SECRET_ROOT = 'giam-demo-client-secret-root';
 // Clients an operator may have pinned by env var: it wins, because the app presenting the secret
 // reads that same variable. Kept here so the seeder and every caller share one precedence.
 export const CLIENT_SECRET_REFS: Readonly<Record<string, string>> = {
-  'oauth001-0000-4000-8000-000000000001': 'PSP_MERCHANT_OAUTH_CLIENT_SECRET',
+  'oauth001-0000-4000-8000-000000000001': 'PSP_MERCHANT_GIAM_CLIENT_SECRET',
   'leafypay-simulator': 'NEXT_PUBLIC_PSP_SIMULATOR_CLIENT_SECRET',
 };
 
