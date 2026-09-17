@@ -150,41 +150,60 @@ export class SessionService {
     return this.sessions.findOne({ realmId, sessionId }, { projection: { _id: 0 } });
   }
 
-  /** Live sessions for a principal, so a console can show them and an operator can end one. */
-  async listFor(realmId: string, subjectId: string): Promise<SessionRecord[]> {
-    const held = await this.sessions
-      .find({ realmId, subjectId, terminatedAt: { $exists: false } }, { projection: { _id: 0 } })
-      .sort({ lastSeenAt: -1 })
-      .toArray();
-    // Expiry is judged here rather than left to the sweep: a session that lapsed a second ago is not
-    // live, whatever the database has got round to removing.
-    return held.filter((session) => isLive(session));
-  }
-
   /**
-   * Every live session in a realm, for an administrator rather than for one person.
+   * Live sessions, narrowed by whatever the caller is entitled to and asked for.
    *
-   * Terminated ones are excluded rather than shown greyed out: the question this answers is "who is
-   * signed in right now", and a list mixing the two invites ending something that already ended.
+   * ONE reader for both questions the console asks ("where am I signed in" and "who is signed in
+   * here"), because they differ only in the filter. They used to be two methods and the controller
+   * had a branch per method, which is three places to keep a liveness rule and a sort order in step.
+   *
+   * `subjectIds` is the entitlement boundary as well as a filter: a self-scoped caller arrives with
+   * their own id in it, so narrowing is expressed the same way whether it comes from a role or from
+   * a search box, and there is no path that forgets to narrow.
+   *
+   * Terminated sessions are excluded rather than shown greyed out: the question is "who is signed in
+   * right now", and a list mixing the two invites ending something that already ended.
    */
-  async listForRealm(
+  async list(
     realmId: string,
-    options: { skip?: number; limit?: number } = {},
+    filter: {
+      subjectIds?: ReadonlyArray<string>;
+      /** Only sessions holding a token for this application. */
+      clientId?: string;
+      skip?: number;
+      limit?: number;
+    } = {},
   ): Promise<{ sessions: SessionRecord[]; total: number }> {
-    const filter = { realmId, terminatedAt: { $exists: false } };
+    // Narrowed in the database wherever the database can, so a realm with many sessions does not
+    // read them all to serve a page about one person or one application.
     const held = await this.sessions
-      .find(filter, { projection: { _id: 0 } })
+      .find(
+        {
+          realmId,
+          terminatedAt: { $exists: false },
+          ...(filter.subjectIds ? { subjectId: { $in: [...filter.subjectIds] } } : {}),
+          ...(filter.clientId ? { clientIds: filter.clientId } : {}),
+        },
+        { projection: { _id: 0 } },
+      )
       .sort({ lastSeenAt: -1 })
       .toArray();
+
     // Expiry is judged here rather than left to the sweep, so the total and the page agree with each
     // other: counting in the database and filtering in memory would disagree by whatever the sweep
     // has not reached yet.
     const live = held.filter((session) => isLive(session));
-    const skip = Math.max(0, options.skip ?? 0);
+    const skip = Math.max(0, filter.skip ?? 0);
     return {
-      sessions: live.slice(skip, skip + Math.min(options.limit ?? 20, 200)),
+      sessions: live.slice(skip, skip + Math.min(filter.limit ?? 20, 200)),
       total: live.length,
     };
+  }
+
+  /** Every live session of one principal, unpaged, for the paths that act on all of them. */
+  async listFor(realmId: string, subjectId: string): Promise<SessionRecord[]> {
+    const { sessions } = await this.list(realmId, { subjectIds: [subjectId], limit: 200 });
+    return sessions;
   }
 
   /** Moves the idle window forward. An absolute expiry is never extended. */

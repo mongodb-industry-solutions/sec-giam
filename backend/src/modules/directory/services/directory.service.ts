@@ -61,6 +61,41 @@ export class DirectoryService {
     return new Map(found.map((identity) => [identity.subjectId, identity.userName]));
   }
 
+  /**
+   * The subjects whose user name or id matches what somebody typed.
+   *
+   * Here rather than in the caller because identities are this module: a screen searching for a
+   * person should not be reaching into the identity collection itself, and two screens doing it
+   * would spell the same match two ways. Returns ids so the caller can narrow its own records by
+   * them, which is what keeps a search over people usable from a list that is not of people.
+   *
+   * Deliberately NOT over `name.formatted`. That field is encrypted under Queryable Encryption
+   * (`vendors/encryption/encryptedFieldsMaps.ts`), and a `$regex` over an encrypted field is not
+   * refused politely: the driver fails the whole query, which is a 500 on a search box. Searching it
+   * means the QE `substring` query type, which degrades to equality on a cluster below 9.0, so it
+   * would find fragments on some deployments and nothing on others. The user name is what the
+   * console shows as the row title anyway, so this matches what is on screen.
+   */
+  async subjectIdsMatching(realmId: string, q: string): Promise<string[]> {
+    const trimmed = q.trim();
+    if (!trimmed) return [];
+    // Escaped: a search box is free text, and an unescaped one turns it into a regex console.
+    const pattern = { $regex: trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    const found = await this.identities
+      .find(
+        {
+          realmId,
+          $or: [
+            { userName: pattern },
+            { subjectId: pattern },
+          ],
+        },
+        { projection: { _id: 0, subjectId: 1 } },
+      )
+      .toArray();
+    return found.map((identity) => identity.subjectId);
+  }
+
   async findByUserName(realmId: string, userName: string): Promise<PrincipalRecord | null> {
     return this.identities.findOne({ realmId, userName }, { projection: { _id: 0 } });
   }

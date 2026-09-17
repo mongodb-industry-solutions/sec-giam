@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import { Loader2, type LucideIcon } from 'lucide-react';
 
 /**
@@ -11,7 +12,7 @@ import { Loader2, type LucideIcon } from 'lucide-react';
  * up with three different ideas of what a disabled button looks like.
  */
 
-export function RecordCard({ title, subtitle, badges, facts, actions, children }: {
+export function RecordCard({ title, subtitle, badges, facts, actions, children, href, lead }: {
   title: ReactNode;
   /** The identifier, usually. Monospaced, because it is read character by character. */
   subtitle?: ReactNode;
@@ -19,13 +20,30 @@ export function RecordCard({ title, subtitle, badges, facts, actions, children }
   facts?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
+  /**
+   * Where the title leads, when the row has a detail page.
+   *
+   * A real link rather than an `onClick` on the card: a row that opens a page must be openable in a
+   * new tab and reachable by keyboard, and only the title is the link so selecting a checkbox or
+   * pressing an action inside the row does not navigate.
+   */
+  href?: string;
+  /** A control BEFORE the title, for lists whose rows can be selected. */
+  lead?: ReactNode;
 }) {
   return (
     <li className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
+        {lead && <div className="shrink-0 pt-0.5">{lead}</div>}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-[#001E2B]">{title}</span>
+            {href
+              ? (
+                <Link href={href} className="font-semibold text-[#001E2B] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00ED64]">
+                  {title}
+                </Link>
+              )
+              : <span className="font-semibold text-[#001E2B]">{title}</span>}
             {badges}
           </div>
           {subtitle && <p className="mt-0.5 truncate font-mono text-xs text-gray-400">{subtitle}</p>}
