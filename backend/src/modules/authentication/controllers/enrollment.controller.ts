@@ -186,6 +186,73 @@ export async function enrollmentController(fastify: FastifyInstance) {
   });
 
   /**
+   * The rules a new password must satisfy, before one is submitted.
+   *
+   * Published so a form can tell somebody what is required WHILE they type rather than refusing them
+   * afterwards. The policy is not a secret: the sign-in and registration paths already enforce it,
+   * and a person cannot satisfy a rule nobody told them about.
+   *
+   * Answers for the CALLER's realm and carries no permission gate beyond holding a token, the same
+   * reasoning `/me/permissions` follows: this is a property of the realm the caller is already in,
+   * and reading it reveals nothing about anybody else.
+   *
+   * This is the source the console renders, so the checklist and the refusal come from one policy
+   * rather than from a constant somebody copied into a form.
+   */
+  fastify.get(`${base}/password/policy`, {
+    preHandler: requirePrincipal,
+    schema: {
+      operationId: 'passwordPolicy',
+      tags: ['authentication'],
+      summary: 'The rules a new password must satisfy',
+      description:
+        'No applicable standard; PCI DSS 8.3.6-adjacent, which expects the password requirements to '
+        + 'be communicated rather than discovered by being refused. The same policy '
+        + '`POST /credentials/password` and self-registration enforce, resolved from the directory this '
+        + 'realm owns. Null when the realm authenticates through an upstream that sets its own.',
+      security: [{ bearerAuth: [] }],
+      params: realmParam,
+      response: {
+        200: {
+          description: 'The policy in force, or nulls when this realm sets none.',
+          type: 'object',
+          additionalProperties: false,
+          required: ['policy'],
+          properties: {
+            policy: {
+              type: ['object', 'null'],
+              additionalProperties: false,
+              required: ['minLength', 'requireUppercase', 'requireNumber', 'requireSymbol', 'historyDepth'],
+              properties: {
+                minLength: { type: 'integer' },
+                requireUppercase: { type: 'boolean' },
+                requireNumber: { type: 'boolean' },
+                requireSymbol: {
+                  type: 'boolean',
+                  description: 'Anything that is not a letter, a digit or whitespace. Deliberately broad.',
+                },
+                historyDepth: {
+                  type: 'integer',
+                  description: 'How many previous credentials may not be reused. Zero means no history is kept.',
+                },
+              },
+            },
+          },
+          examples: [{ policy: { minLength: 8, requireUppercase: false, requireNumber: false, requireSymbol: false, historyDepth: 0 } }],
+        },
+        401: { $ref: 'Problem#', description: 'No valid access token for this realm.' },
+        404: { $ref: 'Problem#', description: 'No such realm.' },
+      },
+    },
+  }, async (request, reply) => {
+    const realm = await realmOf((request.params as { realm: string }).realm);
+    if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
+
+    const localDomain = await new RealmService(fastify.db).localDomain(realm.realmId);
+    return reply.send({ policy: passwordPolicyOf(localDomain ?? { protocol: 'internal' }) });
+  });
+
+  /**
    * Changing one's own password.
    *
    * The self-service counterpart of the administrative reset in credentialAdmin.controller.ts: same

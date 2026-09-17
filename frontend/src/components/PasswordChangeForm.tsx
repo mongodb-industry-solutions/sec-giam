@@ -1,9 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { ApiError, callApi } from '../lib/console';
+import { PasswordRules } from './PasswordRules';
+import {
+  allMet, evaluatePassword, loadPasswordPolicy, PasswordPolicy,
+} from '../lib/passwordPolicy';
 
 /**
  * A person changing their own password.
@@ -12,6 +16,10 @@ import { ApiError, callApi } from '../lib/console';
  * (`/system/identities/[id]`): same shape, same policy, but this one asks for the CURRENT password
  * instead of an authority permission, because proving it is what stands in for one. Neither value is
  * ever shown back; once submitted, the form clears itself and only the outcome remains on screen.
+ *
+ * The realm's policy is read and rendered as a live checklist rather than left for the authority to
+ * refuse: being told afterwards that a password "does not meet the policy" makes somebody guess
+ * which part of it they missed.
  */
 export function PasswordChangeForm() {
   const [open, setOpen] = useState(false);
@@ -21,6 +29,26 @@ export function PasswordChangeForm() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [policy, setPolicy] = useState<PasswordPolicy | null>(null);
+
+  // Read when the form opens, not on mount: a policy nobody is about to type against is a request
+  // made for nothing on every visit to the page.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void loadPasswordPolicy()
+      // A policy that cannot be read leaves the checklist showing only what this form itself knows.
+      // Guessing at the rules would be worse than showing fewer of them.
+      .catch(() => null)
+      .then((read) => { if (live) setPolicy(read); });
+    return () => { live = false; };
+  }, [open]);
+
+  const rules = evaluatePassword(policy, newPassword, {
+    confirmation: confirm,
+    currentPassword,
+  });
+  const satisfied = allMet(rules);
 
   function reset() {
     setCurrentPassword('');
@@ -31,8 +59,9 @@ export function PasswordChangeForm() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (newPassword !== confirm) { setFailure('The new password and its confirmation do not match.'); return; }
-    if (newPassword === currentPassword) { setFailure('The new password must differ from the current one.'); return; }
+    // The checklist above already says which rule is unmet, so this guards the path rather than
+    // explaining it again in a sentence that would duplicate the list.
+    if (!satisfied) { setFailure('Some of the requirements above are not met yet.'); return; }
 
     setBusy(true);
     setFailure(null);
@@ -95,7 +124,7 @@ export function PasswordChangeForm() {
             <input
               type="password"
               required
-              minLength={8}
+              minLength={policy?.minLength ?? 8}
               autoComplete="new-password"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
@@ -114,12 +143,14 @@ export function PasswordChangeForm() {
             />
           </label>
 
+          <PasswordRules rules={rules} className="sm:col-span-2" />
+
           {failure && <p className="text-xs text-red-700 sm:col-span-2">{failure}</p>}
 
           <div className="flex items-center gap-2 sm:col-span-2">
             <button
               type="submit"
-              disabled={busy || newPassword.length < 8 || currentPassword.length === 0}
+              disabled={busy || !satisfied || currentPassword.length === 0}
               className="rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] hover:bg-[#023430] disabled:opacity-50"
             >
               {busy ? 'Changing…' : 'Change password'}

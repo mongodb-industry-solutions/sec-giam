@@ -14,6 +14,10 @@ import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/con
 import { usePermissions } from '../../../../lib/profile';
 import { ScimUser, extensionOf, primaryEmail, useDomainNames } from '../../../../lib/identities';
 import { useConfirm } from '../../../../components/ConfirmProvider';
+import { PasswordRules } from '../../../../components/PasswordRules';
+import {
+  allMet, evaluatePassword, loadPasswordPolicy, PasswordPolicy,
+} from '../../../../lib/passwordPolicy';
 import type { RoleSummary } from '../../roles/types';
 
 interface Assignment {
@@ -535,6 +539,10 @@ function RoleAssigner({ catalog, held, busy, onCancel, onAssign }: {
  *
  * The v43 replacement for LeafyPay's old "forced password reset". The value is never shown back:
  * once submitted, the form clears itself and only the outcome remains on screen.
+ *
+ * Shows the same live checklist the self-service change shows, from the same policy read from the
+ * authority: an administrator setting a password is checked against the identical rules, so being
+ * shown a different set of them here would be the console describing one policy two ways.
  */
 function PasswordReset({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
@@ -543,10 +551,24 @@ function PasswordReset({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [policy, setPolicy] = useState<PasswordPolicy | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    // Unreadable policy leaves the checklist with only what this form knows, never a guess.
+    void loadPasswordPolicy().catch(() => null).then((read) => { if (live) setPolicy(read); });
+    return () => { live = false; };
+  }, [open]);
+
+  // No current password on this path: an administrator does not hold it, which is the whole point
+  // of the administrative reset, so there is no "differs from the current one" rule to show.
+  const rules = evaluatePassword(policy, password, { confirmation: confirm });
+  const satisfied = allMet(rules);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (password !== confirm) { setFailure('The two entries do not match.'); return; }
+    if (!satisfied) { setFailure('Some of the requirements above are not met yet.'); return; }
     setBusy(true);
     setFailure(null);
     try {
@@ -591,7 +613,7 @@ function PasswordReset({ id }: { id: string }) {
             <input
               type="password"
               required
-              minLength={8}
+              minLength={policy?.minLength ?? 8}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
@@ -608,12 +630,14 @@ function PasswordReset({ id }: { id: string }) {
             />
           </label>
 
+          <PasswordRules rules={rules} className="sm:col-span-2" />
+
           {failure && <p className="text-xs text-red-700 sm:col-span-2">{failure}</p>}
 
           <div className="flex items-center gap-2 sm:col-span-2">
             <button
               type="submit"
-              disabled={busy || password.length < 8}
+              disabled={busy || !satisfied}
               className="rounded-md bg-[#001E2B] px-3 py-2 text-xs font-medium text-[#00ED64] hover:bg-[#023430] disabled:opacity-50"
             >
               {busy ? 'Setting…' : 'Set password'}
