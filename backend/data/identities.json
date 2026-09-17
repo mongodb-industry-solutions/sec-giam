@@ -16,7 +16,7 @@
     "demoFeatured": true,
     "roleName": "customer",
     "accountHolderRef": "b0000001-0000-4000-8000-000000000001",
-    "demoNote": "merchant owner: Espresso Works Ltd",
+    "demoNote": "Espresso Works Ltd",
     "accountHolderRefs": {
       "leafypay": "b0000001-0000-4000-8000-000000000001",
       "bankcore": "hld00075-0000-4000-8000-000000000075"
@@ -157,7 +157,7 @@
     "demoFeatured": true,
     "roleName": "customer",
     "accountHolderRef": "b0000058-0000-4000-8000-000000000058",
-    "demoNote": "merchant owner: Leafy Wallet",
+    "demoNote": "Leafy Wallet",
     "accountHolderRefs": {
       "leafypay": "b0000058-0000-4000-8000-000000000058",
       "bankcore": "hld00076-0000-4000-8000-000000000076"
@@ -1685,6 +1685,6 @@
     "additionalRoles": [
       "bank_customer"
     ],
-    "demoNote": "owns the LeafyPay and BankCore application registrations"
+    "demoNote": "LeafyPay & BankCore"
   }
 ]
