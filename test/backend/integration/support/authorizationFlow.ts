@@ -57,18 +57,32 @@ export async function signIn(giam: string, realm: string, login: string, passwor
  * Returns the empty string rather than throwing so a suite can assert "this persona could not sign
  * in" as a value, which is what the console authorization suite is about.
  */
-export async function tokenFor(
+export interface IssuedToken {
+  token: string;
+  /** The session the sign-in opened, so a suite can close what it opened. */
+  sessionId: string;
+}
+
+/**
+ * The flow, reporting BOTH halves: the token and the session behind it.
+ *
+ * `tokenFor` discarded the session id, which meant every suite that signed a persona in left a live
+ * session behind for the length of its idle window. A few runs of the whole suite put a hundred real
+ * sessions into the demo, all of them correct records of something nobody was using, and the
+ * sessions screen then looked broken when it was in fact honest. Use this and `endSession` together.
+ */
+export async function issueTokenFor(
   giam: string,
   realm: string,
   login: string,
   password: string,
   options: { scope?: string; client?: typeof CONSOLE_CLIENT } = {},
-): Promise<string> {
+): Promise<IssuedToken> {
   const client = options.client ?? CONSOLE_CLIENT;
   const scope = options.scope ?? 'openid profile email';
 
   const session = await signIn(giam, realm, login, password);
-  if (!session) return '';
+  if (!session) return { token: '', sessionId: '' };
 
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
@@ -89,8 +103,9 @@ export async function tokenFor(
     signal: AbortSignal.timeout(TIMEOUT),
   });
 
+  const nothing = { token: '', sessionId: session.sessionId };
   let location = (await authorize()).headers.get('location');
-  if (!location) return '';
+  if (!location) return nothing;
 
   /**
    * ANSWER THE CONSENT QUESTION when the authority asks it.
@@ -108,7 +123,7 @@ export async function tokenFor(
    */
   if (location.includes('/auth/consent')) {
     const requestId = new URL(location).searchParams.get('request_id');
-    if (!requestId) return '';
+    if (!requestId) return nothing;
 
     const decided = await fetch(`${giam}/realms/${realm}/protocol/openid-connect/auth/consent`, {
       method: 'POST',
@@ -118,20 +133,20 @@ export async function tokenFor(
       body: JSON.stringify({ request_id: requestId, approved: true }),
       signal: AbortSignal.timeout(TIMEOUT),
     });
-    if (!decided.ok) return '';
+    if (!decided.ok) return nothing;
 
     const { continue: next } = await decided.json() as { continue: string };
     const resumed = await fetch(next, {
       headers: { cookie: session.cookie }, redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT),
     });
     location = resumed.headers.get('location');
-    if (!location) return '';
+    if (!location) return nothing;
   }
 
   const code = new URL(location).searchParams.get('code');
   // A redirect carrying `error` instead of `code` is a refusal delivered the way the specification
   // says to deliver one, so it is not an exception here either.
-  if (!code) return '';
+  if (!code) return nothing;
 
   const token = await fetch(`${giam}/realms/${realm}/protocol/openid-connect/token`, {
     method: 'POST',
@@ -145,7 +160,47 @@ export async function tokenFor(
     }),
     signal: AbortSignal.timeout(TIMEOUT),
   });
-  if (!token.ok) return '';
+  if (!token.ok) return nothing;
   const body = await token.json() as { access_token?: string };
-  return body.access_token ?? '';
+  return { token: body.access_token ?? '', sessionId: session.sessionId };
+}
+
+/**
+ * The token alone, for the suites that do not care which session carried it.
+ *
+ * Kept so every existing caller stays as it is, and deliberately NOT the place to add cleanup: a
+ * helper that signed out behind the caller would break any suite that goes on to use the token.
+ */
+export async function tokenFor(
+  giam: string,
+  realm: string,
+  login: string,
+  password: string,
+  options: { scope?: string; client?: typeof CONSOLE_CLIENT } = {},
+): Promise<string> {
+  return (await issueTokenFor(giam, realm, login, password, options)).token;
+}
+
+/**
+ * Ends a session a suite opened, through the same endpoint the console uses.
+ *
+ * Best effort by design: a test that has already asserted what it came for should not fail in
+ * teardown because the thing it was cleaning up had lapsed on its own.
+ */
+export async function endSession(
+  giam: string,
+  realm: string,
+  token: string,
+  sessionId: string,
+): Promise<void> {
+  if (!token || !sessionId) return;
+  try {
+    await fetch(`${giam}/realms/${realm}/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(TIMEOUT),
+    });
+  } catch {
+    // Nothing to do: the session is gone either way, which is the outcome this wanted.
+  }
 }
