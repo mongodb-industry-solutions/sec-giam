@@ -41,6 +41,14 @@ const data = (file: string) => JSON.parse(readFileSync(resolve(__dirname, '../..
 interface ClientFixture {
   realm: string;
   serviceIdentity?: { resourceServer?: string; permissions?: Record<string, string[]> };
+  /**
+   * ADR-004 added a THIRD source, and it is the same gap again.
+   *
+   * A grant held by the registration rather than by the principal seeds resource types exactly as
+   * the other two do, so a type reaching the catalog only through here would sit in the database
+   * unlabelled with nothing to say so.
+   */
+  credentialIdentity?: { resourceServer?: string; permissions?: Record<string, string[]> };
 }
 
 const servers = data('resources.json') as ResourceServerFixture[];
@@ -58,10 +66,11 @@ for (const role of roles) {
   }
 }
 for (const client of clients) {
-  const identity = client.serviceIdentity;
-  if (!identity?.resourceServer) continue;
-  for (const type of Object.keys(identity.permissions ?? {})) {
-    declaredByRoles.add(`${client.realm}|${identity.resourceServer}|${type}`);
+  for (const identity of [client.serviceIdentity, client.credentialIdentity]) {
+    if (!identity?.resourceServer) continue;
+    for (const type of Object.keys(identity.permissions ?? {})) {
+      declaredByRoles.add(`${client.realm}|${identity.resourceServer}|${type}`);
+    }
   }
 }
 
