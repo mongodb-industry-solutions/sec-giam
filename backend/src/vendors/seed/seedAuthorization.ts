@@ -9,7 +9,7 @@ import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { PrincipalRecord } from '../../modules/directory/models/principal.model';
 import { upsertSeed, upsertHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
-import { ResourceRecord, permissionString } from '../../modules/authorization/models/resource.model';
+import { ResourceRecord, permissionString, resourceServerId, resourceTypeId } from '../../modules/authorization/models/resource.model';
 
 /**
  * Roles, the permissions they hold, and who holds them.
@@ -86,7 +86,7 @@ interface ResourceServerFixture {
 }
 
 function resourceId(realmId: string, name: string): string {
-  return uuidv5(`resource-server:${realmId}:${name}`, AUTHORIZATION_NAMESPACE);
+  return resourceServerId(realmId, name);
 }
 
 function permissionId(serverId: string, resource: string, action: string): string {
@@ -195,7 +195,7 @@ export async function seedAuthorization(
     let types = 0;
     for (const [key, entry] of actionsByType) {
       const type = key.slice(entry.serverId.length + 1);
-      const id = uuidv5(`resource:${entry.realmId}:${entry.serverId}:${type}`, AUTHORIZATION_NAMESPACE);
+      const id = resourceTypeId(entry.realmId, entry.serverId, type);
       const meta = typeMeta.get(`${realmNameById.get(entry.realmId) ?? ''}|${entry.serverName}|${type}`);
       await upsertSeed<ResourceRecord>(
         servers,

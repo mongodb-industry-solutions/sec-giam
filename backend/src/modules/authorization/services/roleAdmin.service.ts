@@ -337,7 +337,20 @@ export class RoleAdminService {
       .collection<ResourceRecord>(RESOURCE_COLLECTION)
       .find({ realmId }, { projection: { _id: 0, name: 1, actions: 1 } })
       .toArray();
-    const catalog = new Map(resources.map((resource) => [resource.name, new Set(resource.actions ?? [])]));
+    /**
+     * The UNION of what every server declaring this type enforces.
+     *
+     * A role grants the permission STRING, which is realm-wide, so the question here is whether any
+     * application declares the verb. Keyed per name and overwritten, one server's shorter catalog
+     * masked another's, and `accounts:viewSensitive` was refused as undeclared while the bank
+     * declared and enforced it.
+     */
+    const catalog = new Map<string, Set<string>>();
+    for (const resource of resources) {
+      const held = catalog.get(resource.name) ?? new Set<string>();
+      for (const action of resource.actions ?? []) held.add(action);
+      catalog.set(resource.name, held);
+    }
 
     const bound: string[] = [];
     const undeclared: string[] = [];
@@ -789,18 +802,28 @@ export class RoleAdminService {
       const parent = resource.parentResourceId ? byId.get(resource.parentResourceId) : undefined;
       for (const action of resource.actions ?? []) {
         const permission = permissionString(resource.name, action);
-        // Two different resource servers can each declare a resource type of the same name (nothing
-        // stops "accounts" existing under two applications), and a permission is the STRING, not the
-        // pair of resource and server: `accounts:view` is one grantable thing everywhere it is held
-        // or checked, so the first server to declare it is the one this catalog remembers, rather
-        // than listing the same permission twice with nothing to tell the two apart once granted.
-        if (!catalog.has(permission)) {
-          catalog.set(permission, {
+        const server = parent?.name ?? resource.name;
+        /**
+         * Keyed by SERVER AND permission, not by the permission alone.
+         *
+         * Two applications can each declare a resource type of the same name, and nothing stops
+         * "accounts" existing under both: the bank's accounts are ledger accounts, the payment
+         * platform's are payout accounts, and each ships its own guard. Keying by the string alone
+         * kept whichever was read first and dropped the other, so this catalog reported a
+         * permission as belonging to an application that does not enforce it and omitted it from
+         * the one that does. A caller scoping the catalog to its own server then saw nothing.
+         *
+         * A permission remains one grantable STRING on a role and in a token; what is listed here
+         * is the enforcement points, and a consumer wanting the realm-wide set collapses them.
+         */
+        const key = `${server}|${permission}`;
+        if (!catalog.has(key)) {
+          catalog.set(key, {
             permission,
             resource: resource.name,
             action,
             description: resource.description ?? '',
-            resourceServer: parent?.name ?? resource.name,
+            resourceServer: server,
             // Carried so a caller adding one more action to this resource can re-register its
             // server without guessing the audience, which `registerCatalog` would otherwise
             // overwrite with whatever the caller happened to send.

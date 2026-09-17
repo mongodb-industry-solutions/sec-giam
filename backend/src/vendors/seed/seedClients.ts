@@ -12,7 +12,7 @@ import { RoleRecord } from '../../modules/authorization/models/authorization.mod
 import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
 import { upsertSeed, upsertHolding, upsertCredentialHolding, SEED_GRANTED_AT } from './upsertSeed';
 import { CredentialRecord } from '../../modules/directory/models/credential.model';
-import { ResourceRecord, permissionString } from '../../modules/authorization/models/resource.model';
+import { ResourceRecord, permissionString, resourceServerId, resourceTypeId } from '../../modules/authorization/models/resource.model';
 import { clientMetadata } from '../../modules/oauth/models/client.model';
 import { readSeedFile } from './readSeedFile';
 
@@ -137,7 +137,7 @@ async function registerPermittedResources(
   serverMeta: Map<string, ResourceServerFixture>,
   typeMeta: Map<string, { name: string; displayName: string; description: string }>,
 ): Promise<string[]> {
-  const serverId = uuidv5(`resource-server:${realmId}:${serverName}`, AUTHORIZATION_NAMESPACE);
+  const serverId = resourceServerId(realmId, serverName);
 
   // The resource server, if the roles seeder has not already created it. A permission pointing at a
   // server that does not exist is unenforceable and invisible: the decision point could not scope it
@@ -183,7 +183,7 @@ async function registerPermittedResources(
      * which verbs a resource declared depended on which of the two a reader happened to load. One
      * derivation, in both places, or they drift again.
      */
-    const childId = uuidv5(`resource:${realmId}:${serverId}:${type}`, AUTHORIZATION_NAMESPACE);
+    const childId = resourceTypeId(realmId, serverId, type);
     await upsertSeed<ResourceRecord>(
       db.collection<ResourceRecord>(RESOURCE_COLLECTION),
       { resourceId: childId },

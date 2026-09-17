@@ -1,3 +1,4 @@
+import { v5 as uuidv5 } from 'uuid';
 import { Meta, Scoped } from '../../../shared/models/base.model';
 
 /**
@@ -121,6 +122,27 @@ export function declaresAction(
   action: string,
 ): boolean {
   return resource.actions.includes(action);
+}
+
+// The namespace every authorization identifier is derived in. Named here because the ids below are
+// derived from it and both the seeders and the registration write the same records.
+const AUTHORIZATION_NAMESPACE = 'a1c4e7b2-5d9f-4a3c-8e6b-2f7d1c9a4b83';
+
+/** A resource server's own id, from the realm it serves and the name it registers under. */
+export function resourceServerId(realmId: string, name: string): string {
+  return uuidv5(`resource-server:${realmId}:${name}`, AUTHORIZATION_NAMESPACE);
+}
+
+/**
+ * A resource TYPE's id, under the server that enforces it.
+ *
+ * One function because the seeder and the boot-time registration both write these records, and they
+ * derived the id differently: the seeder from the server's id, the registration from its name. Two
+ * spellings of the same type produced two active children per type under one server, so a catalog
+ * read saw the type twice with different verbs and a role bound against whichever came back first.
+ */
+export function resourceTypeId(realmId: string, serverId: string, type: string): string {
+  return uuidv5(`resource:${realmId}:${serverId}:${type}`, AUTHORIZATION_NAMESPACE);
 }
 
 /**

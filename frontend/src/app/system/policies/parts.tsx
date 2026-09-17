@@ -474,12 +474,24 @@ export function SelectorPanel({
  * meant.
  */
 export function permissionCatalogOptions(catalog: CatalogPermission[]): CatalogOption[] {
-  return catalog
-    .map((permission) => ({
-      id: `${permission.resource}:${permission.action}`,
-      label: permission.description ?? `${permission.action} on ${permission.resource}`,
-      group: permission.resourceServer,
-    }))
+  /**
+   * ONE option per permission STRING, whichever servers declare it.
+   *
+   * The catalog lists enforcement points, so two applications each declaring `accounts:view` are
+   * two entries. What a policy names is the string, which is realm-wide, and a picker offering it
+   * twice would offer the same choice twice and repeat a React key. The servers declaring it become
+   * the group instead, so the pair is still visible.
+   */
+  const byPermission = new Map<string, { label: string; servers: Set<string> }>();
+  for (const permission of catalog) {
+    const id = `${permission.resource}:${permission.action}`;
+    const held = byPermission.get(id)
+      ?? { label: permission.description ?? `${permission.action} on ${permission.resource}`, servers: new Set<string>() };
+    held.servers.add(permission.resourceServer);
+    byPermission.set(id, held);
+  }
+  return [...byPermission.entries()]
+    .map(([id, held]) => ({ id, label: held.label, group: [...held.servers].sort().join(', ') }))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 

@@ -100,4 +100,33 @@ describe('ResourceAdminService.registerCatalog', () => {
     expect(child?.catalogVersion).toBe(2);
     expect(child?.actions).toEqual(['archive', 'view']);
   });
+
+  /**
+   * The seeder and this registration wrote the same resource type under two different ids, so both
+   * sat active under one server: a catalog read then saw the type twice with different verbs, and a
+   * role bound against whichever came back first. One shared id derivation fixes new writes; this
+   * pins the convergence for a database that already holds the old spelling.
+   */
+  it('withdraws a namesake child written under a non-canonical id', async () => {
+    const { db, store } = fakeDb();
+    const service = new ResourceAdminService(db);
+    await service.registerCatalog(REALM_ID, TENANT_ID, 'orders-api', {
+      audience: 'orders-api',
+      permissions: [{ resource: 'orders', action: 'view' }],
+    });
+    const server = [...store.values()].find((doc) => doc.kind === 'api')!;
+    const canonical = [...store.values()].find((doc) => doc.name === 'orders' && doc.kind === 'object')!;
+    // The same type, as an earlier version of this code would have written it.
+    store.set('legacy-orders', {
+      ...canonical, resourceId: 'legacy-orders', actions: ['view', 'manage'], parentResourceId: server.resourceId,
+    });
+
+    await service.registerCatalog(REALM_ID, TENANT_ID, 'orders-api', {
+      audience: 'orders-api',
+      permissions: [{ resource: 'orders', action: 'view' }],
+    });
+
+    expect(store.get('legacy-orders')?.status).toBe('withdrawn');
+    expect(store.get(canonical.resourceId as string)?.status).toBe('active');
+  });
 });
