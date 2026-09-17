@@ -39,7 +39,7 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:ci": "npm run test:unit",
     "test:unit": "vitest run test/backend/unit",
-    "test:integration": "vitest run test/backend/integration",
+    "test:integration": "vitest run test/backend/integration --maxWorkers=4",
     "test:watch": "vitest watch",
     "lint": "npm run lint --prefix frontend",
     "type-check": "tsc --noEmit --project packages/eventbus/tsconfig.json && tsc --noEmit --project packages/platform-links/tsconfig.json && tsc --noEmit --project packages/giam-client/tsconfig.json && tsc --noEmit --project backend/tsconfig.json && tsc --noEmit --project frontend/tsconfig.json",
