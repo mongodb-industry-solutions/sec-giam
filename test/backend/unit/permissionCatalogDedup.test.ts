@@ -1,7 +1,10 @@
 // Two different resource servers can each declare a resource type of the same name (nothing stops
-// "accounts" existing under two applications). The permission catalog is what the console renders
-// as one flat, checkable list (e.g. the policy editor's permission picker), so a duplicate
-// `resource:action` string there was a real React "duplicate key" crash, not just noise.
+// "accounts" existing under two applications), and each ships its own guard over its own objects.
+// The catalog lists ENFORCEMENT POINTS, so both are listed and each names the server that declares
+// it: collapsing them to one entry reported the permission as belonging to an application that does
+// not enforce it, and a resource server scoping the catalog to its own name saw nothing at all.
+// Whoever renders it as one flat, checkable list collapses by string at the point of rendering,
+// because a duplicated React key there was a real crash.
 import { describe, it, expect } from 'vitest';
 import type { Db } from 'mongodb';
 import { RoleAdminService } from '../../../backend/src/modules/authorization/services/roleAdmin.service';
@@ -22,8 +25,8 @@ function databaseHolding(resources: Array<Record<string, unknown>>): Db {
   } as unknown as Db;
 }
 
-describe('the permission catalog never repeats a permission string', () => {
-  it('keeps one entry when two different resource servers declare the same resource:action', async () => {
+describe('the permission catalog lists a permission per resource server that enforces it', () => {
+  it('lists both when two different resource servers declare the same resource:action', async () => {
     const service = new RoleAdminService(databaseHolding([
       { realmId: 'r1', resourceId: 'srv-a', name: 'orders-api', kind: 'api', actions: [], catalogVersion: 1 },
       { realmId: 'r1', resourceId: 'srv-b', name: 'payments-api', kind: 'api', actions: [], catalogVersion: 1 },
@@ -38,9 +41,11 @@ describe('the permission catalog never repeats a permission string', () => {
     ]));
 
     const catalog = await service.catalog('r1');
-    const permissions = catalog.map((entry) => entry.permission);
-    expect(permissions).toEqual(['accounts:view']);
-    expect(new Set(permissions).size).toBe(permissions.length);
+    expect(catalog.map((entry) => `${entry.resourceServer}:${entry.permission}`))
+      .toEqual(['orders-api:accounts:view', 'payments-api:accounts:view']);
+    // Unique by the pair, which is what identifies an enforcement point.
+    const pairs = catalog.map((entry) => `${entry.resourceServer}|${entry.permission}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
   });
 
   it('still lists every distinct permission when nothing collides', async () => {

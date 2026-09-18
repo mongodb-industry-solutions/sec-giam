@@ -5694,6 +5694,47 @@
                       }
                     }
                   }
+                },
+                "example": {
+                  "session": {
+                    "sessionId": "c41a7de0-90b1-4c1e-9f2a-8d5b3e7c0a12",
+                    "subjectId": "a1000070-0000-4000-8000-000000000070",
+                    "createdAt": "2026-08-31T08:41:00.000Z",
+                    "lastSeenAt": "2026-08-31T09:58:00.000Z",
+                    "expiresAt": "2026-08-31T20:41:00.000Z",
+                    "idleExpiresAt": "2026-08-31T10:28:00.000Z",
+                    "clientIds": [
+                      "giam-console"
+                    ],
+                    "applications": [
+                      "Identity Console"
+                    ],
+                    "current": true,
+                    "origin": {
+                      "addressFingerprint": "3f9c1a7e",
+                      "deviceFingerprint": "b21d80f4"
+                    }
+                  },
+                  "owner": {
+                    "subjectId": "a1000070-0000-4000-8000-000000000070",
+                    "userName": "alex.rivera",
+                    "kind": "human",
+                    "active": true,
+                    "lifecycleState": "active"
+                  },
+                  "authentication": {
+                    "domainId": "d1000001-0000-4000-8000-000000000001",
+                    "domainName": "Atlas ID",
+                    "establishedForClientId": "giam-console",
+                    "establishedForClientName": "IdP administration console",
+                    "acr": "aal1",
+                    "amr": [
+                      "pwd"
+                    ],
+                    "epoch": 0,
+                    "refreshGeneration": 0,
+                    "tokensStored": false
+                  }
                 }
               }
             }

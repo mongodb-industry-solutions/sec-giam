@@ -1,9 +1,8 @@
 import { Db } from 'mongodb';
-import { v5 as uuidv5 } from 'uuid';
 import { RESOURCE_COLLECTION } from '../../../shared/models/collections';
 import { newMeta, touchMeta, DEFAULT_TENANT_ID } from '../../../shared/models/base.model';
 import { recordConfigurationChange } from '../../audit/services/configurationChange';
-import { ResourceRecord, ResourceKind, ValidationMode } from '../models/resource.model';
+import { ResourceRecord, ResourceKind, ValidationMode, resourceServerId, resourceTypeId } from '../models/resource.model';
 import { PolicyRecord, selectorApplies } from '../models/policy.model';
 
 /**
@@ -15,10 +14,6 @@ import { PolicyRecord, selectorApplies } from '../models/policy.model';
  * deployment and an RBAC-gated route for a console operator with `permissions:manage`, and both go
  * through this one method so neither can drift from what the other accepts.
  */
-
-// The same namespace the seeders use, so a catalog registered at boot and one registered from a
-// console both resolve to one record rather than two that look alike.
-const AUTHORIZATION_NAMESPACE = 'a1c4e7b2-5d9f-4a3c-8e6b-2f7d1c9a4b83';
 
 export interface ResourceServerView {
   resourceId: string;
@@ -186,7 +181,7 @@ export class ResourceAdminService {
     },
     actor = 'resource-server-deployment',
   ): Promise<CatalogRegistration> {
-    const resourceId = uuidv5(`resource-server:${realmId}:${name}`, AUTHORIZATION_NAMESPACE);
+    const resourceId = resourceServerId(realmId, name);
     const servers = this.resources;
 
     const existing = await servers.findOne({ resourceId });
@@ -233,7 +228,7 @@ export class ResourceAdminService {
 
     let registered = 0;
     for (const [type, actions] of actionsByType) {
-      const childId = uuidv5(`resource:${realmId}:${name}:${type}`, AUTHORIZATION_NAMESPACE);
+      const childId = resourceTypeId(realmId, resourceId, type);
       const declaredActions = [...actions].sort();
       const child = await servers.findOne({ resourceId: childId });
       if (child) {
@@ -275,7 +270,13 @@ export class ResourceAdminService {
       .toArray();
     let withdrawn = 0;
     for (const child of children) {
-      if (actionsByType.has(child.name)) continue;
+      // A type this registration declares, but under an id this registration does not write: an
+      // earlier version derived the child id from the server's NAME while the seeder derived it
+      // from the server's id, so both spellings sat active under the same parent. Withdrawing the
+      // one nobody writes any more converges the two on the next registration, with no migration.
+      const canonical = actionsByType.has(child.name)
+        && child.resourceId === resourceTypeId(realmId, resourceId, child.name);
+      if (canonical) continue;
       if (child.status === 'withdrawn') continue;
       await servers.updateOne({ resourceId: child.resourceId }, { $set: { status: 'withdrawn' } });
       withdrawn += 1;

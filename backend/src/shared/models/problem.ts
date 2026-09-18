@@ -56,9 +56,21 @@ export const OAUTH_ERROR_SCHEMA = {
 
 // The paths where a specification owns the error shape. Prefix matched, because a realm issuer path
 // carries the realm name in the middle.
+//
+// THE DEFECT THIS EXCLUSION FIXES. `/protocol/openid-connect/logout` sits under this same prefix but
+// is deliberately Problem+json, per its own route schema (`response.400: { $ref: 'Problem#' }`) and
+// its own comment: OpenID Connect RP-Initiated Logout defines no error body shape the way the token
+// endpoint's family does, so it is not an "OAuth surface" in the sense this classifier means. Without
+// the exclusion, a thrown error on it (a body validation failure, say) reached this branch, sent an
+// `OAuthError` (no `type`), and the route's OWN declared schema then refused to serialize it: "type"
+// is required, which is a 500 on top of whatever the original error was.
+//
+// The broad prefix is still needed and not just the specific verb list below it: `/auth` (not
+// `/authorize`) and `/certs` (not `/jwks`) are this authority's actual path segments for those two,
+// so neither is caught by the verb pattern's literal names.
 const OAUTH_PATH_PATTERNS = [
   /\/\.well-known\//,
-  /\/protocol\/openid-connect\//,
+  /\/protocol\/openid-connect\/(?!logout(\/|$))/,
   /\/(authorize|token|introspect|revoke|userinfo|bc-authorize|jwks)(\/|$|\?)/,
 ];
 

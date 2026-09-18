@@ -302,8 +302,13 @@ export async function tokenController(fastify: FastifyInstance) {
       // A machine principal's permissions are resolved exactly as a person's are, from the roles
       // it holds. That is the one-pipeline rule at the authorization step: a service identity is not
       // a special case that skips the decision point.
+      //
+      // ADR-004: `client.credentialId` narrows this to the REGISTRATION'S own roles when it has any,
+      // rather than always the owning principal's. A service principal with several registrations
+      // can then hold one broad role while a specific registration is scoped down to a single
+      // capability, without touching the other registrations or the principal itself.
       const machine = await new DecisionService(fastify.db)
-        .effectivePermissions(realm.realmId, owner.subjectId, client.clientId);
+        .effectivePermissions(realm.realmId, owner.subjectId, client.clientId, client.credentialId);
 
       const scope = requested.length > 0 ? requested : allowed;
       const tokens = await issuer.issue({
@@ -392,9 +397,12 @@ export async function tokenController(fastify: FastifyInstance) {
        * permission withdrawn while a session is live must not survive in a refresh, which is the whole
        * reason access tokens are short.
        */
+      // ADR-004: `redeemed.credentialId` names the SAME credential the original sign-in used (a
+      // rotation continues one session, never a different one), so a credential-scoped grant
+      // survives a refresh exactly as an ordinary principal-wide one already did.
       const decision = redeemed.subjectId
         ? await new DecisionService(fastify.db)
-          .effectivePermissions(realm.realmId, redeemed.subjectId, client.clientId)
+          .effectivePermissions(realm.realmId, redeemed.subjectId, client.clientId, redeemed.credentialId)
         : null;
 
       const tokens = await issuer.issue({
@@ -476,8 +484,13 @@ export async function tokenController(fastify: FastifyInstance) {
       const scope = pending.scope.split(' ').filter(Boolean);
       // Resolved at issuance and carried in the token, so a resource server reads a claim rather
       // than calling the authority on every request.
+      //
+      // ADR-004: `pending.credentialId` names WHICH of the person's credentials this sign-in used
+      // (copied onto the ticket from the session at consent approval), so a credential scoped down
+      // to less than the principal's full roles is honoured from the very first token, not only
+      // after a refresh.
       const decision = await new DecisionService(fastify.db)
-        .effectivePermissions(realm.realmId, identity.subjectId, client.clientId);
+        .effectivePermissions(realm.realmId, identity.subjectId, client.clientId, pending.credentialId);
 
       const tokens = await issuer.issue({
         realm,
@@ -493,6 +506,14 @@ export async function tokenController(fastify: FastifyInstance) {
         // The ticket's own id IS the flow: allocated here, never derived from client input.
         txn: pending.requestId,
         nonce: pending.nonce,
+        // THE DEFECT THIS FIXES. `issue()` only mints a refresh token when it has a session to
+        // rotate against (see its own `includeRefreshToken && input.sessionId` guard), and this was
+        // the one grant that asked for a refresh token without ever naming that session: the ticket
+        // carries it since the consent step set `sessionId: session.sessionId` on approval, but
+        // nothing here read it back. So every FIRST sign-in came back with no refresh token at all,
+        // silently, `refresh_token` grant included no fallback to fall back to, and every session
+        // stopped renewing itself the moment its access token's short lifetime ran out.
+        ...(pending.sessionId ? { sessionId: pending.sessionId } : {}),
         includeRefreshToken: true,
         includeIdToken: scope.includes('openid'),
         subjectProfile: identity,
@@ -516,8 +537,10 @@ export async function tokenController(fastify: FastifyInstance) {
       if (!identity) return refuse(400, 'invalid_grant', 'subject no longer exists');
 
       const scope = claimed.scope.split(' ').filter(Boolean);
+      // ADR-004: the authenticator that signed the approval, in case it carries its own narrower
+      // grant. See the redirect flow's identical use of `pending.credentialId` above.
       const decision = await new DecisionService(fastify.db)
-        .effectivePermissions(realm.realmId, identity.subjectId, client.clientId);
+        .effectivePermissions(realm.realmId, identity.subjectId, client.clientId, claimed.credentialId);
 
       const tokens = await issuer.issue({
         realm,

@@ -1,4 +1,5 @@
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
+import { RoleHolding } from './principal.model';
 
 /**
  * One collection for every authentication factor, discriminated by type.
@@ -120,6 +121,23 @@ export interface CredentialRecord extends Scoped {
    * widens WHO MANAGES it, never what it is attributable to.
    */
   administrators?: OwnerRef[];
+
+  /**
+   * ADR-004: what THIS credential may do, narrower than its owning principal if it says anything
+   * at all.
+   *
+   * Same shape a principal's own holdings take, resolved through the same pipeline (composition,
+   * expiry, realm scoping): a credential is not a second kind of authority, it is the same kind,
+   * asked of a different document.
+   *
+   * Absent or empty is not "this credential can do nothing": it is "this credential has nothing OF
+   * ITS OWN to say", which resolves to the owning principal's roles exactly as every credential
+   * behaved before this field existed. Present and non-empty REPLACES the principal's roles for a
+   * token authenticated with this credential; it is not added on top. A service principal with one
+   * broad role and three credentials, one of them scoped down to a single narrow capability, is the
+   * case this exists for: the principal is not diminished, and neither are its other credentials.
+   */
+  roles?: RoleHolding[];
 
   /** The authentication path this credential belongs to, when it belongs to one. */
   domainId?: string;

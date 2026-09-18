@@ -655,7 +655,12 @@ export class TokenIssuer {
     realmId: string,
     presented: string,
   ): Promise<
-    | { ok: true; sessionId: string; subjectId?: string; clientId: string; generation: number; txn?: string }
+    | {
+      ok: true; sessionId: string; subjectId?: string; clientId: string; generation: number;
+      txn?: string;
+      /** ADR-004: the credential this SESSION was established with, read off the same document. */
+      credentialId?: string;
+    }
     | { ok: false; cause: 'invalid' | 'expired' | 'no_session' | 'reuse_detected'; sessionId?: string; subjectId?: string }
   > {
     // `rt+jwt`, matching what issuance now stamps. Verification checks `typ` strictly, so redemption
@@ -685,7 +690,9 @@ export class TokenIssuer {
     const rotated = await this.sessions.findOneAndUpdate(
       { realmId, sessionId: claims.sid, refreshGen: claims.gen },
       { $inc: { refreshGen: 1 }, $set: { lastSeenAt: new Date().toISOString() } },
-      { returnDocument: 'after', projection: { _id: 0, refreshGen: 1, subjectId: 1, clientId: 1 } },
+      // ADR-004: `credentialId` is projected alongside, from the SAME document already being read
+      // and rotated, so honouring a credential's own grant on refresh costs no extra read.
+      { returnDocument: 'after', projection: { _id: 0, refreshGen: 1, subjectId: 1, clientId: 1, credentialId: 1 } },
     );
     if (rotated) {
       return {
@@ -696,6 +703,7 @@ export class TokenIssuer {
         generation: rotated.refreshGen,
         // Carried out of the presented token, so the new pair stays in the flow that started it.
         ...(typeof claims.txn === 'string' ? { txn: claims.txn } : {}),
+        ...(rotated.credentialId ? { credentialId: rotated.credentialId } : {}),
       };
     }
 

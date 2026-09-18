@@ -947,8 +947,9 @@ function ConditionEditor({ condition, onChange, roles, permissions }: {
                   <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
                     {permissions.length === 0
                       ? <p className="text-xs text-gray-400">The permission catalog is empty.</p>
-                      : permissions.map((permission) => {
-                        const value = `${permission.resource}:${permission.action}`;
+                      : [...new Set(permissions.map((p) => `${p.resource}:${p.action}`))].sort().map((value) => {
+                        // Deduplicated: the catalog carries one entry per server, and what is
+                        // checked here is the permission string, which is realm-wide.
                         return (
                           <label key={value} className="flex items-center gap-1.5 py-0.5 text-xs text-gray-700">
                             <input

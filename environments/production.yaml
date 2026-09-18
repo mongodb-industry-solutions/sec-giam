@@ -18,7 +18,7 @@ env:
   GIAM_FRONTEND_URL: "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com"
   # The origins allowed to call the identity API from a browser: the console and each relying party.
   # Enumerated rather than "*": this API issues and introspects tokens.
-  GIAM_CORS_ORIGIN: "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com,https://sec-giam-frontend.industrysolutions.prod.corp.mongodb.com,https://sec-giam-merchant.industrysolutions.prod.corp.mongodb.com"
+  GIAM_CORS_ORIGIN: "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com,https://sec-fsi-pci-dss-frontend.industrysolutions.prod.corp.mongodb.com,https://sec-fsi-pci-dss-merchant.industrysolutions.prod.corp.mongodb.com,https://sec-fsi-pci-dss-bank-frontend.industrysolutions.prod.corp.mongodb.com"
   # The container listens on 8080 in every environment, which is the port the platform probes.
   GIAM_PORT: "8080"
 

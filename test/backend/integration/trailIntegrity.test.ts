@@ -17,13 +17,21 @@ const GIAM = process.env.GIAM_URL ?? 'http://127.0.0.1:8085';
 const REALM = 'leafypay';
 const DEMO_PASSWORD = 'demo-password';
 
+/**
+ * How far back a window has to end before it counts as closed.
+ *
+ * An event carries the time the action happened and the write lands some time after that, so a
+ * window ending half a minute ago can still gain an event while it is being sealed, and the count
+ * would then move for an honest reason. A digest is sealed over hours or days rather than seconds,
+ * so a wider margin costs the control nothing.
+ */
+const SETTLED_AFTER_MS = 300_000;
+
 function window(): { from: string; to: string } {
   const now = Date.now();
   return {
     from: new Date(now - 86_400_000).toISOString(),
-    // Closed, ending half a minute ago. A window still being written to will not match later, which
-    // would make the control cry wolf on its first use.
-    to: new Date(now - 30_000).toISOString(),
+    to: new Date(now - SETTLED_AFTER_MS).toISOString(),
   };
 }
 

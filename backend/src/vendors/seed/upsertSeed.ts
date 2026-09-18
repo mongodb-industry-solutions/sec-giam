@@ -2,6 +2,7 @@ import { Collection, Db, Document, Filter, OptionalUnlessRequiredId } from 'mong
 import { Meta, newMeta, touchMeta } from '../../shared/models/base.model';
 import { collectionsWithRetiredFields } from '../../shared/models/collections';
 import { PrincipalRecord, RoleHolding } from '../../modules/directory/models/principal.model';
+import { CredentialRecord } from '../../modules/directory/models/credential.model';
 
 /**
  * The moment a seeded grant records as having been made.
@@ -60,40 +61,83 @@ export async function upsertSeed<T extends Document & { meta: Meta }>(
  * report success while granting nothing, which is the failure that leaves an interface showing a
  * role that every check denies.
  */
-export async function upsertHolding(
-  principals: Collection<PrincipalRecord>,
-  key: { realmId: string; subjectId: string },
+/**
+ * The one way a seeder writes a role holding, to whichever document declares `roles`.
+ *
+ * ADR-004 gave `CredentialRecord` the same `roles?: RoleHolding[]` shape a principal's had, resolved
+ * through the same decision-point pipeline; this is the seed-side half of that, so a credential's OWN
+ * grant is as reproducible on a reset as a principal's always was, rather than only reachable by
+ * hand.
+ */
+async function upsertRoleHolding<T extends Document & { roles?: RoleHolding[] }>(
+  collection: Collection<T>,
+  key: Filter<T>,
   holding: RoleHolding,
+  notFoundLabel: string,
 ): Promise<SeedOutcome> {
   const identity: Document = holding.scope
     ? { roleId: holding.roleId, 'scope.ref': holding.scope.ref }
     : { roleId: holding.roleId, scope: { $exists: false } };
 
-  const existing = await principals.findOne(
-    { ...key, roles: { $elemMatch: identity } } as Filter<PrincipalRecord>,
+  const existing = await collection.findOne(
+    { ...key, roles: { $elemMatch: identity } } as Filter<T>,
     { projection: { _id: 0, roles: 1 } },
   );
 
   if (existing) {
-    const current = (existing.roles ?? []).find((entry) => (holding.scope
+    const current = ((existing as { roles?: RoleHolding[] }).roles ?? []).find((entry) => (holding.scope
       ? entry.roleId === holding.roleId && entry.scope?.ref === holding.scope.ref
       : entry.roleId === holding.roleId && !entry.scope));
     if (current && JSON.stringify(current) === JSON.stringify(holding)) return { action: 'unchanged' };
-    await principals.updateOne(
-      { ...key, roles: { $elemMatch: identity } } as Filter<PrincipalRecord>,
+    await collection.updateOne(
+      { ...key, roles: { $elemMatch: identity } } as Filter<T>,
       { $set: { 'roles.$': holding } } as never,
     );
     return { action: 'updated' };
   }
 
-  const appended = await principals.updateOne(
-    { ...key, roles: { $not: { $elemMatch: identity } } } as Filter<PrincipalRecord>,
+  const appended = await collection.updateOne(
+    { ...key, roles: { $not: { $elemMatch: identity } } } as Filter<T>,
     { $push: { roles: holding } } as never,
   );
   if (appended.matchedCount === 0) {
-    throw new Error(`no principal ${key.subjectId} in realm ${key.realmId} to hold role ${holding.roleId}`);
+    throw new Error(`no ${notFoundLabel} to hold role ${holding.roleId}`);
   }
   return { action: 'created' };
+}
+
+/**
+ * The one way a seeder writes a role holding, now that a holding lives inside its principal.
+ *
+ * Idempotent in the same sense `upsertSeed` is, and identified the same way the rest of the system
+ * identifies a holding: by `roleId`, plus the scope reference when it has one, so a principal can
+ * hold the same role at home and pointed at another realm without the two colliding.
+ *
+ * A missing principal throws rather than passing silently. An unmatched update would otherwise
+ * report success while granting nothing, which is the failure that leaves an interface showing a
+ * role that every check denies.
+ */
+export async function upsertHolding(
+  principals: Collection<PrincipalRecord>,
+  key: { realmId: string; subjectId: string },
+  holding: RoleHolding,
+): Promise<SeedOutcome> {
+  return upsertRoleHolding(principals, key, holding, `principal ${key.subjectId} in realm ${key.realmId}`);
+}
+
+/**
+ * The same thing, for a CREDENTIAL's own holding (ADR-004).
+ *
+ * A missing credential throws for the same reason a missing principal does: an unmatched update
+ * would report success while the credential remains scoped exactly as before, and the operator would
+ * have no way to tell the seed step from a real refusal.
+ */
+export async function upsertCredentialHolding(
+  credentials: Collection<CredentialRecord>,
+  key: { realmId: string; credentialId: string },
+  holding: RoleHolding,
+): Promise<SeedOutcome> {
+  return upsertRoleHolding(credentials, key, holding, `credential ${key.credentialId} in realm ${key.realmId}`);
 }
 
 // Unsets only the fields a model DECLARES retired: no document is deleted, no other field is touched.
