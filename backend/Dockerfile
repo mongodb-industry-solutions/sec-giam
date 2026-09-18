@@ -34,13 +34,13 @@ ENV GIAM_PORT=8080
 # ── Dependencies ──────────────────────────────────────────────────
 # The root checkout first, for the ops panel's own commands (setup:check, test:unit,
 # test:integration, openapi): those run `npm run <script>` from the repo root the same way an
-# operator at a terminal would, and the root scripts, vitest.config.ts and test/ sources are what
+# operator at a terminal would, and the root scripts, vitest.config.mts and test/ sources are what
 # makes that a real command rather than an error the ops panel has to word-smith around.
 # `type-check`'s frontend leg is the one exception: it needs frontend/'s own toolchain, deliberately
 # not bundled here. Installed BEFORE packages/: npm's dependency-tree walk from the root trips over
 # already-populated node_modules nested under it (a known npm arborist bug), so root install has to
 # happen while there is nothing nested yet to trip over.
-COPY tsconfig.base.json package.json vitest.config.ts ./
+COPY tsconfig.base.json package.json vitest.config.mts ./
 COPY test/ test/
 COPY docs/ docs/
 # --legacy-peer-deps: npm 10's arborist crashes ("Cannot read properties of null (reading
