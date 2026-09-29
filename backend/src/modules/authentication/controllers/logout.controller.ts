@@ -50,7 +50,7 @@ export async function logoutController(fastify: FastifyInstance) {
     return registered ? uri : undefined;
   }
 
-  fastify.post('/realms/:realm/protocol/openid-connect/logout', {
+  fastify.post('/realms/:realm/protocol/oidc/logout', {
     schema: {
       operationId: 'endSession',
       tags: ['authentication'],

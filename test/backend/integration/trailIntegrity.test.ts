@@ -49,7 +49,7 @@ describe('v41 D38: the trail can be proven unaltered', () => {
     token = await tokenFor(GIAM, REALM, 'alex.rivera', DEMO_PASSWORD);
   });
 
-  const seal = (body: Record<string, unknown>) => fetch(`${GIAM}/realms/${REALM}/audit/digest`, {
+  const seal = (body: Record<string, unknown>) => fetch(`${GIAM}/api/v1/realms/${REALM}/audit/digest`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
@@ -101,7 +101,7 @@ describe('v41 D38: the trail can be proven unaltered', () => {
     const ordinary = await tokenFor(GIAM, REALM, 'luis.fernandez', DEMO_PASSWORD);
     if (!ordinary) return;
 
-    const response = await fetch(`${GIAM}/realms/${REALM}/audit/digest`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/audit/digest`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${ordinary}` },
       body: JSON.stringify(window()),
@@ -139,7 +139,7 @@ describe('v41 D40: withdrawing consent tells the resource servers', () => {
     if (!live || !token) return;
 
     const events = await (await fetch(
-      `${GIAM}/realms/${REALM}/security-events?action=grant.scope_changed&limit=5`,
+      `${GIAM}/api/v1/realms/${REALM}/security-events?action=grant.scope_changed&limit=5`,
       { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) },
     )).json() as { events: Array<{ detail?: Record<string, unknown> }> };
 

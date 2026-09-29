@@ -21,7 +21,7 @@ import {
  * code-level guarantee anything actually enforces it. Do not copy this pattern elsewhere; the read
  * side (/system/resources) is what the rest of the console should look like.
  *
- * The endpoint underneath, PUT /admin/resource-servers/:name/permissions, is documented at exactly
+ * The endpoint underneath, PUT /api/v1/admin/resource-servers/:name/permissions, is documented at exactly
  * that bare path (docs/issuer-contract.md), not under /api/v1/admin like this panel's other tabs —
  * a pre-existing inconsistency kept as-is rather than silently changed, since other deployments may
  * already call it at that address.
@@ -45,7 +45,7 @@ export default function ResourcesAdminPage() {
     setError(null);
     try {
       // Bare /admin/..., not /api/v1/admin/...: see the module docstring above.
-      const res = await fetch(`${API_BASE_URL}/admin/resource-servers?realm=${encodeURIComponent(realm)}`, {
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/resource-servers?realm=${encodeURIComponent(realm)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const { data, text } = await readJsonSafe<{ resourceServers: ResourceServerResponse[] }>(res);
@@ -92,7 +92,7 @@ export default function ResourcesAdminPage() {
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/resource-servers/${encodeURIComponent(draft.name)}/permissions`, {
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/resource-servers/${encodeURIComponent(draft.name)}/permissions`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ realm, ...draftToRegisterBody(draft) }),

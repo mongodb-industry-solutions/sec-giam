@@ -92,7 +92,7 @@ describe('P9.6: a token for ten roles stays under 4 KB', () => {
       'fraud_investigator', 'audit_reader',
     ];
     const claims = {
-      iss: 'https://authority.example/realms/leafypay',
+      iss: 'https://authority.example/api/v1/realms/leafypay',
       aud: ['https://api.example/payments', 'https://api.example/accounts'],
       sub: 'a1000070-0000-4000-8000-000000000070',
       jti: '5f1b8c2e-4a7d-4e91-b3c6-8d2f1a9e7b40',

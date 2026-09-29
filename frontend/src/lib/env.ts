@@ -6,6 +6,9 @@ export const env = {
   apiBaseUrl: (process.env.NEXT_PUBLIC_GIAM_API_URL || '').replace(/\/+$/, ''),
 } as const;
 
+/** This service's versioned API; a realm's issuer and protocol routes live under it too. */
+export const API_PREFIX = '/api/v1';
+
 export function apiUrl(path: string): string {
   return `${env.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }

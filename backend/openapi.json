@@ -3,7 +3,7 @@
   "info": {
     "title": "GIAM (General Identity and Access Manager)",
     "version": "1.0.0",
-    "description": "\n## Overview\n\nGIAM is the identity authority for **people and systems equally**: employees, customers,\nmicroservices, applications, AI agents and workloads. It is industry neutral, so nothing in its\nmodel, its API or its policy vocabulary names a business concept belonging to the applications it\nprotects.\n\nIt is an identity **broker** as well as an authority: an application speaks one protocol (OIDC) to\none issuer, and GIAM federates behind that to an upstream provider, several at once if needed. Adding\none is a configuration record, not a change in any application.\n\n## How to read this document\n\nEvery operation declares its category:\n\n| Category | Meaning |\n|---|---|\n| **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |\n| **No applicable standard** | Plain REST: plural resources, correct verb semantics, `PATCH` for partial updates, RFC 9457 `application/problem+json` errors, `ETag` and `If-Match` on mutable resources, cursor pagination. |\n\nPublic protocol endpoints live under a realm's issuer path; administrative ones live under\n`/api/v1/admin/`, so a reader can tell them apart from the URL alone.\n\n## Realms\n\nA realm is a trust and key boundary: its own issuer, its own signing keys, its own JWKS. A token\nminted in one realm is refused by another, which is what makes an institutional boundary real rather\nthan declared. A tenant is a data boundary INSIDE a realm.\n\n## Token validation\n\nBoth models are supported and the choice belongs to the resource server, per operation:\n\n- **Decentralised.** Verification uses only the public keys GIAM publishes, downloaded and cached by\n  the client. No secret at the client, no network call per request, and a GIAM outage does not\n  invalidate an already-issued token.\n- **Centralised.** Introspection at GIAM, so revocation is immediate and the answer reflects current\n  account status rather than what was true at issuance.\n\nThe recommended default is to verify locally on every request and introspect only where the decision\nis expensive to get wrong.\n"
+    "description": "\n## Overview\n\nGIAM is the identity authority for **people and systems equally**: employees, customers,\nmicroservices, applications, AI agents and workloads. It is industry neutral, so nothing in its\nmodel, its API or its policy vocabulary names a business concept belonging to the applications it\nprotects.\n\nIt is an identity **broker** as well as an authority: an application speaks one protocol (OIDC) to\none issuer, and GIAM federates behind that to an upstream provider, several at once if needed. Adding\none is a configuration record, not a change in any application.\n\n## How to read this document\n\nEvery operation declares its category:\n\n| Category | Meaning |\n|---|---|\n| **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |\n| **No applicable standard** | Plain REST: plural resources, correct verb semantics, `PATCH` for partial updates, RFC 9457 `application/problem+json` errors, `ETag` and `If-Match` on mutable resources, cursor pagination. |\n\nEverything is versioned under `/api/v1/`. A realm's issuer is `/api/v1/realms/:realm`: its\nprotocol endpoints sit at `/api/v1/realms/:realm/protocol/oidc/...` and its API beside them\n(`/api/v1/realms/:realm/...`); operations live at `/api/v1/admin/...`. Only RFC 8414's root\nmetadata path (`/.well-known/oauth-authorization-server/api/v1/realms/:realm`) and `/health`\nsit outside the prefix, because their location is fixed by specification or by the platform.\n\n## Realms\n\nA realm is a trust and key boundary: its own issuer, its own signing keys, its own JWKS. A token\nminted in one realm is refused by another, which is what makes an institutional boundary real rather\nthan declared. A tenant is a data boundary INSIDE a realm.\n\n## Token validation\n\nBoth models are supported and the choice belongs to the resource server, per operation:\n\n- **Decentralised.** Verification uses only the public keys GIAM publishes, downloaded and cached by\n  the client. No secret at the client, no network call per request, and a GIAM outage does not\n  invalidate an already-issued token.\n- **Centralised.** Introspection at GIAM, so revocation is immediate and the answer reflects current\n  account status rather than what was true at issuance.\n\nThe recommended default is to verify locally on every request and introspect only where the decision\nis expensive to get wrong.\n"
   },
   "components": {
     "securitySchemes": {
@@ -156,7 +156,7 @@
         }
       }
     },
-    "/realms/{realm}/.well-known/openid-configuration": {
+    "/api/v1/realms/{realm}/.well-known/openid-configuration": {
       "get": {
         "operationId": "getOpenIdConfiguration",
         "summary": "Authorization server metadata",
@@ -262,8 +262,8 @@
                   }
                 },
                 "example": {
-                  "issuer": "https://giam.example/realms/acme",
-                  "jwks_uri": "https://giam.example/realms/acme/protocol/openid-connect/certs"
+                  "issuer": "https://giam.example/api/v1/realms/acme",
+                  "jwks_uri": "https://giam.example/api/v1/realms/acme/protocol/oidc/certs"
                 }
               }
             }
@@ -281,7 +281,7 @@
         }
       }
     },
-    "/.well-known/oauth-authorization-server/realms/{realm}": {
+    "/.well-known/oauth-authorization-server/api/v1/realms/{realm}": {
       "get": {
         "operationId": "getAuthorizationServerMetadata",
         "summary": "Authorization server metadata",
@@ -387,8 +387,8 @@
                   }
                 },
                 "example": {
-                  "issuer": "https://giam.example/realms/acme",
-                  "jwks_uri": "https://giam.example/realms/acme/protocol/openid-connect/certs"
+                  "issuer": "https://giam.example/api/v1/realms/acme",
+                  "jwks_uri": "https://giam.example/api/v1/realms/acme/protocol/oidc/certs"
                 }
               }
             }
@@ -406,7 +406,7 @@
         }
       }
     },
-    "/realms/{realm}/.well-known/oauth-authorization-server": {
+    "/api/v1/realms/{realm}/.well-known/oauth-authorization-server": {
       "get": {
         "operationId": "getAuthorizationServerMetadataAtIssuerPath",
         "summary": "Authorization server metadata",
@@ -512,8 +512,8 @@
                   }
                 },
                 "example": {
-                  "issuer": "https://giam.example/realms/acme",
-                  "jwks_uri": "https://giam.example/realms/acme/protocol/openid-connect/certs"
+                  "issuer": "https://giam.example/api/v1/realms/acme",
+                  "jwks_uri": "https://giam.example/api/v1/realms/acme/protocol/oidc/certs"
                 }
               }
             }
@@ -531,7 +531,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/certs": {
+    "/api/v1/realms/{realm}/protocol/oidc/certs": {
       "get": {
         "operationId": "getRealmKeySet",
         "summary": "JSON Web Key Set",
@@ -600,7 +600,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/userinfo": {
+    "/api/v1/realms/{realm}/protocol/oidc/userinfo": {
       "get": {
         "operationId": "userinfo",
         "summary": "Claims about the authenticated subject",
@@ -770,7 +770,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/auth": {
+    "/api/v1/realms/{realm}/protocol/oidc/auth": {
       "get": {
         "operationId": "authorize",
         "summary": "Authorization endpoint",
@@ -958,7 +958,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/auth/consent": {
+    "/api/v1/realms/{realm}/protocol/oidc/auth/consent": {
       "get": {
         "operationId": "readConsentPrompt",
         "summary": "What a pending authorization is asking for",
@@ -1168,7 +1168,7 @@
                   }
                 },
                 "example": {
-                  "continue": "https://authority.example/realms/acme/protocol/openid-connect/auth?request_id=6f2c1a44"
+                  "continue": "https://authority.example/api/v1/realms/acme/protocol/oidc/auth?request_id=6f2c1a44"
                 }
               }
             }
@@ -1196,7 +1196,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/token": {
+    "/api/v1/realms/{realm}/protocol/oidc/token": {
       "post": {
         "operationId": "issueToken",
         "summary": "Token endpoint",
@@ -1368,7 +1368,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/token/introspect": {
+    "/api/v1/realms/{realm}/protocol/oidc/token/introspect": {
       "post": {
         "operationId": "introspectToken",
         "summary": "Token introspection",
@@ -1513,7 +1513,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/revoke": {
+    "/api/v1/realms/{realm}/protocol/oidc/revoke": {
       "post": {
         "operationId": "revokeToken",
         "summary": "Token revocation",
@@ -1599,7 +1599,7 @@
         }
       }
     },
-    "/realms/{realm}/clients": {
+    "/api/v1/realms/{realm}/clients": {
       "get": {
         "operationId": "listClients",
         "summary": "The applications registered here",
@@ -2149,7 +2149,7 @@
         }
       }
     },
-    "/realms/{realm}/clients/{clientId}": {
+    "/api/v1/realms/{realm}/clients/{clientId}": {
       "get": {
         "operationId": "getClient",
         "summary": "One registered application",
@@ -2745,7 +2745,7 @@
         }
       }
     },
-    "/realms/{realm}/clients/{clientId}/rotate-secret": {
+    "/api/v1/realms/{realm}/clients/{clientId}/rotate-secret": {
       "post": {
         "operationId": "rotateClientSecret",
         "summary": "Issue a new secret for an application",
@@ -2940,7 +2940,7 @@
         }
       }
     },
-    "/realms/{realm}/clients/{clientId}/owners": {
+    "/api/v1/realms/{realm}/clients/{clientId}/owners": {
       "post": {
         "operationId": "addClientOwner",
         "summary": "Give somebody else authority over an application",
@@ -3166,7 +3166,7 @@
         }
       }
     },
-    "/realms/{realm}/clients/{clientId}/owners/{ownerRef}": {
+    "/api/v1/realms/{realm}/clients/{clientId}/owners/{ownerRef}": {
       "delete": {
         "operationId": "removeClientOwner",
         "summary": "Take authority over an application away",
@@ -3370,7 +3370,7 @@
         }
       }
     },
-    "/realms/{realm}/login": {
+    "/api/v1/realms/{realm}/login": {
       "post": {
         "operationId": "signIn",
         "summary": "Sign in and establish a session",
@@ -3500,7 +3500,7 @@
         }
       }
     },
-    "/realms/{realm}/login-context": {
+    "/api/v1/realms/{realm}/login-context": {
       "get": {
         "operationId": "getLoginContext",
         "summary": "What the sign-in screen renders",
@@ -3680,7 +3680,7 @@
         }
       }
     },
-    "/realms/{realm}/credentials/challenge": {
+    "/api/v1/realms/{realm}/credentials/challenge": {
       "post": {
         "operationId": "issueRegistrationChallenge",
         "summary": "Start registering an authenticator",
@@ -3746,7 +3746,7 @@
         }
       }
     },
-    "/realms/{realm}/credentials": {
+    "/api/v1/realms/{realm}/credentials": {
       "post": {
         "operationId": "registerCredential",
         "summary": "Register an authenticator",
@@ -4005,7 +4005,7 @@
         }
       }
     },
-    "/realms/{realm}/credentials/password/policy": {
+    "/api/v1/realms/{realm}/credentials/password/policy": {
       "get": {
         "operationId": "passwordPolicy",
         "summary": "The rules a new password must satisfy",
@@ -4112,7 +4112,7 @@
         }
       }
     },
-    "/realms/{realm}/credentials/password": {
+    "/api/v1/realms/{realm}/credentials/password": {
       "post": {
         "operationId": "changePassword",
         "summary": "Change your own password",
@@ -4232,7 +4232,7 @@
         }
       }
     },
-    "/realms/{realm}/credentials/{credentialId}": {
+    "/api/v1/realms/{realm}/credentials/{credentialId}": {
       "delete": {
         "operationId": "revokeCredential",
         "summary": "Retire an authenticator",
@@ -4332,7 +4332,7 @@
         }
       }
     },
-    "/realms/{realm}/credentials/{credentialId}/rotate": {
+    "/api/v1/realms/{realm}/credentials/{credentialId}/rotate": {
       "post": {
         "operationId": "rotateCredential",
         "summary": "Replace an authenticator",
@@ -4494,7 +4494,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/ext/ciba/auth": {
+    "/api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth": {
       "post": {
         "operationId": "initiateBackchannelAuthentication",
         "summary": "Ask a principal to approve, out of band",
@@ -4618,7 +4618,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/ext/ciba/auth/pending": {
+    "/api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth/pending": {
       "get": {
         "operationId": "listPendingBackchannelRequests",
         "summary": "Approvals waiting for the calling principal",
@@ -4750,7 +4750,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/ext/ciba/auth/{authReqId}": {
+    "/api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth/{authReqId}": {
       "get": {
         "operationId": "getBackchannelChallenge",
         "summary": "The challenge for a pending request",
@@ -4857,7 +4857,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/ext/ciba/auth/{authReqId}/approve": {
+    "/api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth/{authReqId}/approve": {
       "post": {
         "operationId": "approveBackchannelRequest",
         "summary": "Approve, by signing the challenge",
@@ -4966,7 +4966,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/ext/ciba/auth/{authReqId}/deny": {
+    "/api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth/{authReqId}/deny": {
       "post": {
         "operationId": "denyBackchannelRequest",
         "summary": "Refuse a pending request",
@@ -5069,7 +5069,7 @@
         }
       }
     },
-    "/realms/{realm}/protocol/openid-connect/logout": {
+    "/api/v1/realms/{realm}/protocol/oidc/logout": {
       "post": {
         "operationId": "endSession",
         "summary": "End a session",
@@ -5185,7 +5185,7 @@
         }
       }
     },
-    "/realms/{realm}/sessions": {
+    "/api/v1/realms/{realm}/sessions": {
       "get": {
         "operationId": "listSessions",
         "summary": "Where an account is signed in",
@@ -5476,7 +5476,7 @@
         }
       }
     },
-    "/realms/{realm}/sessions/{sessionId}": {
+    "/api/v1/realms/{realm}/sessions/{sessionId}": {
       "get": {
         "operationId": "getSession",
         "summary": "One session in full",
@@ -5870,7 +5870,7 @@
         }
       }
     },
-    "/realms/{realm}/sessions/terminate": {
+    "/api/v1/realms/{realm}/sessions/terminate": {
       "post": {
         "operationId": "terminateSessions",
         "summary": "End several sessions at once",
@@ -6027,7 +6027,7 @@
         }
       }
     },
-    "/realms/{realm}/grants": {
+    "/api/v1/realms/{realm}/grants": {
       "get": {
         "operationId": "listGrants",
         "summary": "What this principal has authorised",
@@ -6252,7 +6252,7 @@
         }
       }
     },
-    "/realms/{realm}/grants/{grantId}": {
+    "/api/v1/realms/{realm}/grants/{grantId}": {
       "get": {
         "operationId": "getGrant",
         "summary": "One authorisation",
@@ -6746,7 +6746,7 @@
         }
       }
     },
-    "/realms/{realm}/grants/{grantId}/operations": {
+    "/api/v1/realms/{realm}/grants/{grantId}/operations": {
       "get": {
         "operationId": "listGrantOperations",
         "summary": "What was done under this authorisation",
@@ -6884,7 +6884,7 @@
         }
       }
     },
-    "/realms/{realm}/grants/{grantId}/reactivate": {
+    "/api/v1/realms/{realm}/grants/{grantId}/reactivate": {
       "post": {
         "operationId": "reactivateGrant",
         "summary": "Restore a withdrawn authorisation",
@@ -7041,7 +7041,7 @@
         }
       }
     },
-    "/realms/{realm}/signing-keys": {
+    "/api/v1/realms/{realm}/signing-keys": {
       "get": {
         "operationId": "listSigningKeys",
         "summary": "The realm's published key set",
@@ -7289,7 +7289,7 @@
         }
       }
     },
-    "/realms/{realm}/signing-keys/rotate": {
+    "/api/v1/realms/{realm}/signing-keys/rotate": {
       "post": {
         "operationId": "rotateSigningKey",
         "summary": "Replace this replica's signing key",
@@ -7389,7 +7389,7 @@
         }
       }
     },
-    "/realms/{realm}/signing-keys/{kid}/retire": {
+    "/api/v1/realms/{realm}/signing-keys/{kid}/retire": {
       "post": {
         "operationId": "retireSigningKey",
         "summary": "Stop publishing a key",
@@ -7514,7 +7514,7 @@
         }
       }
     },
-    "/realms/{realm}/provisioning/reconcile": {
+    "/api/v1/realms/{realm}/provisioning/reconcile": {
       "post": {
         "operationId": "reconcileProvisioning",
         "summary": "What this authority currently believes about these principals",
@@ -7655,7 +7655,7 @@
         }
       }
     },
-    "/realms/{realm}/federation/{provider}/start": {
+    "/api/v1/realms/{realm}/federation/{provider}/start": {
       "get": {
         "operationId": "startFederation",
         "summary": "Begin signing in through an upstream provider",
@@ -7735,7 +7735,7 @@
         }
       }
     },
-    "/realms/{realm}/federation/{provider}/callback": {
+    "/api/v1/realms/{realm}/federation/{provider}/callback": {
       "post": {
         "operationId": "completeFederation",
         "summary": "Complete a sign-in through an upstream provider",
@@ -7857,7 +7857,7 @@
         }
       }
     },
-    "/realms/{realm}/domains": {
+    "/api/v1/realms/{realm}/domains": {
       "get": {
         "operationId": "listDomains",
         "summary": "Authentication paths of this realm",
@@ -8210,7 +8210,7 @@
         }
       }
     },
-    "/realms/{realm}/domains/{domainId}": {
+    "/api/v1/realms/{realm}/domains/{domainId}": {
       "get": {
         "operationId": "getDomain",
         "summary": "One authentication path",
@@ -8628,7 +8628,7 @@
         }
       }
     },
-    "/realms": {
+    "/api/v1/realms": {
       "get": {
         "operationId": "listRealms",
         "summary": "Every realm this deployment hosts",
@@ -8662,7 +8662,7 @@
                           "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
                           "name": "acme",
                           "displayName": "Acme",
-                          "issuer": "https://issuer.example/realms/acme",
+                          "issuer": "https://issuer.example/api/v1/realms/acme",
                           "enabled": true,
                           "aliases": [],
                           "tokenPolicy": {
@@ -8687,7 +8687,7 @@
                       "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
                       "name": "acme",
                       "displayName": "Acme",
-                      "issuer": "https://issuer.example/realms/acme",
+                      "issuer": "https://issuer.example/api/v1/realms/acme",
                       "enabled": true,
                       "aliases": [],
                       "tokenPolicy": {
@@ -8839,7 +8839,7 @@
                     "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
                     "name": "acme",
                     "displayName": "Acme",
-                    "issuer": "https://issuer.example/realms/acme",
+                    "issuer": "https://issuer.example/api/v1/realms/acme",
                     "enabled": true,
                     "aliases": [],
                     "tokenPolicy": {
@@ -8902,14 +8902,14 @@
         }
       }
     },
-    "/realms/{realm}": {
+    "/api/v1/realms/{realm}": {
       "get": {
         "operationId": "getRealm",
         "summary": "One realm",
         "tags": [
           "realms"
         ],
-        "description": "**No applicable standard.** The caller's own home realm always resolves; reading another is the same `realms:view` oversight permission `GET /realms` already requires.",
+        "description": "**No applicable standard.** The caller's own home realm always resolves; reading another is the same `realms:view` oversight permission `GET /api/v1/realms` already requires.",
         "parameters": [
           {
             "schema": {
@@ -8937,7 +8937,7 @@
                     "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
                     "name": "acme",
                     "displayName": "Acme",
-                    "issuer": "https://issuer.example/realms/acme",
+                    "issuer": "https://issuer.example/api/v1/realms/acme",
                     "enabled": true,
                     "aliases": [],
                     "tokenPolicy": {
@@ -9100,7 +9100,7 @@
                     "realmId": "d1a2b3c4-0001-0001-0001-000000000001",
                     "name": "acme",
                     "displayName": "Acme",
-                    "issuer": "https://issuer.example/realms/acme",
+                    "issuer": "https://issuer.example/api/v1/realms/acme",
                     "enabled": true,
                     "aliases": [],
                     "tokenPolicy": {
@@ -9153,7 +9153,7 @@
         }
       }
     },
-    "/realms/{realm}/register": {
+    "/api/v1/realms/{realm}/register": {
       "post": {
         "operationId": "registerIdentity",
         "summary": "Create a principal, where the realm permits it",
@@ -9281,7 +9281,7 @@
         }
       }
     },
-    "/realms/{realm}/scim/v2/Users": {
+    "/api/v1/realms/{realm}/scim/Users": {
       "get": {
         "operationId": "scimListUsers",
         "summary": "List principals",
@@ -9452,7 +9452,7 @@
                           "active": true,
                           "meta": {
                             "resourceType": "User",
-                            "location": "/realms/acme/scim/v2/Users/sub-9f21"
+                            "location": "/api/v1/realms/acme/scim/Users/sub-9f21"
                           }
                         }
                       }
@@ -9476,7 +9476,7 @@
                       "active": true,
                       "meta": {
                         "resourceType": "User",
-                        "location": "/realms/acme/scim/v2/Users/sub-9f21"
+                        "location": "/api/v1/realms/acme/scim/Users/sub-9f21"
                       }
                     }
                   ]
@@ -9659,7 +9659,7 @@
                   "active": true,
                   "meta": {
                     "resourceType": "User",
-                    "location": "/realms/acme/scim/v2/Users/sub-9f21"
+                    "location": "/api/v1/realms/acme/scim/Users/sub-9f21"
                   }
                 }
               }
@@ -9716,7 +9716,7 @@
         }
       }
     },
-    "/realms/{realm}/scim/v2/Users/{id}": {
+    "/api/v1/realms/{realm}/scim/Users/{id}": {
       "get": {
         "operationId": "scimGetUser",
         "summary": "One principal",
@@ -9807,7 +9807,7 @@
                   "active": true,
                   "meta": {
                     "resourceType": "User",
-                    "location": "/realms/acme/scim/v2/Users/sub-9f21"
+                    "location": "/api/v1/realms/acme/scim/Users/sub-9f21"
                   }
                 }
               }
@@ -9981,7 +9981,7 @@
                   "active": true,
                   "meta": {
                     "resourceType": "User",
-                    "location": "/realms/acme/scim/v2/Users/sub-9f21"
+                    "location": "/api/v1/realms/acme/scim/Users/sub-9f21"
                   }
                 }
               }
@@ -10124,7 +10124,7 @@
         }
       }
     },
-    "/realms/{realm}/identities/{id}/credentials/password": {
+    "/api/v1/realms/{realm}/identities/{id}/credentials/password": {
       "post": {
         "operationId": "resetPassword",
         "summary": "Set a new password for a principal",
@@ -10241,7 +10241,7 @@
         }
       }
     },
-    "/realms/{realm}/identities/{id}/credentials": {
+    "/api/v1/realms/{realm}/identities/{id}/credentials": {
       "get": {
         "operationId": "listPrincipalCredentials",
         "summary": "Every credential a principal holds",
@@ -10399,7 +10399,7 @@
         }
       }
     },
-    "/realms/{realm}/identities/{id}/credentials/{credentialId}": {
+    "/api/v1/realms/{realm}/identities/{id}/credentials/{credentialId}": {
       "delete": {
         "operationId": "revokePrincipalCredential",
         "summary": "Retire an authenticator on a principal's behalf",
@@ -10552,7 +10552,7 @@
         }
       }
     },
-    "/admin/resource-servers/{name}/permissions": {
+    "/api/v1/admin/resource-servers/{name}/permissions": {
       "put": {
         "operationId": "registerResourceServerPermissions",
         "summary": "Register a resource server permission catalog",
@@ -10711,14 +10711,14 @@
         }
       }
     },
-    "/admin/resource-servers": {
+    "/api/v1/admin/resource-servers": {
       "get": {
         "operationId": "listResourceServersAdmin",
         "summary": "Every resource server registered in one realm, for the ops panel",
         "tags": [
           "authorization"
         ],
-        "description": "No applicable standard. Same read as GET /realms/:realm/resource-servers, admin-token gated.",
+        "description": "No applicable standard. Same read as GET /api/v1/realms/:realm/resource-servers, admin-token gated.",
         "parameters": [
           {
             "schema": {
@@ -10919,14 +10919,14 @@
         }
       }
     },
-    "/realms/{realm}/resource-servers": {
+    "/api/v1/realms/{realm}/resource-servers": {
       "get": {
         "operationId": "listResourceServers",
         "summary": "Every resource server registered in this realm",
         "tags": [
           "authorization"
         ],
-        "description": "No applicable standard. What `PUT /admin/resource-servers/:name/permissions` (or its RBAC-gated equivalent below) has registered: each application, tool or MCP server that declared enforcement points, and the resources and actions each one currently offers. Readable by any authenticated principal, the same reasoning `/permissions` already applies: this is the authorization MODEL, not personal data or a secret, and it exists to be looked up rather than guarded.",
+        "description": "No applicable standard. What `PUT /api/v1/admin/resource-servers/:name/permissions` (or its RBAC-gated equivalent below) has registered: each application, tool or MCP server that declared enforcement points, and the resources and actions each one currently offers. Readable by any authenticated principal, the same reasoning `/permissions` already applies: this is the authorization MODEL, not personal data or a secret, and it exists to be looked up rather than guarded.",
         "parameters": [
           {
             "schema": {
@@ -11164,14 +11164,14 @@
         }
       }
     },
-    "/realms/{realm}/resource-servers/{name}/permissions": {
+    "/api/v1/realms/{realm}/resource-servers/{name}/permissions": {
       "put": {
         "operationId": "registerResourceServer",
         "summary": "Declare a resource server's catalog, from the console",
         "tags": [
           "authorization"
         ],
-        "description": "No applicable standard. Identical to `PUT /admin/resource-servers/:name/permissions`, reached by a signed-in operator instead of an admin token: both call the same `ResourceAdminService.registerCatalog`. Idempotent and versioned: registering the same catalog twice is one registration, and a permission that disappears from the declared set is marked withdrawn rather than deleted, because a role may already grant it.",
+        "description": "No applicable standard. Identical to `PUT /api/v1/admin/resource-servers/:name/permissions`, reached by a signed-in operator instead of an admin token: both call the same `ResourceAdminService.registerCatalog`. Idempotent and versioned: registering the same catalog twice is one registration, and a permission that disappears from the declared set is marked withdrawn rather than deleted, because a role may already grant it.",
         "requestBody": {
           "required": true,
           "content": {
@@ -11326,7 +11326,7 @@
         }
       }
     },
-    "/realms/{realm}/signals": {
+    "/api/v1/realms/{realm}/signals": {
       "get": {
         "operationId": "pollSecurityEventFeed",
         "summary": "Security events since a moment, for a receiver that polls",
@@ -11462,7 +11462,7 @@
         }
       }
     },
-    "/realms/{realm}/administrable-realms": {
+    "/api/v1/realms/{realm}/administrable-realms": {
       "get": {
         "operationId": "listAdministrableRealms",
         "summary": "Which realms the caller may administer",
@@ -11603,7 +11603,7 @@
         }
       }
     },
-    "/realms/{realm}/realm-grants": {
+    "/api/v1/realms/{realm}/realm-grants": {
       "get": {
         "operationId": "listRealmGrants",
         "summary": "Assignments in this realm that name another realm",
@@ -11927,7 +11927,7 @@
         }
       }
     },
-    "/realms/{realm}/realm-grants/{subjectId}/{targetRealmId}": {
+    "/api/v1/realms/{realm}/realm-grants/{subjectId}/{targetRealmId}": {
       "delete": {
         "operationId": "revokeRealmGrant",
         "summary": "Take back administration of another realm",
@@ -12033,7 +12033,7 @@
         }
       }
     },
-    "/realms/{realm}/me/permissions": {
+    "/api/v1/realms/{realm}/me/permissions": {
       "get": {
         "operationId": "myPermissions",
         "summary": "What this principal may do to the authority's own objects, resolved fresh",
@@ -12130,7 +12130,7 @@
         }
       }
     },
-    "/realms/{realm}/roles": {
+    "/api/v1/realms/{realm}/roles": {
       "get": {
         "operationId": "listRoles",
         "summary": "The roles this realm defines",
@@ -12717,7 +12717,7 @@
         }
       }
     },
-    "/realms/{realm}/permissions": {
+    "/api/v1/realms/{realm}/permissions": {
       "get": {
         "operationId": "listPermissionCatalog",
         "summary": "Every permission a role could be given",
@@ -12876,7 +12876,7 @@
         }
       }
     },
-    "/realms/{realm}/roles/{roleId}": {
+    "/api/v1/realms/{realm}/roles/{roleId}": {
       "get": {
         "operationId": "getRole",
         "summary": "One role, with everything it inherits",
@@ -13625,7 +13625,7 @@
         }
       }
     },
-    "/realms/{realm}/roles/{roleId}/assignments": {
+    "/api/v1/realms/{realm}/roles/{roleId}/assignments": {
       "get": {
         "operationId": "listRoleAssignments",
         "summary": "Who holds this role",
@@ -13957,7 +13957,7 @@
         }
       }
     },
-    "/realms/{realm}/principals/{subjectId}/roles": {
+    "/api/v1/realms/{realm}/principals/{subjectId}/roles": {
       "get": {
         "operationId": "listPrincipalRoles",
         "summary": "The roles one principal holds",
@@ -14100,7 +14100,7 @@
         }
       }
     },
-    "/realms/{realm}/principals/{subjectId}/roles/{roleId}": {
+    "/api/v1/realms/{realm}/principals/{subjectId}/roles/{roleId}": {
       "delete": {
         "operationId": "revokeRoleAssignment",
         "summary": "Take a role back from a principal",
@@ -14206,7 +14206,7 @@
         }
       }
     },
-    "/realms/{realm}/policies": {
+    "/api/v1/realms/{realm}/policies": {
       "get": {
         "operationId": "listPolicies",
         "summary": "The conditional statements this realm applies",
@@ -15054,7 +15054,7 @@
         }
       }
     },
-    "/realms/{realm}/policies/{policyId}": {
+    "/api/v1/realms/{realm}/policies/{policyId}": {
       "get": {
         "operationId": "getPolicy",
         "summary": "One policy, statement by statement",
@@ -16092,7 +16092,7 @@
         }
       }
     },
-    "/realms/{realm}/policies/{policyId}/resources": {
+    "/api/v1/realms/{realm}/policies/{policyId}/resources": {
       "get": {
         "operationId": "listPolicyResources",
         "summary": "Which resources this policy actually governs",
@@ -16216,7 +16216,7 @@
         }
       }
     },
-    "/realms/{realm}/decision": {
+    "/api/v1/realms/{realm}/decision": {
       "post": {
         "operationId": "evaluateDecision",
         "summary": "Evaluate one authorization decision",
@@ -16532,7 +16532,7 @@
         }
       }
     },
-    "/realms/{realm}/decision/evaluations": {
+    "/api/v1/realms/{realm}/decision/evaluations": {
       "post": {
         "operationId": "evaluateDecisions",
         "summary": "Evaluate several authorization decisions in one call",
@@ -17016,7 +17016,7 @@
         }
       }
     },
-    "/realms/{realm}/decision/search/action": {
+    "/api/v1/realms/{realm}/decision/search/action": {
       "post": {
         "operationId": "searchActions",
         "summary": "Which actions a subject may take on a resource",
@@ -17210,7 +17210,7 @@
         "tags": [
           "authorization"
         ],
-        "description": "The same evaluation as `POST /realms/:realm/decision`, at a path shaped for a generic AuthZEN 1.0 client rather than named to one realm. There is no realm segment because the specification has none: the realm evaluated is always the caller's own, resolved from the token that authenticated the request.",
+        "description": "The same evaluation as `POST /api/v1/realms/:realm/decision`, at a path shaped for a generic AuthZEN 1.0 client rather than named to one realm. There is no realm segment because the specification has none: the realm evaluated is always the caller's own, resolved from the token that authenticated the request.",
         "requestBody": {
           "required": true,
           "content": {
@@ -17498,7 +17498,7 @@
         "tags": [
           "authorization"
         ],
-        "description": "The same batch evaluation as `POST /realms/:realm/decision/evaluations`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
+        "description": "The same batch evaluation as `POST /api/v1/realms/:realm/decision/evaluations`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
         "requestBody": {
           "required": true,
           "content": {
@@ -17933,7 +17933,7 @@
         "tags": [
           "authorization"
         ],
-        "description": "The same reverse search as `POST /realms/:realm/decision/search/action`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
+        "description": "The same reverse search as `POST /api/v1/realms/:realm/decision/search/action`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
         "requestBody": {
           "required": true,
           "content": {
@@ -18098,7 +18098,7 @@
         }
       }
     },
-    "/realms/{realm}/elevations": {
+    "/api/v1/realms/{realm}/elevations": {
       "post": {
         "operationId": "requestElevation",
         "summary": "Ask for temporary authority",
@@ -18448,7 +18448,7 @@
         }
       }
     },
-    "/realms/{realm}/elevations/{subjectId}/{roleId}/approve": {
+    "/api/v1/realms/{realm}/elevations/{subjectId}/{roleId}/approve": {
       "post": {
         "operationId": "approveElevation",
         "summary": "Approve somebody else's request",
@@ -18597,7 +18597,7 @@
         }
       }
     },
-    "/realms/{realm}/elevations/mine": {
+    "/api/v1/realms/{realm}/elevations/mine": {
       "get": {
         "operationId": "holdsOwnElevation",
         "summary": "Whether I hold my own in-force elevation for a scope",
@@ -18684,7 +18684,7 @@
         }
       }
     },
-    "/realms/{realm}/elevations/{subjectId}/{roleId}": {
+    "/api/v1/realms/{realm}/elevations/{subjectId}/{roleId}": {
       "delete": {
         "operationId": "revokeElevation",
         "summary": "End an elevation before it expires",
@@ -18804,7 +18804,7 @@
         }
       }
     },
-    "/realms/{realm}/security-events": {
+    "/api/v1/realms/{realm}/security-events": {
       "get": {
         "operationId": "querySecurityEvents",
         "summary": "The identity and access trail",
@@ -19089,7 +19089,7 @@
         }
       }
     },
-    "/realms/{realm}/audit/flows/{txn}": {
+    "/api/v1/realms/{realm}/audit/flows/{txn}": {
       "get": {
         "operationId": "auditFlow",
         "summary": "Everything that happened in one authorization flow",
@@ -19243,7 +19243,7 @@
         }
       }
     },
-    "/realms/{realm}/audit/tokens/{jti}": {
+    "/api/v1/realms/{realm}/audit/tokens/{jti}": {
       "get": {
         "operationId": "auditToken",
         "summary": "Which flow a token belongs to",
@@ -19326,7 +19326,7 @@
         }
       }
     },
-    "/realms/{realm}/audit/digest": {
+    "/api/v1/realms/{realm}/audit/digest": {
       "post": {
         "operationId": "sealAuditWindow",
         "summary": "Seal a window of the trail, or verify a seal",

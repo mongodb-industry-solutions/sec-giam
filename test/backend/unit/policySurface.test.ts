@@ -582,7 +582,7 @@ describe('the condition vocabulary is closed, in the contract', () => {
   it('offers exactly the conditions the vocabulary names and forbids anything else', () => {
     // Enforced in the schema rather than only in the console form: a form is a presentation choice
     // and this is the boundary that keeps GIAM an identity authority rather than a rules engine.
-    const body = document.paths?.['/realms/{realm}/policies']?.post?.requestBody as {
+    const body = document.paths?.['/api/v1/realms/{realm}/policies']?.post?.requestBody as {
       content: Record<string, { schema: Record<string, unknown> }>;
     };
     const schema = body.content['application/json'].schema as {
@@ -597,7 +597,7 @@ describe('the condition vocabulary is closed, in the contract', () => {
   it('serves the decision endpoint the authorization tag already advertises', () => {
     // The tag described "the decision endpoint" while none existed, so the document said something
     // untrue about the service. This is the assertion that keeps it true.
-    const evaluate = document.paths?.['/realms/{realm}/decision']?.post;
+    const evaluate = document.paths?.['/api/v1/realms/{realm}/decision']?.post;
     expect(evaluate?.operationId).toBe('evaluateDecision');
     expect(evaluate?.tags).toContain('authorization');
     expect(evaluate?.description).toMatch(/AuthZEN/);

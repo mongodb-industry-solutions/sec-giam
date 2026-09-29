@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Check, Copy, ExternalLink, Globe } from 'lucide-react';
-import { API_PUBLIC_URL } from '../lib/env';
+import { API_PUBLIC_URL, API_PREFIX } from '../lib/env';
 import { privateApiBase } from '../lib/deploymentInfo';
 
 /**
@@ -23,22 +23,22 @@ export function IntegrationUrls({ realm, grantTypes }: { realm: string; grantTyp
 
   const interactive = grantTypes.some((g) => g === 'authorization_code' || g.includes('ciba'));
   const serverToServerBase = scope === 'private' && privateBase ? privateBase : API_PUBLIC_URL;
-  const realmPath = `/realms/${realm}`;
+  const realmPath = `${API_PREFIX}/realms/${realm}`;
 
   const endpoints: Array<{ label: string; value: string; alwaysPublic?: boolean }> = [
     { label: 'Discovery', value: `${serverToServerBase}${realmPath}/.well-known/openid-configuration` },
     ...(interactive
-      ? [{ label: 'Authorize', value: `${API_PUBLIC_URL}${realmPath}/protocol/openid-connect/auth`, alwaysPublic: true }]
+      ? [{ label: 'Authorize', value: `${API_PUBLIC_URL}${realmPath}/protocol/oidc/auth`, alwaysPublic: true }]
       : []),
-    { label: 'Token', value: `${serverToServerBase}${realmPath}/protocol/openid-connect/token` },
-    { label: 'JWKS', value: `${serverToServerBase}${realmPath}/protocol/openid-connect/certs` },
+    { label: 'Token', value: `${serverToServerBase}${realmPath}/protocol/oidc/token` },
+    { label: 'JWKS', value: `${serverToServerBase}${realmPath}/protocol/oidc/certs` },
     ...(interactive
-      ? [{ label: 'Userinfo', value: `${serverToServerBase}${realmPath}/protocol/openid-connect/userinfo` }]
+      ? [{ label: 'Userinfo', value: `${serverToServerBase}${realmPath}/protocol/oidc/userinfo` }]
       : []),
-    { label: 'Introspect', value: `${serverToServerBase}${realmPath}/protocol/openid-connect/token/introspect` },
-    { label: 'Revoke token', value: `${serverToServerBase}${realmPath}/protocol/openid-connect/revoke` },
+    { label: 'Introspect', value: `${serverToServerBase}${realmPath}/protocol/oidc/token/introspect` },
+    { label: 'Revoke token', value: `${serverToServerBase}${realmPath}/protocol/oidc/revoke` },
     ...(interactive
-      ? [{ label: 'Logout', value: `${API_PUBLIC_URL}${realmPath}/protocol/openid-connect/logout`, alwaysPublic: true }]
+      ? [{ label: 'Logout', value: `${API_PUBLIC_URL}${realmPath}/protocol/oidc/logout`, alwaysPublic: true }]
       : []),
   ];
 

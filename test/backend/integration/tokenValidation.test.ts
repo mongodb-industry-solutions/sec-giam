@@ -32,7 +32,7 @@ function forge(header: Record<string, unknown>, claims: Record<string, unknown>,
 async function machineToken(): Promise<string> {
   const response = await giam.inject({
     method: 'POST',
-    url: `/realms/${REALM}/protocol/openid-connect/token`,
+    url: `/api/v1/realms/${REALM}/protocol/oidc/token`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     payload: new URLSearchParams({
       grant_type: 'client_credentials',
@@ -46,7 +46,7 @@ async function machineToken(): Promise<string> {
 async function introspect(token: string) {
   return giam.inject({
     method: 'POST',
-    url: `/realms/${REALM}/protocol/openid-connect/token/introspect`,
+    url: `/api/v1/realms/${REALM}/protocol/oidc/token/introspect`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     payload: new URLSearchParams({ token, client_id: CLIENT_ID, client_secret: CLIENT_SECRET }).toString(),
   });
@@ -57,7 +57,7 @@ beforeAll(async () => {
   giam = await buildApp();
   await giam.ready();
 
-  const metadata = await giam.inject({ method: 'GET', url: `/realms/${REALM}/.well-known/openid-configuration` });
+  const metadata = await giam.inject({ method: 'GET', url: `/api/v1/realms/${REALM}/.well-known/openid-configuration` });
   issuer = metadata.json().issuer;
 }, 180_000);
 
@@ -99,7 +99,7 @@ describe('v39 P8.5: the centralised model answers what local verification cannot
 
     const revoked = await giam.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/revoke`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/revoke`,
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: new URLSearchParams({ token, client_id: CLIENT_ID, client_secret: CLIENT_SECRET }).toString(),
     });
@@ -125,7 +125,7 @@ describe('v39 P8.5: the centralised model answers what local verification cannot
     // of the tokens it holds are real.
     const response = await giam.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/revoke`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/revoke`,
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: new URLSearchParams({ token: 'not-a-token', client_id: CLIENT_ID, client_secret: CLIENT_SECRET }).toString(),
     });
@@ -145,7 +145,7 @@ describe('v39 P8.5: the centralised model answers what local verification cannot
     // An open introspection endpoint is an oracle for token validity.
     const response = await giam.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/token/introspect`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/token/introspect`,
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: new URLSearchParams({ token: 'anything' }).toString(),
     });
@@ -207,7 +207,7 @@ describe('v39 P8.5: every classic verification defect is refused', () => {
   it('refuses a token from another issuer', async () => {
     const token = forge(
       { alg: 'RS256', kid: 'any' },
-      { iss: 'https://another-authority.invalid/realms/leafypay', sub: 'x', exp: 9_999_999_999 },
+      { iss: 'https://another-authority.invalid/api/v1/realms/leafypay', sub: 'x', exp: 9_999_999_999 },
     );
     expect((await introspect(token)).json().active).toBe(false);
   });
@@ -220,7 +220,7 @@ describe('v39 P8.5: every classic verification defect is refused', () => {
 
 describe('v39 P8.5: the published key set carries public material only', () => {
   it('publishes no private parameter', async () => {
-    const response = await giam.inject({ method: 'GET', url: `/realms/${REALM}/protocol/openid-connect/certs` });
+    const response = await giam.inject({ method: 'GET', url: `/api/v1/realms/${REALM}/protocol/oidc/certs` });
     for (const key of response.json().keys) {
       for (const privateParameter of ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k']) {
         expect(key[privateParameter], `the key set exposes ${privateParameter}`).toBeUndefined();
@@ -231,7 +231,7 @@ describe('v39 P8.5: the published key set carries public material only', () => {
   it('is cacheable, because a stale copy is safe', async () => {
     // An old public key can only validate signatures the authority itself produced, which is what
     // makes serving a stale set during an outage the right trade rather than a shortcut.
-    const response = await giam.inject({ method: 'GET', url: `/realms/${REALM}/protocol/openid-connect/certs` });
+    const response = await giam.inject({ method: 'GET', url: `/api/v1/realms/${REALM}/protocol/oidc/certs` });
     expect(response.headers['cache-control']).toContain('max-age');
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Bug, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { apiUrl } from '../lib/env';
+import { API_PREFIX, apiUrl } from '../lib/env';
 import { startConsoleAuthorization, rememberUserName } from '../lib/session';
 import { BRAND } from '../config/brand';
 import { Tooltip } from './Tooltip';
@@ -136,7 +136,7 @@ export function SignInPanel({
     if (requestId) asking.set('request_id', requestId);
     else if (clientId) asking.set('client_id', clientId);
     const query = asking.toString();
-    fetch(apiUrl(`/realms/${realm}/login-context${query ? `?${query}` : ''}`))
+    fetch(apiUrl(`${API_PREFIX}/realms/${realm}/login-context${query ? `?${query}` : ''}`))
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return;
@@ -173,7 +173,7 @@ export function SignInPanel({
     setError(null);
     let authenticated: SignedIn | null = null;
     try {
-      const response = await fetch(apiUrl(`/realms/${realm}/login`), {
+      const response = await fetch(apiUrl(`${API_PREFIX}/realms/${realm}/login`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(credentials),

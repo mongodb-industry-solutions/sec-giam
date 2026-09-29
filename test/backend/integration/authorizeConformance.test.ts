@@ -20,7 +20,7 @@ const LOGIN = 'alex.rivera';
 const CHALLENGE = createHash('sha256').update(randomBytes(32).toString('base64url')).digest('base64url');
 
 function authorizeUrl(params: Record<string, string>): string {
-  const url = new URL(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`);
+  const url = new URL(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return url.toString();
 }
@@ -202,7 +202,7 @@ describe('v41 P4: the authorization endpoint is conforming', () => {
 
   it('refuses to record a consent decision without a session', async () => {
     if (!live) return;
-    const response = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth/consent`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth/consent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request_id: 'anything-at-all', approved: true }),

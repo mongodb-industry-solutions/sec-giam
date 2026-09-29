@@ -26,7 +26,7 @@ type StatusFilter = 'all' | 'active' | 'deprecated' | 'withdrawn';
  * "Declares itself" still holds: nothing here can grant a role anything that is not first declared
  * as a resource server's own catalog, exactly the constraint `resource.controller.ts`'s own docstring
  * states. What changed is WHO may do the declaring — a signed-in operator with `permissions:manage`,
- * not only an admin-token deployment script — via `PUT /realms/:realm/resource-servers/:name/permissions`,
+ * not only an admin-token deployment script — via `PUT /api/v1/realms/:realm/resource-servers/:name/permissions`,
  * the identical write `ResourceAdminService.registerCatalog` also serves at the admin-token path.
  */
 export default function ResourcesPage() {

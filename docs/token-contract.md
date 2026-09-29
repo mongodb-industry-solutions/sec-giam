@@ -81,7 +81,7 @@ authentication context (`auth_time`, `acr`, `amr`).
 
 **No profile claims.** OIDC Core 5.4: the claims requested by the `profile`, `email`, `address` and
 `phone` scopes are returned from the UserInfo endpoint when an access token is issued, which in the
-authorization code flow is always. Call `/realms/{realm}/protocol/openid-connect/userinfo` for
+authorization code flow is always. Call `/api/v1/realms/{realm}/protocol/oidc/userinfo` for
 `name`, `preferred_username` and `email`, and note that what comes back is bounded by the granted
 scopes.
 
@@ -110,12 +110,12 @@ Two request parameters, both narrowing only, and neither can widen anything.
 
 Two ways, and neither is right in general, which is why both exist.
 
-**Locally, against the published key set** at `/realms/{realm}/protocol/openid-connect/certs`. Costs
+**Locally, against the published key set** at `/api/v1/realms/{realm}/protocol/oidc/certs`. Costs
 nothing per request and keeps you serving when the authority is unreachable. Answers "was this signed
 by the authority and is it within its lifetime". Check `iss`, `aud`, `exp` and `typ`, and refuse a
 token missing any required claim above.
 
-**By introspection**, at `/realms/{realm}/protocol/openid-connect/token/introspect`. Authoritative
+**By introspection**, at `/api/v1/realms/{realm}/protocol/oidc/token/introspect`. Authoritative
 about revocation, a suspended principal, and authority that changed since issuance. Costs a round
 trip and puts the authority on your hot path.
 

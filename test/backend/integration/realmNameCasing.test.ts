@@ -41,7 +41,7 @@ function casings(name: string): string[] {
 
 describe('a realm resolves by name whatever its casing', () => {
   it.each(casings(fixture.name))('resolves "%s" to the same realm', async (spelling) => {
-    const response = await app.inject({ method: 'GET', url: `/realms/${spelling}/login-context` });
+    const response = await app.inject({ method: 'GET', url: `/api/v1/realms/${spelling}/login-context` });
     expect(response.statusCode, `"${spelling}" did not resolve`).toBe(200);
     // The RECORD's own spelling comes back, not the caller's: resolution is case-insensitive,
     // the stored name is not rewritten by whoever asked for it.
@@ -49,7 +49,7 @@ describe('a realm resolves by name whatever its casing', () => {
   });
 
   it.each((fixture.aliases ?? []).flatMap(casings))('resolves the alias "%s" too', async (spelling) => {
-    const response = await app.inject({ method: 'GET', url: `/realms/${spelling}/login-context` });
+    const response = await app.inject({ method: 'GET', url: `/api/v1/realms/${spelling}/login-context` });
     expect(response.statusCode, `alias "${spelling}" did not resolve`).toBe(200);
     expect((response.json() as { realm: string }).realm).toBe(fixture.name);
   });
@@ -57,14 +57,14 @@ describe('a realm resolves by name whatever its casing', () => {
   it('still refuses a realm that does not exist, in any casing', async () => {
     // The point of the collation is to widen how one name is spelled, not what counts as a name.
     for (const spelling of casings('no-such-realm-here')) {
-      const response = await app.inject({ method: 'GET', url: `/realms/${spelling}/login-context` });
+      const response = await app.inject({ method: 'GET', url: `/api/v1/realms/${spelling}/login-context` });
       expect(response.statusCode, `"${spelling}" resolved to something`).toBe(404);
     }
   });
 
   it('offers the same domains however the realm was spelled', async () => {
     const answers = await Promise.all(casings(fixture.name).map(async (spelling) => {
-      const response = await app.inject({ method: 'GET', url: `/realms/${spelling}/login-context` });
+      const response = await app.inject({ method: 'GET', url: `/api/v1/realms/${spelling}/login-context` });
       return (response.json() as { providers: Array<{ name: string }> }).providers.map((p) => p.name).sort();
     }));
     for (const offered of answers) expect(offered).toEqual(answers[0]);

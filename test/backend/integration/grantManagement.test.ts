@@ -53,7 +53,7 @@ describe('v41 P6: changing what an application holds', () => {
     // A principal of its own: `partialConsent` changes the seeded person's grant for the same
     // client, and the two raced whenever they ran in parallel.
     const userName = `grantmgmt-${randomUUID().slice(0, 8)}`;
-    const registered = await fetch(`${GIAM}/realms/${REALM}/register`, {
+    const registered = await fetch(`${GIAM}/api/v1/realms/${REALM}/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userName, password: PASSWORD }),
@@ -62,7 +62,7 @@ describe('v41 P6: changing what an application holds', () => {
     subjectId = (await registered.json() as { subjectId: string }).subjectId;
     // `leafypay` does not auto-approve self-registration, so a manager activates it.
     const managerToken = await tokenFor(GIAM, REALM, 'alex.rivera', DEMO_PASSWORD, { client: CONSOLE_CLIENT });
-    await fetch(`${GIAM}/realms/${REALM}/scim/v2/Users/${subjectId}`, {
+    await fetch(`${GIAM}/api/v1/realms/${REALM}/scim/Users/${subjectId}`, {
       method: 'PATCH',
       headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -85,7 +85,7 @@ describe('v41 P6: changing what an application holds', () => {
   async function ensureGrant(scope: string): Promise<void> {
     const verifier = randomBytes(32).toString('base64url');
     const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const url = new URL(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`);
+    const url = new URL(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth`);
     for (const [key, value] of Object.entries({
       client_id: THIRD_PARTY.clientId,
       redirect_uri: THIRD_PARTY.redirectUri,
@@ -101,7 +101,7 @@ describe('v41 P6: changing what an application holds', () => {
     if (!location.includes('/auth/consent')) return;
 
     const requestId = new URL(location).searchParams.get('request_id') as string;
-    await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth/consent`, {
+    await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth/consent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({ request_id: requestId, approved: true }),
@@ -110,7 +110,7 @@ describe('v41 P6: changing what an application holds', () => {
   }
 
   const grants = async (): Promise<Grant[]> => {
-    const response = await fetch(`${GIAM}/realms/${REALM}/grants`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/grants`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(20000),
     });
@@ -118,7 +118,7 @@ describe('v41 P6: changing what an application holds', () => {
     return body.grants ?? body.items ?? [];
   };
 
-  const change = (grantId: string, scopes: string[]) => fetch(`${GIAM}/realms/${REALM}/grants/${grantId}`, {
+  const change = (grantId: string, scopes: string[]) => fetch(`${GIAM}/api/v1/realms/${REALM}/grants/${grantId}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({ scopes }),
@@ -232,7 +232,7 @@ describe('v41 P6: changing what an application holds', () => {
     await change(grant.grantId, ['openid']);
 
     const events = await (await fetch(
-      `${GIAM}/realms/${REALM}/security-events?action=grant.scope_changed&limit=5`,
+      `${GIAM}/api/v1/realms/${REALM}/security-events?action=grant.scope_changed&limit=5`,
       { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) },
     )).json() as { events: Array<{ subjectId?: string; detail?: Record<string, unknown> }> };
 

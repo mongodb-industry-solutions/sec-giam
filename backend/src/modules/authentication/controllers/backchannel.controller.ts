@@ -14,7 +14,7 @@ import { requirePrincipal } from '../../../vendors/middleware/principalAuth';
  * a second authorization server.
  */
 export async function backchannelController(fastify: FastifyInstance) {
-  const base = '/realms/:realm/protocol/openid-connect/ext/ciba';
+  const base = '/realms/:realm/protocol/oidc/ext/ciba';
 
   function fail(reply: never | { status: (code: number) => { send: (body: unknown) => unknown } }, status: number, error: string, description?: string) {
     return reply.status(status).send({ error, ...(description ? { error_description: description } : {}) });

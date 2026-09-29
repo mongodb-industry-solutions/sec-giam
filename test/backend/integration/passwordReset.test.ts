@@ -31,7 +31,7 @@ describe('v43: an administrator resets a principal\'s password', () => {
     if (!live) return;
 
     const userName = `reset-${randomUUID().slice(0, 8)}`;
-    const registered = await fetch(`${GIAM}/realms/leafypay/register`, {
+    const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userName, password: 'Original-Pass-1' }),
@@ -48,7 +48,7 @@ describe('v43: an administrator resets a principal\'s password', () => {
       // This realm does not auto-approve self-registration: a login attempt would 401 on that alone,
       // which would make the assertion below meaningless. Approved first (v43 P3's own fix), so what
       // is actually being tested here is the password, not the lifecycle state.
-      const approved = await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${created.subjectId}`, {
+      const approved = await fetch(`${GIAM}/api/v1/realms/leafypay/scim/Users/${created.subjectId}`, {
         method: 'PATCH',
         headers: authHeaders,
         body: JSON.stringify({
@@ -59,7 +59,7 @@ describe('v43: an administrator resets a principal\'s password', () => {
       });
       expect(approved.status).toBe(200);
 
-      const reset = await fetch(`${GIAM}/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
+      const reset = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
         method: 'POST',
         headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
         body: JSON.stringify({ password: 'Replaced-Pass-2' }),
@@ -68,7 +68,7 @@ describe('v43: an administrator resets a principal\'s password', () => {
       expect(reset.status).toBe(200);
       expect((await reset.json()).reset).toBe(true);
 
-      const oldLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
+      const oldLogin = await fetch(`${GIAM}/api/v1/realms/leafypay/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ login: userName, password: 'Original-Pass-1' }),
@@ -76,7 +76,7 @@ describe('v43: an administrator resets a principal\'s password', () => {
       });
       expect(oldLogin.status).toBe(401);
 
-      const newLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
+      const newLogin = await fetch(`${GIAM}/api/v1/realms/leafypay/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ login: userName, password: 'Replaced-Pass-2' }),
@@ -94,7 +94,7 @@ describe('v43: an administrator resets a principal\'s password', () => {
     // assert without inventing a fixture the seed does not carry.
     if (!live) return;
     const userName = `reset-policy-${randomUUID().slice(0, 8)}`;
-    const registered = await fetch(`${GIAM}/realms/leafypay/register`, {
+    const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userName, password: 'Original-Pass-1' }),
@@ -104,7 +104,7 @@ describe('v43: an administrator resets a principal\'s password', () => {
 
     try {
       const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: PLATFORM });
-      const response = await fetch(`${GIAM}/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${created.subjectId}/credentials/password`, {
         method: 'POST',
         headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
         body: JSON.stringify({ password: 'short1' }),

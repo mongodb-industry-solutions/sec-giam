@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { generateKeyPairSync, createPublicKey, createPrivateKey, sign as cryptoSign, KeyObject } from 'crypto';
 import { GiamClient, isLogoutToken } from '../../../packages/giam-client/src/index';
 
-const ISSUER = 'https://authority.test/realms/acme';
+const ISSUER = 'https://authority.test/api/v1/realms/acme';
 const AUDIENCE = 'orders-api';
 
 interface TestKey {
@@ -45,7 +45,7 @@ function makeAuthority(keys: TestKey[]) {
     if (state.failing) throw new Error('authority unreachable');
     if (href.endsWith('/.well-known/openid-configuration')) {
       state.discoveryCalls += 1;
-      return new Response(JSON.stringify({ issuer: ISSUER, jwks_uri: `${ISSUER}/protocol/openid-connect/certs` }), {
+      return new Response(JSON.stringify({ issuer: ISSUER, jwks_uri: `${ISSUER}/protocol/oidc/certs` }), {
         status: 200, headers: { 'content-type': 'application/json' },
       });
     }
@@ -193,7 +193,7 @@ describe('v39 P8.4: the forgeries, refused by cause', () => {
       ['header_key_injection', mint(key, {}, { jwk: { kty: 'RSA' } })],
       ['header_key_injection', mint(key, {}, { x5u: 'https://attacker.invalid' })],
       ['header_key_injection', mint(key, {}, { x5c: ['MIIB'] })],
-      ['wrong_issuer', mint(key, { iss: 'https://elsewhere.invalid/realms/acme' })],
+      ['wrong_issuer', mint(key, { iss: 'https://elsewhere.invalid/api/v1/realms/acme' })],
       ['wrong_audience', mint(key, { aud: 'another-api' })],
       ['expired', mint(key, { exp: 1 })],
     ];

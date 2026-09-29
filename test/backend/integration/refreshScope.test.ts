@@ -42,7 +42,7 @@ async function exchangeForTokens(): Promise<Record<string, unknown> | null> {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
 
-  const authorizeUrl = new URL(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`);
+  const authorizeUrl = new URL(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth`);
   authorizeUrl.searchParams.set('client_id', MERCHANT_CLIENT.clientId);
   authorizeUrl.searchParams.set('redirect_uri', MERCHANT_CLIENT.redirectUri);
   authorizeUrl.searchParams.set('response_type', 'code');
@@ -62,7 +62,7 @@ async function exchangeForTokens(): Promise<Record<string, unknown> | null> {
   if (location.includes('/auth/consent')) {
     const requestId = new URL(location).searchParams.get('request_id');
     if (!requestId) return null;
-    const decided = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth/consent`, {
+    const decided = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth/consent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: session.cookie },
       body: JSON.stringify({ request_id: requestId, approved: true }),
@@ -78,7 +78,7 @@ async function exchangeForTokens(): Promise<Record<string, unknown> | null> {
   const code = new URL(location).searchParams.get('code');
   if (!code) return null;
 
-  const tokenResponse = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+  const tokenResponse = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -111,7 +111,7 @@ describe('refresh_token grant preserves the original scope', () => {
     expect(refreshToken, 'no refresh_token in the token response').toBeTruthy();
 
     // Exactly what merchant/src/lib/oauth.ts refreshTokens() sends: no `scope` parameter at all.
-    const refreshed = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+    const refreshed = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
       body: new URLSearchParams({
@@ -138,7 +138,7 @@ describe('refresh_token grant preserves the original scope', () => {
     const refreshToken = tokens?.refresh_token as string | undefined;
     expect(refreshToken).toBeTruthy();
 
-    const refreshed = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+    const refreshed = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
       body: new URLSearchParams({
@@ -160,7 +160,7 @@ describe('refresh_token grant preserves the original scope', () => {
     const refreshToken = tokens?.refresh_token as string | undefined;
     expect(refreshToken).toBeTruthy();
 
-    const refreshed = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+    const refreshed = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
       body: new URLSearchParams({

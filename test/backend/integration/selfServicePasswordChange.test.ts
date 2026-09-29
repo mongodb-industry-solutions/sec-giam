@@ -26,7 +26,7 @@ async function reachable(): Promise<boolean> {
 /** A fresh, approved, signed-in test principal, so each test starts from its own account. */
 async function newApprovedPrincipal(password: string): Promise<{ subjectId: string; userName: string; token: string }> {
   const userName = `selfpw-${randomUUID().slice(0, 8)}`;
-  const registered = await fetch(`${GIAM}/realms/leafypay/register`, {
+  const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ userName, password }),
@@ -37,7 +37,7 @@ async function newApprovedPrincipal(password: string): Promise<{ subjectId: stri
   // `leafypay` does not auto-approve self-registration (see `passwordReset.test.ts`), so a login
   // attempt would 401 on lifecycle state alone, before this endpoint is ever reached.
   const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: PLATFORM });
-  await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${created.subjectId}`, {
+  await fetch(`${GIAM}/api/v1/realms/leafypay/scim/Users/${created.subjectId}`, {
     method: 'PATCH',
     headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -63,7 +63,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
     const principal = await newApprovedPrincipal('Original-Pass-1');
 
     try {
-      const changed = await fetch(`${GIAM}/realms/leafypay/credentials/password`, {
+      const changed = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials/password`, {
         method: 'POST',
         headers: { authorization: `Bearer ${principal.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -76,7 +76,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
       expect(changed.status).toBe(200);
       expect((await changed.json()).changed).toBe(true);
 
-      const oldLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
+      const oldLogin = await fetch(`${GIAM}/api/v1/realms/leafypay/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ login: principal.userName, password: 'Original-Pass-1' }),
@@ -84,7 +84,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
       });
       expect(oldLogin.status).toBe(401);
 
-      const newLogin = await fetch(`${GIAM}/realms/leafypay/login`, {
+      const newLogin = await fetch(`${GIAM}/api/v1/realms/leafypay/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ login: principal.userName, password: 'Replaced-Pass-2' }),
@@ -101,7 +101,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
     const principal = await newApprovedPrincipal('Original-Pass-1');
 
     try {
-      const attempt = await fetch(`${GIAM}/realms/leafypay/credentials/password`, {
+      const attempt = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials/password`, {
         method: 'POST',
         headers: { authorization: `Bearer ${principal.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -113,7 +113,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
       });
       expect(attempt.status).toBe(403);
 
-      const stillOriginal = await fetch(`${GIAM}/realms/leafypay/login`, {
+      const stillOriginal = await fetch(`${GIAM}/api/v1/realms/leafypay/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ login: principal.userName, password: 'Original-Pass-1' }),
@@ -130,7 +130,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
     const principal = await newApprovedPrincipal('Original-Pass-1');
 
     try {
-      const attempt = await fetch(`${GIAM}/realms/leafypay/credentials/password`, {
+      const attempt = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials/password`, {
         method: 'POST',
         headers: { authorization: `Bearer ${principal.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -151,7 +151,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
     const principal = await newApprovedPrincipal('Original-Pass-1');
 
     try {
-      const attempt = await fetch(`${GIAM}/realms/leafypay/credentials/password`, {
+      const attempt = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials/password`, {
         method: 'POST',
         headers: { authorization: `Bearer ${principal.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -172,7 +172,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
     const principal = await newApprovedPrincipal('Original-Pass-1');
 
     try {
-      const attempt = await fetch(`${GIAM}/realms/leafypay/credentials/password`, {
+      const attempt = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials/password`, {
         method: 'POST',
         headers: { authorization: `Bearer ${principal.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -190,7 +190,7 @@ describe('a principal changes their own password', { timeout: 90_000 }, () => {
 
   it('refuses an unauthenticated request', async () => {
     if (!live) return;
-    const response = await fetch(`${GIAM}/realms/leafypay/credentials/password`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials/password`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

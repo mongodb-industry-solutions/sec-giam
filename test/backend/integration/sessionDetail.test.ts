@@ -47,7 +47,7 @@ describe('a session in detail, and ending a selection', () => {
   it('answers for the caller own session, and carries no token', async () => {
     if (!live) return;
     const mine = await signIn('luis.fernandez');
-    const response = await fetch(`${GIAM}/realms/${REALM}/sessions/${mine.sessionId}`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions/${mine.sessionId}`, {
       headers: { authorization: `Bearer ${mine.token}` },
       signal: AbortSignal.timeout(20000),
     });
@@ -80,7 +80,7 @@ describe('a session in detail, and ending a selection', () => {
     const target = await signIn('diego.sans');
     const other = await signIn('luis.fernandez');
 
-    const response = await fetch(`${GIAM}/realms/${REALM}/sessions/${target.sessionId}`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions/${target.sessionId}`, {
       headers: { authorization: `Bearer ${other.token}` },
       signal: AbortSignal.timeout(20000),
     });
@@ -93,7 +93,7 @@ describe('a session in detail, and ending a selection', () => {
     const target = await signIn('luis.fernandez');
     const manager = await signIn('alex.rivera');
 
-    const response = await fetch(`${GIAM}/realms/${REALM}/sessions/${target.sessionId}`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions/${target.sessionId}`, {
       headers: { authorization: `Bearer ${manager.token}` },
       signal: AbortSignal.timeout(20000),
     });
@@ -112,7 +112,7 @@ describe('a session in detail, and ending a selection', () => {
       const manager = await signIn('alex.rivera');
       const invented = '00000000-0000-4000-8000-000000000000';
 
-      const response = await fetch(`${GIAM}/realms/${REALM}/sessions/terminate`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions/terminate`, {
         method: 'POST',
         headers: { authorization: `Bearer ${manager.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ sessionIds: [first.sessionId, second.sessionId, invented] }),
@@ -135,7 +135,7 @@ describe('a session in detail, and ending a selection', () => {
 
       // And they are really gone, not merely reported gone.
       for (const ended of [first.sessionId, second.sessionId]) {
-        const check = await fetch(`${GIAM}/realms/${REALM}/sessions/${ended}`, {
+        const check = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions/${ended}`, {
           headers: { authorization: `Bearer ${manager.token}` },
           signal: AbortSignal.timeout(20000),
         });
@@ -148,7 +148,7 @@ describe('a session in detail, and ending a selection', () => {
       const target = await signIn('diego.sans');
       const ordinary = await signIn('luis.fernandez');
 
-      const response = await fetch(`${GIAM}/realms/${REALM}/sessions/terminate`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions/terminate`, {
         method: 'POST',
         headers: { authorization: `Bearer ${ordinary.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ sessionIds: [target.sessionId] }),
@@ -162,7 +162,7 @@ describe('a session in detail, and ending a selection', () => {
       expect(outcome.results[0].outcome).toBe('notFound');
 
       // The target is untouched.
-      const still = await fetch(`${GIAM}/realms/${REALM}/sessions/${target.sessionId}`, {
+      const still = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions/${target.sessionId}`, {
         headers: { authorization: `Bearer ${target.token}` },
         signal: AbortSignal.timeout(20000),
       });

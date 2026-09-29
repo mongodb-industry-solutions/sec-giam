@@ -6,6 +6,7 @@ import { requireAuthority } from '../../../vendors/middleware/authorityAuth';
 import { PRINCIPAL_COLLECTION, ROLE_COLLECTION } from '../../../shared/models/collections';
 import { PrincipalRecord, PrincipalKind } from '../models/principal.model';
 import { newMeta } from '../../../shared/models/base.model';
+import { realmApiPath } from '../../../shared/models/routes';
 import { provisioningTargets } from '../../../shared/ports';
 import {
   toScimUser, toScimList, scimError, parseScimFilter, applyScimPatch,
@@ -30,10 +31,10 @@ import {
  * there is no owner path here the way there is for a client registration.
  */
 export async function scimController(fastify: FastifyInstance) {
-  const base = '/realms/:realm/scim/v2';
+  const base = '/realms/:realm/scim';
 
   function location(realm: string): string {
-    return `/realms/${realm}/scim/v2`;
+    return `${realmApiPath(realm)}/scim`;
   }
 
   const scimUserSchema = {
@@ -55,7 +56,7 @@ export async function scimController(fastify: FastifyInstance) {
       id: 'sub-9f21',
       userName: 'ada',
       active: true,
-      meta: { resourceType: 'User', location: '/realms/acme/scim/v2/Users/sub-9f21' },
+      meta: { resourceType: 'User', location: '/api/v1/realms/acme/scim/Users/sub-9f21' },
     }],
   } as const;
 

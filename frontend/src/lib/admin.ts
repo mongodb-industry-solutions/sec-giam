@@ -1,6 +1,6 @@
 'use client';
 
-import { apiUrl } from './env';
+import { API_PREFIX, apiUrl } from './env';
 import { storedToken } from './session';
 
 /**
@@ -50,7 +50,7 @@ export class AdminError extends Error {
 }
 
 async function request<T>(path: string): Promise<T> {
-  const response = await fetch(apiUrl(path), {
+  const response = await fetch(apiUrl(`${API_PREFIX}${path}`), {
     headers: { authorization: `Bearer ${presentedToken()}` },
     cache: 'no-store',
   });

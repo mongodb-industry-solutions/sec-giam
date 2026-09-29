@@ -41,7 +41,7 @@ describe('v43: batch decision evaluation matches what single calls would answer'
     if (!live) return;
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
 
-    const batch = await fetch(`${GIAM}/realms/leafypay/decision/evaluations`, {
+    const batch = await fetch(`${GIAM}/api/v1/realms/leafypay/decision/evaluations`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -62,7 +62,7 @@ describe('v43: batch decision evaluation matches what single calls would answer'
 
     // Cross-checked against the single endpoint, not merely asserted: the batch answer for the
     // manager's own `sessions:view` must be the identical decision the single call already gives.
-    const single = await fetch(`${GIAM}/realms/leafypay/decision`, {
+    const single = await fetch(`${GIAM}/api/v1/realms/leafypay/decision`, {
       method: 'POST', headers,
       body: JSON.stringify({ resource: { type: 'sessions' }, action: { name: 'view' } }),
       signal: AbortSignal.timeout(20000),
@@ -79,7 +79,7 @@ describe('v43: batch decision evaluation matches what single calls would answer'
   it('refuses an entry naming another subject without the oversight tier, same as the single endpoint', async () => {
     if (!live) return;
     const headers = { authorization: `Bearer ${customerToken}`, 'content-type': 'application/json' };
-    const response = await fetch(`${GIAM}/realms/leafypay/decision/evaluations`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/leafypay/decision/evaluations`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -94,7 +94,7 @@ describe('v43: batch decision evaluation matches what single calls would answer'
   it('refuses an entry with no resource/action and no default, naming which one', async () => {
     if (!live) return;
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
-    const response = await fetch(`${GIAM}/realms/leafypay/decision/evaluations`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/leafypay/decision/evaluations`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ evaluations: [{ resource: { type: 'sessions' }, action: { name: 'view' } }, {}] }),

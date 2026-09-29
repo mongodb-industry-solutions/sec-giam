@@ -76,7 +76,7 @@ describe('ADR-002: administering authentication paths', () => {
 
   /** Creates a probe path and remembers it for cleanup. */
   async function createProbe(body: Record<string, unknown>): Promise<Response> {
-    const response = await fetch(`${GIAM}/realms/${REALM}/domains`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains`, {
       method: 'POST',
       headers: headers(manager),
       body: JSON.stringify(body),
@@ -92,7 +92,7 @@ describe('ADR-002: administering authentication paths', () => {
   afterAll(async () => {
     if (!live) return;
     for (const domainId of created) {
-      await fetch(`${GIAM}/realms/${REALM}/domains/${domainId}`, {
+      await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${domainId}`, {
         method: 'DELETE', headers: authOnly(manager), signal: AbortSignal.timeout(20000),
       }).catch(() => null);
     }
@@ -102,7 +102,7 @@ describe('ADR-002: administering authentication paths', () => {
     if (!live) return;
     expect(manager, 'the manager could not sign in').toBeTruthy();
 
-    const response = await fetch(`${GIAM}/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
     expect(response.status).toBe(200);
 
     const { items, total } = await response.json() as { items: Array<{ name: string; protocol: string }>; total: number };
@@ -128,7 +128,7 @@ describe('ADR-002: administering authentication paths', () => {
      * outside it: a console needs to know WHETHER a secret is configured, which is a boolean, and
      * never which one.
      */
-    const response = await fetch(`${GIAM}/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
     const body = await response.text();
 
     expect(body).not.toContain('clientSecretRef');
@@ -149,7 +149,7 @@ describe('ADR-002: administering authentication paths', () => {
     // An ordinary account holder has no business reading how a realm authenticates people. A 200
     // with an empty list would say the surface exists and they hold none of it, which is a
     // different and untrue statement.
-    const response = await fetch(`${GIAM}/realms/${REALM}/domains`, { headers: authOnly(customer), signal: AbortSignal.timeout(20000) });
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains`, { headers: authOnly(customer), signal: AbortSignal.timeout(20000) });
     expect(response.status).toBe(403);
   });
 
@@ -172,7 +172,7 @@ describe('ADR-002: administering authentication paths', () => {
     // answers depend on document order.
     expect(duplicate.status).toBe(409);
 
-    const removed = await fetch(`${GIAM}/realms/${REALM}/domains/${domain.domainId}`, {
+    const removed = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${domain.domainId}`, {
       method: 'DELETE',
       headers: authOnly(manager),
       signal: AbortSignal.timeout(20000),
@@ -198,7 +198,7 @@ describe('ADR-002: administering authentication paths', () => {
      * unrelated field, and the provider would stop working for a reason nothing in the request
      * mentioned.
      */
-    const updated = await fetch(`${GIAM}/realms/${REALM}/domains/${domainId}`, {
+    const updated = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${domainId}`, {
       method: 'PATCH',
       headers: headers(manager),
       body: JSON.stringify({ config: { issuer: 'https://upstream.example/v2' } }),
@@ -210,7 +210,7 @@ describe('ADR-002: administering authentication paths', () => {
     expect(view.config.issuer).toBe('https://upstream.example/v2');
     expect(view.hasClientSecret, 'the secret reference was dropped by an unrelated write').toBe(true);
 
-    await fetch(`${GIAM}/realms/${REALM}/domains/${domainId}`, {
+    await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${domainId}`, {
       method: 'DELETE', headers: authOnly(manager), signal: AbortSignal.timeout(20000),
     });
   });
@@ -224,7 +224,7 @@ describe('ADR-002: administering authentication paths', () => {
      * undo it, and no amount of holding the right permission helps afterwards. So it is refused
      * here rather than warned about in a console.
      */
-    const listed = await fetch(`${GIAM}/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
+    const listed = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
     const { items } = await listed.json() as { items: Array<{ domainId: string; name: string; enabled: boolean }> };
     const enabled = items.filter((item) => item.enabled);
 
@@ -233,7 +233,7 @@ describe('ADR-002: administering authentication paths', () => {
     const toRestore: string[] = [];
     try {
       for (const path of enabled.slice(1)) {
-        const off = await fetch(`${GIAM}/realms/${REALM}/domains/${path.domainId}`, {
+        const off = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${path.domainId}`, {
           method: 'PATCH', headers: headers(manager), body: JSON.stringify({ enabled: false }),
           signal: AbortSignal.timeout(20000),
         });
@@ -242,19 +242,19 @@ describe('ADR-002: administering authentication paths', () => {
       }
 
       const last = enabled[0].domainId;
-      const disable = await fetch(`${GIAM}/realms/${REALM}/domains/${last}`, {
+      const disable = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${last}`, {
         method: 'PATCH', headers: headers(manager), body: JSON.stringify({ enabled: false }),
         signal: AbortSignal.timeout(20000),
       });
       expect(disable.status, 'the last enabled path could be disabled').toBe(409);
 
-      const remove = await fetch(`${GIAM}/realms/${REALM}/domains/${last}`, {
+      const remove = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${last}`, {
         method: 'DELETE', headers: authOnly(manager), signal: AbortSignal.timeout(20000),
       });
       expect(remove.status, 'the last enabled path could be deleted').toBe(409);
     } finally {
       for (const domainId of toRestore) {
-        await fetch(`${GIAM}/realms/${REALM}/domains/${domainId}`, {
+        await fetch(`${GIAM}/api/v1/realms/${REALM}/domains/${domainId}`, {
           method: 'PATCH', headers: headers(manager), body: JSON.stringify({ enabled: true }),
           signal: AbortSignal.timeout(20000),
         }).catch(() => null);
@@ -268,7 +268,7 @@ describe('ADR-002: administering authentication paths', () => {
      * ADR-002. It sat on the realm, describing the internal directory while claiming to describe
      * the realm, and nobody self-registers into a federated upstream.
      */
-    const listed = await fetch(`${GIAM}/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
+    const listed = await fetch(`${GIAM}/api/v1/realms/${REALM}/domains`, { headers: authOnly(manager), signal: AbortSignal.timeout(20000) });
     const { items } = await listed.json() as { items: Array<{ name: string; protocol: string; registration?: unknown }> };
 
     const internal = items.find((item) => item.protocol === 'internal');

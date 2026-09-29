@@ -76,7 +76,7 @@
         "enabled": true,
         "notice": "Federated through this authority. No application here holds its configuration, learns its group names, or is redeployed when it changes.",
         "config": {
-          "issuer": "http://localhost:8085/realms/bankcore",
+          "issuer": "http://localhost:8085/api/v1/realms/bankcore",
           "clientId": "partnerbank-federation",
           "clientSecretRef": "GIAM_FEDERATION_PARTNERBANK_SECRET",
           "redirectUri": "http://localhost:8086/auth/federation/partnerbank/callback",

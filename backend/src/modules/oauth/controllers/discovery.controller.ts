@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { API_PREFIX } from '../../../shared/models/routes';
 import { RealmService } from '../../realm/services/realm.service';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
@@ -41,8 +42,8 @@ export async function discoveryController(fastify: FastifyInstance) {
       code_challenge_methods_supported: { type: 'array', items: { type: 'string' } },
     },
     examples: [{
-      issuer: 'https://giam.example/realms/acme',
-      jwks_uri: 'https://giam.example/realms/acme/protocol/openid-connect/certs',
+      issuer: 'https://giam.example/api/v1/realms/acme',
+      jwks_uri: 'https://giam.example/api/v1/realms/acme/protocol/oidc/certs',
     }],
   } as const;
 
@@ -84,7 +85,7 @@ export async function discoveryController(fastify: FastifyInstance) {
   async function metadata(realmName: string) {
     const realm = await realmService().byName(realmName);
     if (!realm) return null;
-    const base = `${realm.issuer}/protocol/openid-connect`;
+    const base = `${realm.issuer}/protocol/oidc`;
     const [scopes, algorithms] = await Promise.all([
       scopesSupported(realm.realmId),
       signingAlgorithms(realm.realmId),
@@ -157,16 +158,16 @@ export async function discoveryController(fastify: FastifyInstance) {
    * OIDC Discovery 1.0 appends `/.well-known/openid-configuration` to the issuer, which is what the
    * first entry is. RFC 8414 3.1 says the opposite for an issuer that has path components: the
    * segment goes BETWEEN the host and the path, so the correct location is
-   * `/.well-known/oauth-authorization-server/realms/{realm}`.
+   * `/.well-known/oauth-authorization-server/api/v1/realms/{realm}`.
    *
    * Only the OIDC-shaped one was served, so a client following RFC 8414 to the letter got a 404 from
    * a server that does publish the document. The third entry keeps the old location working, since
    * it is what the consumers in this repository already fetch and it costs one route.
    */
   for (const [path, spec] of [
-    ['/realms/:realm/.well-known/openid-configuration', 'OpenID Connect Discovery 1.0'],
-    ['/.well-known/oauth-authorization-server/realms/:realm', 'RFC 8414 section 3.1'],
-    ['/realms/:realm/.well-known/oauth-authorization-server', 'RFC 8414, the OIDC-shaped location'],
+    [`${API_PREFIX}/realms/:realm/.well-known/openid-configuration`, 'OpenID Connect Discovery 1.0'],
+    [`/.well-known/oauth-authorization-server${API_PREFIX}/realms/:realm`, 'RFC 8414 section 3.1'],
+    [`${API_PREFIX}/realms/:realm/.well-known/oauth-authorization-server`, 'RFC 8414, the OIDC-shaped location'],
   ] as const) {
     fastify.get(path, {
       schema: {
@@ -199,7 +200,7 @@ export async function discoveryController(fastify: FastifyInstance) {
     });
   }
 
-  fastify.get('/realms/:realm/protocol/openid-connect/certs', {
+  fastify.get(`${API_PREFIX}/realms/:realm/protocol/oidc/certs`, {
     schema: {
       operationId: 'getRealmKeySet',
       tags: ['discovery'],

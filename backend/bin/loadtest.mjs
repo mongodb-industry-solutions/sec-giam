@@ -21,7 +21,7 @@ if (replicas.length < 2) {
 }
 
 async function issue(base) {
-  const response = await fetch(`${base}/realms/${REALM}/protocol/openid-connect/token`, {
+  const response = await fetch(`${base}/api/v1/realms/${REALM}/protocol/oidc/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -35,7 +35,7 @@ async function issue(base) {
 }
 
 async function introspect(base, token) {
-  const response = await fetch(`${base}/realms/${REALM}/protocol/openid-connect/token/introspect`, {
+  const response = await fetch(`${base}/api/v1/realms/${REALM}/protocol/oidc/token/introspect`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ token, client_id: CLIENT_ID, client_secret: CLIENT_SECRET }),
@@ -77,8 +77,8 @@ console.log(`replica A signs with kid ${kids[0].slice(0, 12)}…`);
 console.log(`replica B signs with kid ${kids[1].slice(0, 12)}…`);
 console.log(`distinct signing keys: ${kids[0] !== kids[1]}`);
 
-const setA = await (await fetch(`${a}/realms/${REALM}/protocol/openid-connect/certs`)).json();
-const setB = await (await fetch(`${b}/realms/${REALM}/protocol/openid-connect/certs`)).json();
+const setA = await (await fetch(`${a}/api/v1/realms/${REALM}/protocol/oidc/certs`)).json();
+const setB = await (await fetch(`${b}/api/v1/realms/${REALM}/protocol/oidc/certs`)).json();
 const idsA = setA.keys.map((k) => k.kid).sort();
 const idsB = setB.keys.map((k) => k.kid).sort();
 console.log(`published key sets identical: ${JSON.stringify(idsA) === JSON.stringify(idsB)}`);

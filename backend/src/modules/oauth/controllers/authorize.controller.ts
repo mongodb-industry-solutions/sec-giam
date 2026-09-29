@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyReply } from 'fastify';
+import { API_PREFIX } from '../../../shared/models/routes';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash, randomBytes } from 'crypto';
 import { RealmService } from '../../realm/services/realm.service';
@@ -82,7 +83,7 @@ export async function authorizeController(fastify: FastifyInstance) {
   }
 
   await fastify.register(async (scoped) => {
-    scoped.get('/realms/:realm/protocol/openid-connect/auth', {
+    scoped.get('/realms/:realm/protocol/oidc/auth', {
       schema: {
         operationId: 'authorize',
         tags: ['oauth'],
@@ -459,7 +460,7 @@ export async function authorizeController(fastify: FastifyInstance) {
      * Requires the session cookie, because this discloses which application is asking for what, and
      * that is the person's business rather than anybody's who holds a request id.
      */
-    scoped.get('/realms/:realm/protocol/openid-connect/auth/consent', {
+    scoped.get('/realms/:realm/protocol/oidc/auth/consent', {
       schema: {
         operationId: 'readConsentPrompt',
         tags: ['oauth'],
@@ -585,7 +586,7 @@ export async function authorizeController(fastify: FastifyInstance) {
      * answering; who is answering comes from the cookie, and what is being approved comes from the
      * stored request. A client cannot reach this on somebody's behalf.
      */
-    scoped.post('/realms/:realm/protocol/openid-connect/auth/consent', {
+    scoped.post('/realms/:realm/protocol/oidc/auth/consent', {
       schema: {
         operationId: 'recordConsent',
         tags: ['oauth'],
@@ -629,7 +630,7 @@ export async function authorizeController(fastify: FastifyInstance) {
               continue: { type: 'string', description: 'The authorization endpoint, carrying the request id.' },
             },
             examples: [{
-              continue: 'https://authority.example/realms/acme/protocol/openid-connect/auth?request_id=6f2c1a44',
+              continue: 'https://authority.example/api/v1/realms/acme/protocol/oidc/auth?request_id=6f2c1a44',
             }],
           },
           400: { $ref: 'OAuthError#', description: 'No such pending request, or it has expired.' },
@@ -754,7 +755,7 @@ export async function authorizeController(fastify: FastifyInstance) {
       // same-origin sign-in put on the public host, landing back on sign-in with a live session.
       const base = config.server.frontendUrl.replace(/\/$/, '');
       return reply.send({
-        continue: `${base}/realms/${realm.name}/protocol/openid-connect/auth?request_id=${encodeURIComponent(pending.requestId)}`,
+        continue: `${base}${API_PREFIX}/realms/${realm.name}/protocol/oidc/auth?request_id=${encodeURIComponent(pending.requestId)}`,
       });
     });
   });

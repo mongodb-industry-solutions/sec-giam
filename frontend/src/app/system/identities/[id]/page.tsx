@@ -65,7 +65,7 @@ export default function IdentityDetailPage() {
     if (!id) return;
     setLoading(true);
     try {
-      setUser(await callApi<ScimUser>(`/scim/v2/Users/${encodeURIComponent(id)}`, { subject: 'that principal' }));
+      setUser(await callApi<ScimUser>(`/scim/Users/${encodeURIComponent(id)}`, { subject: 'that principal' }));
       setError(null);
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'That principal could not be loaded.');
@@ -108,7 +108,7 @@ export default function IdentityDetailPage() {
   async function patch(value: Record<string, unknown>, subject: string) {
     setBusy(true);
     try {
-      const answer = await callApi<ScimUser>(`/scim/v2/Users/${encodeURIComponent(id)}`, {
+      const answer = await callApi<ScimUser>(`/scim/Users/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         subject,
         body: { schemas: [PATCH_SCHEMA], Operations: [{ op: 'replace', value }] },
@@ -137,7 +137,7 @@ export default function IdentityDetailPage() {
     ))) return;
     setBusy(true);
     try {
-      await callApi(`/scim/v2/Users/${encodeURIComponent(id)}`, { method: 'DELETE', subject: 'that principal' });
+      await callApi(`/scim/Users/${encodeURIComponent(id)}`, { method: 'DELETE', subject: 'that principal' });
       router.push('/system/identities');
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'That principal could not be deprovisioned.');

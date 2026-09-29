@@ -103,7 +103,7 @@ export async function tokenController(fastify: FastifyInstance) {
     });
   }
 
-  fastify.post('/realms/:realm/protocol/openid-connect/token', {
+  fastify.post('/realms/:realm/protocol/oidc/token', {
     schema: {
       operationId: 'issueToken',
       tags: ['oauth'],

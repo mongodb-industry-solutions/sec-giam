@@ -46,7 +46,7 @@ describe('v43: search/action never disagrees with the single decision endpoint',
     // to find out, not approximate from the role definition.
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
 
-    const search = await fetch(`${GIAM}/realms/leafypay/decision/search/action`, {
+    const search = await fetch(`${GIAM}/api/v1/realms/leafypay/decision/search/action`, {
       method: 'POST', headers, body: JSON.stringify({ resource: { type: 'roles' } }), signal: AbortSignal.timeout(20000),
     });
     expect(search.status).toBe(200);
@@ -58,7 +58,7 @@ describe('v43: search/action never disagrees with the single decision endpoint',
     // Cross-checked, not assumed: every reported action must independently decide `true` through
     // the single endpoint too.
     for (const name of names) {
-      const single = await fetch(`${GIAM}/realms/leafypay/decision`, {
+      const single = await fetch(`${GIAM}/api/v1/realms/leafypay/decision`, {
         method: 'POST', headers,
         body: JSON.stringify({ resource: { type: 'roles' }, action: { name } }),
         signal: AbortSignal.timeout(20000),
@@ -74,7 +74,7 @@ describe('v43: search/action never disagrees with the single decision endpoint',
     // "manage" here the moment a caller claimed a high assurance level, which is precisely the kind
     // of over-reporting this endpoint exists to avoid.
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
-    const search = await fetch(`${GIAM}/realms/leafypay/decision/search/action`, {
+    const search = await fetch(`${GIAM}/api/v1/realms/leafypay/decision/search/action`, {
       method: 'POST', headers,
       body: JSON.stringify({ resource: { type: 'roles' }, context: { assuranceLevel: 'aal2' } }),
       signal: AbortSignal.timeout(20000),
@@ -88,7 +88,7 @@ describe('v43: search/action never disagrees with the single decision endpoint',
   it('reports no action at all for an ordinary customer on roles', async () => {
     if (!live) return;
     const headers = { authorization: `Bearer ${customerToken}`, 'content-type': 'application/json' };
-    const search = await fetch(`${GIAM}/realms/leafypay/decision/search/action`, {
+    const search = await fetch(`${GIAM}/api/v1/realms/leafypay/decision/search/action`, {
       method: 'POST', headers, body: JSON.stringify({ resource: { type: 'roles' } }), signal: AbortSignal.timeout(20000),
     });
     expect(search.status).toBe(200);
@@ -98,7 +98,7 @@ describe('v43: search/action never disagrees with the single decision endpoint',
   it('refuses a resource type nothing declares', async () => {
     if (!live) return;
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
-    const search = await fetch(`${GIAM}/realms/leafypay/decision/search/action`, {
+    const search = await fetch(`${GIAM}/api/v1/realms/leafypay/decision/search/action`, {
       method: 'POST', headers, body: JSON.stringify({ resource: { type: 'no-such-resource-type-at-all' } }), signal: AbortSignal.timeout(20000),
     });
     expect(search.status).toBe(404);

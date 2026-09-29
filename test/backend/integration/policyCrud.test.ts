@@ -38,7 +38,7 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
     const name = `v43-crud-${randomUUID().slice(0, 8)}`;
 
-    const created = await fetch(`${GIAM}/realms/leafypay/policies`, {
+    const created = await fetch(`${GIAM}/api/v1/realms/leafypay/policies`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -65,38 +65,38 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
       expect(policy.resource.ids).toEqual(['sessions']);
       expect((policy as unknown as Record<string, unknown>).statements).toBeUndefined();
 
-      const listedActive = await fetch(`${GIAM}/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
+      const listedActive = await fetch(`${GIAM}/api/v1/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
       expect(listedActive.status).toBe(200);
       const activeList = await listedActive.json() as { policies: Array<{ policyId: string }> };
       expect(activeList.policies.map((p) => p.policyId)).toContain(policy.policyId);
 
-      const toggled = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+      const toggled = await fetch(`${GIAM}/api/v1/realms/leafypay/policies/${policy.policyId}`, {
         method: 'PATCH', headers, body: JSON.stringify({ status: 'retired' }), signal: AbortSignal.timeout(20000),
       });
       expect(toggled.status).toBe(200);
       expect((await toggled.json()).status).toBe('retired');
 
-      const listedRetired = await fetch(`${GIAM}/realms/leafypay/policies?status=retired&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
+      const listedRetired = await fetch(`${GIAM}/api/v1/realms/leafypay/policies?status=retired&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
       const retiredList = await listedRetired.json() as { policies: Array<{ policyId: string }> };
       expect(retiredList.policies.map((p) => p.policyId)).toContain(policy.policyId);
-      const stillActive = await fetch(`${GIAM}/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
+      const stillActive = await fetch(`${GIAM}/api/v1/realms/leafypay/policies?status=active&limit=200`, { headers, signal: AbortSignal.timeout(20000) });
       const activeAfter = await stillActive.json() as { policies: Array<{ policyId: string }> };
       expect(activeAfter.policies.map((p) => p.policyId)).not.toContain(policy.policyId);
 
-      const removed = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+      const removed = await fetch(`${GIAM}/api/v1/realms/leafypay/policies/${policy.policyId}`, {
         method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
       });
       expect(removed.status).toBe(200);
 
       const gone = await fetch(
-        `${GIAM}/realms/leafypay/policies/${policy.policyId}`,
+        `${GIAM}/api/v1/realms/leafypay/policies/${policy.policyId}`,
         { headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000) },
       );
       expect(gone.status).toBe(404);
     } finally {
       // Best-effort and idempotent: the assertions above already delete it on the happy path, so
       // this is only load-bearing when one of them threw first.
-      await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/policies/${policy.policyId}`, {
         method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
       }).catch(() => {});
     }
@@ -115,7 +115,7 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
     const headers = { authorization: `Bearer ${managerToken}` };
     const ask = async (governs: string) => {
       const response = await fetch(
-        `${GIAM}/realms/leafypay/policies?governs=${encodeURIComponent(governs)}&limit=50`,
+        `${GIAM}/api/v1/realms/leafypay/policies?governs=${encodeURIComponent(governs)}&limit=50`,
         { headers, signal: AbortSignal.timeout(20000) },
       );
       expect(response.status).toBe(200);
@@ -153,7 +153,7 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
     const name = `v43-empty-selector-${randomUUID().slice(0, 8)}`;
 
-    const created = await fetch(`${GIAM}/realms/leafypay/policies`, {
+    const created = await fetch(`${GIAM}/api/v1/realms/leafypay/policies`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -169,7 +169,7 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
 
     try {
       // What the screen sends when Role and Principal were never touched.
-      const patched = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+      const patched = await fetch(`${GIAM}/api/v1/realms/leafypay/policies/${policy.policyId}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({
@@ -186,7 +186,7 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
       expect(patched.status, await patched.text()).toBe(200);
 
       // The control: the shape that was being sent before, and the error it answered with.
-      const refused = await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+      const refused = await fetch(`${GIAM}/api/v1/realms/leafypay/policies/${policy.policyId}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ resource: { ids: ['sessions'] }, role: { ids: [] } }),
@@ -195,7 +195,7 @@ describe('v43: policy CRUD matches the flat model the console now assumes', () =
       expect(refused.status).toBe(400);
       expect((await refused.text()).toLowerCase()).toContain('fewer than 1 items');
     } finally {
-      await fetch(`${GIAM}/realms/leafypay/policies/${policy.policyId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/policies/${policy.policyId}`, {
         method: 'DELETE',
         headers: { authorization: `Bearer ${managerToken}` },
         signal: AbortSignal.timeout(20000),

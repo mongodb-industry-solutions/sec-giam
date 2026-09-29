@@ -27,7 +27,7 @@ function realm(): RealmRecord {
     tenantId: 'default',
     name: 'acme',
     displayName: 'Acme',
-    issuer: 'https://authority.example/realms/acme',
+    issuer: 'https://authority.example/api/v1/realms/acme',
     enabled: true,
     aliases: [],
     registration: { selfServiceEnabled: false, autoApprove: false },
@@ -136,7 +136,7 @@ describe('v41 P1: the access token carries exactly the contracted claims', () =>
       'roles', 'account_holder',
     ]));
 
-    expect(claims.iss).toBe('https://authority.example/realms/acme');
+    expect(claims.iss).toBe('https://authority.example/api/v1/realms/acme');
     expect(claims.aud).toEqual(['https://api.example']);
     expect(claims.sub).toBe('subject-1');
     expect(claims.scope).toBe('openid profile');
@@ -228,7 +228,7 @@ describe('v41 P1: the refresh token and the id token', () => {
       'iss', 'aud', 'sub', 'sid', 'gen', 'client_id', 'jti', 'iat', 'exp',
     ]));
     // Addressed to the issuer itself: redeemed here, accepted nowhere else.
-    expect(claims.aud).toBe('https://authority.example/realms/acme');
+    expect(claims.aud).toBe('https://authority.example/api/v1/realms/acme');
   });
 
   /**

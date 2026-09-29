@@ -2,7 +2,7 @@
  * The AuthZEN-shaped compatibility aliases: `/api/v1/access/evaluation[s]` and
  * `/api/v1/access/search/action`, which name no realm because the specification has none. What
  * has to be true is that a caller's OWN token, with nothing else, resolves to their own realm and
- * answers exactly what the realm-scoped `/realms/:realm/decision...` routes would.
+ * answers exactly what the realm-scoped `/api/v1/realms/:realm/decision...` routes would.
  *
  * Skipped unless the authority is listening.
  */
@@ -36,7 +36,7 @@ describe('the AuthZEN-shaped compatibility paths resolve the realm from the toke
     const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
     const body = JSON.stringify({ resource: { type: 'roles' }, action: { name: 'view' } });
 
-    const scoped = await fetch(`${GIAM}/realms/leafypay/decision`, { method: 'POST', headers, body, signal: AbortSignal.timeout(20000) });
+    const scoped = await fetch(`${GIAM}/api/v1/realms/leafypay/decision`, { method: 'POST', headers, body, signal: AbortSignal.timeout(20000) });
     const alias = await fetch(`${GIAM}/api/v1/access/evaluation`, { method: 'POST', headers, body, signal: AbortSignal.timeout(20000) });
 
     expect(scoped.status).toBe(200);

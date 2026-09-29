@@ -27,7 +27,7 @@ async function reachable(): Promise<boolean> {
 
 async function roster(realm: string, clientId?: string): Promise<Entry[]> {
   const query = clientId ? `?client_id=${encodeURIComponent(clientId)}` : '';
-  const response = await fetch(`${GIAM}/realms/${realm}/login-context${query}`, {
+  const response = await fetch(`${GIAM}/api/v1/realms/${realm}/login-context${query}`, {
     signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) return [];
@@ -99,7 +99,7 @@ describe('v39: the sign-in roster is scoped per application', () => {
   it('the hosted screen gets the same scoping, driven from a real authorization request', async () => {
     if (!live) return;
     // The parked screen is given a request_id, not a client id: scoping has to follow from that.
-    const authorize = new URL(`${GIAM}/realms/leafypay/protocol/openid-connect/auth`);
+    const authorize = new URL(`${GIAM}/api/v1/realms/leafypay/protocol/oidc/auth`);
     for (const [key, value] of Object.entries({
       response_type: 'code',
       client_id: 'oauth001-0000-4000-8000-000000000001',
@@ -117,7 +117,7 @@ describe('v39: the sign-in roster is scoped per application', () => {
     expect(requestId, 'the sign-in screen is named a pending request').toBeTruthy();
 
     const response = await fetch(
-      `${GIAM}/realms/leafypay/login-context?request_id=${encodeURIComponent(requestId as string)}`,
+      `${GIAM}/api/v1/realms/leafypay/login-context?request_id=${encodeURIComponent(requestId as string)}`,
       { signal: AbortSignal.timeout(20000) },
     );
     expect(response.ok).toBe(true);

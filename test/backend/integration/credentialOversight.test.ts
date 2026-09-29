@@ -28,7 +28,7 @@ async function reachable(): Promise<boolean> {
 
 async function enrollAuthenticator(holderToken: string): Promise<string> {
   const holderHeaders = { authorization: `Bearer ${holderToken}` };
-  const challengeRes = await fetch(`${GIAM}/realms/leafypay/credentials/challenge`, {
+  const challengeRes = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials/challenge`, {
     method: 'POST', headers: holderHeaders, signal: AbortSignal.timeout(20000),
   });
   const { challenge } = await challengeRes.json() as { challenge: string };
@@ -39,7 +39,7 @@ async function enrollAuthenticator(holderToken: string): Promise<string> {
   signer.end();
   const signature = signer.sign({ key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
 
-  const registered = await fetch(`${GIAM}/realms/leafypay/credentials`, {
+  const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/credentials`, {
     method: 'POST', headers: { ...holderHeaders, 'content-type': 'application/json' },
     body: JSON.stringify({
       challenge, signature, algorithm: 'ES256',
@@ -63,13 +63,13 @@ describe('v43: unified credential oversight, and retiring an authenticator on a 
   async function freshHolder(): Promise<{ subjectId: string; token: string }> {
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
     const userName = `v43-cred-${randomUUID().slice(0, 8)}`;
-    const registered = await fetch(`${GIAM}/realms/leafypay/register`, {
+    const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/register`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userName, password: 'Correct-Horse-1' }),
       signal: AbortSignal.timeout(20000),
     });
     const holder = await registered.json() as { subjectId: string };
-    await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${holder.subjectId}`, {
+    await fetch(`${GIAM}/api/v1/realms/leafypay/scim/Users/${holder.subjectId}`, {
       method: 'PATCH', headers,
       body: JSON.stringify({ schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', value: { active: true } }] }),
       signal: AbortSignal.timeout(20000),
@@ -85,7 +85,7 @@ describe('v43: unified credential oversight, and retiring an authenticator on a 
       const credentialId = await enrollAuthenticator(holder.token);
 
       const headers = { authorization: `Bearer ${managerToken}` };
-      const list = await fetch(`${GIAM}/realms/leafypay/identities/${holder.subjectId}/credentials`, { headers, signal: AbortSignal.timeout(20000) });
+      const list = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${holder.subjectId}/credentials`, { headers, signal: AbortSignal.timeout(20000) });
       expect(list.status).toBe(200);
       const body = await list.json() as { credentials: Array<{ credentialId: string; type: string; createdAt: string }> };
 
@@ -106,13 +106,13 @@ describe('v43: unified credential oversight, and retiring an authenticator on a 
       const credentialId = await enrollAuthenticator(holder.token);
       const headers = { authorization: `Bearer ${managerToken}` };
 
-      const revoked = await fetch(`${GIAM}/realms/leafypay/identities/${holder.subjectId}/credentials/${credentialId}`, {
+      const revoked = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${holder.subjectId}/credentials/${credentialId}`, {
         method: 'DELETE', headers, signal: AbortSignal.timeout(20000),
       });
       expect(revoked.status).toBe(200);
       expect((await revoked.json()).status).toBe('revoked');
 
-      const list = await fetch(`${GIAM}/realms/leafypay/identities/${holder.subjectId}/credentials`, { headers, signal: AbortSignal.timeout(20000) });
+      const list = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${holder.subjectId}/credentials`, { headers, signal: AbortSignal.timeout(20000) });
       const body = await list.json() as { credentials: Array<{ credentialId: string; type: string; status: string }> };
       const authenticator = body.credentials.find((c) => c.credentialId === credentialId);
       expect(authenticator?.status).toBe('revoked');
@@ -128,11 +128,11 @@ describe('v43: unified credential oversight, and retiring an authenticator on a 
     try {
       const headers = { authorization: `Bearer ${managerToken}` };
 
-      const list = await fetch(`${GIAM}/realms/leafypay/identities/${holder.subjectId}/credentials`, { headers, signal: AbortSignal.timeout(20000) });
+      const list = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${holder.subjectId}/credentials`, { headers, signal: AbortSignal.timeout(20000) });
       const password = (await list.json() as { credentials: Array<{ credentialId: string; type: string }> })
         .credentials.find((c) => c.type === 'password')!;
 
-      const attempt = await fetch(`${GIAM}/realms/leafypay/identities/${holder.subjectId}/credentials/${password.credentialId}`, {
+      const attempt = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${holder.subjectId}/credentials/${password.credentialId}`, {
         method: 'DELETE', headers, signal: AbortSignal.timeout(20000),
       });
       expect(attempt.status).toBe(400);
@@ -147,7 +147,7 @@ describe('v43: unified credential oversight, and retiring an authenticator on a 
     const holder = await freshHolder();
     try {
       const headers = { authorization: `Bearer ${managerToken}` };
-      const attempt = await fetch(`${GIAM}/realms/leafypay/identities/${holder.subjectId}/credentials/no-such-credential`, {
+      const attempt = await fetch(`${GIAM}/api/v1/realms/leafypay/identities/${holder.subjectId}/credentials/no-such-credential`, {
         method: 'DELETE', headers, signal: AbortSignal.timeout(20000),
       });
       expect(attempt.status).toBe(404);

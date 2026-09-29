@@ -1,6 +1,6 @@
 'use client';
 
-import { apiUrl, apiUrlObject } from './env';
+import { API_PREFIX, apiUrl, apiUrlObject } from './env';
 
 /**
  * Turning a sign-in into a token, the same way any other client would.
@@ -173,7 +173,7 @@ export async function startConsoleAuthorization(realm: string, sessionId: string
   window.sessionStorage.setItem(VERIFIER_KEY, verifier);
   window.sessionStorage.setItem(REDIRECT_KEY, redirectUri);
 
-  const url = apiUrlObject(`/realms/${realm}/protocol/openid-connect/auth`);
+  const url = apiUrlObject(`${API_PREFIX}/realms/${realm}/protocol/oidc/auth`);
   url.searchParams.set('client_id', CONSOLE_CLIENT_ID);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
@@ -200,7 +200,7 @@ export async function completeConsoleAuthorization(code: string): Promise<string
   if (!realm || !verifier) return null;
 
   try {
-    const token = await fetch(apiUrl(`/realms/${realm}/protocol/openid-connect/token`), {
+    const token = await fetch(apiUrl(`${API_PREFIX}/realms/${realm}/protocol/oidc/token`), {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

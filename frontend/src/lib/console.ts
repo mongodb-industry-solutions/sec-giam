@@ -1,6 +1,6 @@
 'use client';
 
-import { apiUrl } from './env';
+import { API_PREFIX, apiUrl } from './env';
 import {
   PERMISSIONS_KEY, PROFILE_KEY, REALM_CHANGED_EVENT, clearSession,
   storedHomeRealm, storedRealm, storedToken, storedUserName,
@@ -113,7 +113,7 @@ export async function loadUserInfo(): Promise<UserInfo | null> {
 
   // Always the HOME realm, never the acting one: the profile belongs to the realm that issued the
   // token, so asking a realm being administered would present a token it does not accept.
-  profileInFlight ??= callApi<UserInfo>('/protocol/openid-connect/userinfo', {
+  profileInFlight ??= callApi<UserInfo>('/protocol/oidc/userinfo', {
     subject: 'your profile',
     realm: storedHomeRealm(),
   })
@@ -305,7 +305,7 @@ interface CallOptions {
    */
   realm?: string;
   /**
-   * Skips the `/realms/{realm}` prefix entirely.
+   * Skips the `/realms/{realm}` prefix (the `/api/v1` prefix is always added).
    *
    * For the handful of routes that act ON a realm rather than inside one (`/realms`,
    * `/realms/:realm` themselves): those are never reached "as the realm currently selected", they
@@ -334,9 +334,9 @@ export async function callApi<T>(path: string, options: CallOptions = {}): Promi
   }
   const suffix = search.toString() ? `?${search}` : '';
 
-  const address = options.topLevel
+  const address = API_PREFIX + (options.topLevel
     ? path
-    : `/realms/${encodeURIComponent(options.realm ?? storedRealm())}${path}`;
+    : `/realms/${encodeURIComponent(options.realm ?? storedRealm())}${path}`);
 
   let response: Response;
   try {

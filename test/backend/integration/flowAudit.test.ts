@@ -32,7 +32,7 @@ async function tokenFor(login: string): Promise<{ access: string; claims: Record
 
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  const url = new URL(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`);
+  const url = new URL(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth`);
   for (const [key, value] of Object.entries({
     client_id: CONSOLE_CLIENT.clientId,
     redirect_uri: CONSOLE_CLIENT.redirectUri,
@@ -48,7 +48,7 @@ async function tokenFor(login: string): Promise<{ access: string; claims: Record
   const code = new URL(authorize.headers.get('location') as string).searchParams.get('code');
   if (!code) return null;
 
-  const response = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+  const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -79,7 +79,7 @@ describe('v41 P10: everything about one flow, from the token alone', () => {
     held = await tokenFor(OVERSIGHT);
   });
 
-  const asHolder = (path: string, token: string) => fetch(`${GIAM}/realms/${REALM}${path}`, {
+  const asHolder = (path: string, token: string) => fetch(`${GIAM}/api/v1/realms/${REALM}${path}`, {
     headers: { authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(20000),
   });
@@ -187,7 +187,7 @@ describe('v41 P10: the console adds no filtering of its own', () => {
     token = (await tokenFor(OVERSIGHT))?.access ?? '';
   });
 
-  const query = (search: string) => fetch(`${GIAM}/realms/${REALM}/security-events?${search}`, {
+  const query = (search: string) => fetch(`${GIAM}/api/v1/realms/${REALM}/security-events?${search}`, {
     headers: { authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(20000),
   });

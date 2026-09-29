@@ -115,7 +115,7 @@ export async function resourceController(fastify: FastifyInstance) {
       operationId: 'listResourceServersAdmin',
       tags: ['authorization'],
       summary: 'Every resource server registered in one realm, for the ops panel',
-      description: 'No applicable standard. Same read as GET /realms/:realm/resource-servers, admin-token gated.',
+      description: 'No applicable standard. Same read as GET /api/v1/realms/:realm/resource-servers, admin-token gated.',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',

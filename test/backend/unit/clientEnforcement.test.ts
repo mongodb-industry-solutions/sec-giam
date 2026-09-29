@@ -28,7 +28,7 @@ function realmOf(mode?: RealmRecord['clientEnforcement']): RealmRecord {
     tenantId: 'default',
     name: 'acme',
     displayName: 'Acme',
-    issuer: 'https://authority.example/realms/acme',
+    issuer: 'https://authority.example/api/v1/realms/acme',
     enabled: true,
     aliases: [],
     registration: { selfServiceEnabled: false, autoApprove: false },
@@ -314,6 +314,6 @@ describe('client enforcement: a soft-admitted token genuinely carries less autho
     // Reduced is not unattributable. The whole point of admitting it is knowing who to chase.
     expect(claims.sub).toBe('subject-1');
     expect(claims.client_id).toBe('orders-web');
-    expect(claims.iss).toBe('https://authority.example/realms/acme');
+    expect(claims.iss).toBe('https://authority.example/api/v1/realms/acme');
   });
 });

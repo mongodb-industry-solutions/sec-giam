@@ -65,7 +65,7 @@ describe('administrative surfaces name the people they are about', () => {
     if (!live) return;
     expect(token, 'the administrator could not sign in').toBeTruthy();
 
-    const response = await fetch(`${GIAM}/realms/${REALM}/sessions`, { headers: headers(), signal: AbortSignal.timeout(20000) });
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions`, { headers: headers(), signal: AbortSignal.timeout(20000) });
     expect(response.status).toBe(200);
 
     const { sessions } = await response.json() as {
@@ -87,13 +87,13 @@ describe('administrative surfaces name the people they are about', () => {
   it('names the holder of every role assignment', async () => {
     if (!live) return;
 
-    const roles = await fetch(`${GIAM}/realms/${REALM}/roles`, { headers: headers(), signal: AbortSignal.timeout(20000) });
+    const roles = await fetch(`${GIAM}/api/v1/realms/${REALM}/roles`, { headers: headers(), signal: AbortSignal.timeout(20000) });
     const { roles: all } = await roles.json() as { roles: Array<{ roleId: string; name: string; assignmentCount?: number }> };
     const held = all.find((role) => (role.assignmentCount ?? 0) > 0);
     expect(held, 'no role has an assignment, so this proves nothing').toBeTruthy();
 
     const response = await fetch(
-      `${GIAM}/realms/${REALM}/roles/${held!.roleId}/assignments`,
+      `${GIAM}/api/v1/realms/${REALM}/roles/${held!.roleId}/assignments`,
       { headers: headers(), signal: AbortSignal.timeout(20000) },
     );
     expect(response.status).toBe(200);
@@ -119,7 +119,7 @@ describe('administrative surfaces name the people they are about', () => {
      * renders the uuid, and a reviewer scanning the list recognises nobody. Checked on sessions
      * because that surface lists other people by construction.
      */
-    const response = await fetch(`${GIAM}/realms/${REALM}/sessions`, { headers: headers(), signal: AbortSignal.timeout(20000) });
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions`, { headers: headers(), signal: AbortSignal.timeout(20000) });
     const { sessions } = await response.json() as {
       sessions: Array<{ subjectId: string; userName?: string }>;
     };

@@ -26,7 +26,7 @@ function realm(): RealmRecord {
     tenantId: 'default',
     name: 'acme',
     displayName: 'Acme',
-    issuer: 'https://authority.example/realms/acme',
+    issuer: 'https://authority.example/api/v1/realms/acme',
     enabled: true,
     aliases: [],
     registration: { selfServiceEnabled: false, autoApprove: false },

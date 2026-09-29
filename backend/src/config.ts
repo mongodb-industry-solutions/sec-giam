@@ -1,6 +1,7 @@
 import * as dotenv from 'dotenv';
 import { hostname } from 'os';
 import { resolve } from 'path';
+import { API_PREFIX } from './shared/models/routes';
 
 // The repo root .env, or backend/.env. Several candidates because this file runs both from source
 // (backend/src, backend/bin) and from the build output (backend/dist/...), which sit at different
@@ -198,5 +199,5 @@ export function keyVaultNamespaceParts(): { database: string; collection: string
 // The absolute issuer URL of a realm. Every token names it, and every verifier compares against it.
 export function realmIssuer(realmName: string): string {
   const base = (config.server.publicUrl || config.server.baseUrl).replace(/\/+$/, '');
-  return `${base}/realms/${realmName}`;
+  return `${base}${API_PREFIX}/realms/${realmName}`;
 }

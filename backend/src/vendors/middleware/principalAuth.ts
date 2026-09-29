@@ -44,8 +44,8 @@ declare module 'fastify' {
      * Set when a route expected a bearer token, whether or not one was accepted.
      *
      * This is what tells the `WWW-Authenticate` hook that the route is a PROTECTED RESOURCE. Routing
-     * on the URL would not do: `/protocol/openid-connect/userinfo` is a protected resource and needs
-     * the challenge, while `/protocol/openid-connect/token` authenticates a client and must not have
+     * on the URL would not do: `/protocol/oidc/userinfo` is a protected resource and needs
+     * the challenge, while `/protocol/oidc/token` authenticates a client and must not have
      * one, and both live under the same path prefix.
      */
     bearerProtected?: boolean;

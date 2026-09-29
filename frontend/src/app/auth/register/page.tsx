@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiUrl } from '../../../lib/env';
+import { API_PREFIX, apiUrl } from '../../../lib/env';
 import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
 /**
@@ -26,7 +26,7 @@ export default function RegisterPage() {
   const [outcome, setOutcome] = useState<'active' | 'pending' | null>(null);
 
   useEffect(() => {
-    fetch(apiUrl(`/realms/${realm}/login-context`))
+    fetch(apiUrl(`${API_PREFIX}/realms/${realm}/login-context`))
       .then((response) => (response.ok ? response.json() : null))
       .then((context) => {
         setOffered(Boolean(context?.registrationEnabled));
@@ -44,7 +44,7 @@ export default function RegisterPage() {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(apiUrl(`/realms/${realm}/register`), {
+      const response = await fetch(apiUrl(`${API_PREFIX}/realms/${realm}/register`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
