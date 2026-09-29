@@ -53,7 +53,7 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
     await withDirectDb(async (db) => {
       await db.collection('principal').updateMany(
         {},
-        { $pull: { roles: { 'scope.ref': CASE } } } as never,
+        { $pull: { roles: { 'scope.ref': { $in: [CASE, `${CASE}-expired`] } } } } as never,
       );
     }).catch(() => {});
   });
@@ -114,6 +114,58 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
     expect(repeated.grantedAt).toBe(first.grantedAt);
     expect(repeated.scope).toEqual(first.scope);
   });
+  /**
+   * An expiry that did not merely end the access, it made the scope unusable for good.
+   *
+   * A spent holding still matched the duplicate check, so the re-derivation branch above handed the
+   * dead entry back on the happy path: the resource server read a success, told the investigator
+   * they were elevated, and every check against the scope went on answering "not in force". Nothing
+   * swept the entry either, so the case could never be elevated again by that person. What follows
+   * is the re-derivation test's twin, and the two must disagree: an in-force grant is returned as
+   * it stands, an expired one is replaced.
+   */
+  it('re-grants a scope whose earlier elevation has expired', async () => {
+    if (!live) return;
+    const expiredScope = `${CASE}-expired`;
+    const requestFor = async (ref: string) => fetch(`${GIAM}/realms/leafypay/elevations`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        roleName: ROLE, scopeKind: 'case', scopeRef: ref,
+        justification: 'reviewing the escalated case', durationSeconds: 900,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const inForce = async (ref: string) => {
+      const response = await fetch(
+        `${GIAM}/realms/leafypay/elevations/mine?scopeKind=case&scopeRef=${encodeURIComponent(ref)}`,
+        { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) },
+      );
+      return (await response.json() as { inForce: boolean }).inForce;
+    };
+
+    const first = await (await requestFor(expiredScope)).json() as Elevation;
+    expect(await inForce(expiredScope)).toBe(true);
+
+    // Aged past its expiry rather than waited out: the shortest grant this endpoint issues still
+    // outlives any test worth running.
+    await withDirectDb(async (db) => {
+      await db.collection('principal').updateOne(
+        { 'roles.scope.ref': expiredScope },
+        { $set: { 'roles.$.expiresAt': new Date(Date.now() - 60_000).toISOString() } },
+      );
+    });
+    expect(await inForce(expiredScope)).toBe(false);
+
+    const again = await requestFor(expiredScope);
+    expect(again.status, await again.clone().text()).toBe(200);
+    const regranted = await again.json() as Elevation;
+    // A NEW grant, which is the whole point: same scope, its own clock, and usable.
+    expect(regranted.grantedAt).not.toBe(first.grantedAt);
+    expect(Date.parse(regranted.expiresAt as string)).toBeGreaterThan(Date.now());
+    expect(await inForce(expiredScope)).toBe(true);
+  });
+
   /**
    * Proving your OWN elevation, which is the question the holder can actually ask.
    *

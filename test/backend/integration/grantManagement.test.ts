@@ -8,16 +8,17 @@
 // The assertion that matters most is the refusal. Widening is bounded by the client registration,
 // and a bound that is silently clamped instead of refused is how somebody believes they restored
 // access they did not.
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createHash, randomBytes } from 'crypto';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { signIn, tokenFor, CONSOLE_CLIENT } from './support/authorizationFlow';
+import { deleteTestPrincipal } from './support/directDb';
 
 const GIAM = process.env.GIAM_URL ?? 'http://127.0.0.1:8085';
 const REALM = 'leafypay';
 const DEMO_PASSWORD = 'demo-password';
-const PERSON = 'luis.fernandez';
+const PASSWORD = 'Grant-Mgmt-Pass-1';
 
 /** A third-party client, because a first-party one creates no grant to manage. */
 const THIRD_PARTY = (() => {
@@ -40,6 +41,7 @@ describe('v41 P6: changing what an application holds', () => {
   let live = false;
   let token = '';
   let cookie = '';
+  let subjectId = '';
 
   beforeAll(async () => {
     try {
@@ -48,9 +50,35 @@ describe('v41 P6: changing what an application holds', () => {
     } catch {
       return;
     }
-    const session = await signIn(GIAM, REALM, PERSON, DEMO_PASSWORD);
+    // A principal of its own: `partialConsent` changes the seeded person's grant for the same
+    // client, and the two raced whenever they ran in parallel.
+    const userName = `grantmgmt-${randomUUID().slice(0, 8)}`;
+    const registered = await fetch(`${GIAM}/realms/${REALM}/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ userName, password: PASSWORD }),
+      signal: AbortSignal.timeout(20000),
+    });
+    subjectId = (await registered.json() as { subjectId: string }).subjectId;
+    // `leafypay` does not auto-approve self-registration, so a manager activates it.
+    const managerToken = await tokenFor(GIAM, REALM, 'alex.rivera', DEMO_PASSWORD, { client: CONSOLE_CLIENT });
+    await fetch(`${GIAM}/realms/${REALM}/scim/v2/Users/${subjectId}`, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [{ op: 'replace', value: { active: true } }],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    const session = await signIn(GIAM, REALM, userName, PASSWORD);
     cookie = session?.cookie ?? '';
-    token = await tokenFor(GIAM, REALM, PERSON, DEMO_PASSWORD);
+    token = await tokenFor(GIAM, REALM, userName, PASSWORD);
+  });
+
+  afterAll(async () => {
+    if (subjectId) await deleteTestPrincipal(subjectId);
   });
 
   /** Authorises the third-party client, so there is a grant to manage. */

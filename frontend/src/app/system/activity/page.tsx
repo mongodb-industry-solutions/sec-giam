@@ -1,13 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Activity, Search, Download } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, Search } from 'lucide-react';
 import { SectionHeader } from '../../../components/SectionHeader';
 import { Tooltip } from '../../../components/Tooltip';
 import { Pagination } from '../../../components/Pagination';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../components/ResultState';
 import { ApiError, callApi, can, currentClaims, when, type Claims } from '../../../lib/console';
-import { downloadFile } from '../../../lib/download';
+import { ExportJsonButton } from '../../../components/ExportJsonButton';
+import { DateRangeFilter } from '../../../components/DateRangeFilter';
+import { EMPTY_RANGE, rangeBounds, type DateRange } from '../../../lib/dateRange';
+import { readAllSecurityEvents } from '../../../lib/securityEvents';
 
 /**
  * The identity trail: who did what, when, and whether it succeeded.
@@ -74,6 +77,7 @@ export default function ActivityPage() {
   const [action, setAction] = useState('');
   const [txn, setTxn] = useState('');
   const [actor, setActor] = useState<Actor>('');
+  const [range, setRange] = useState<DateRange>(EMPTY_RANGE);
   // `txn` is the flow correlator an auditor reads off a token, which is the search that starts
   // most investigations.
   const [query, setQuery] = useState({ outcome: '', action: '', txn: '' });
@@ -87,6 +91,18 @@ export default function ActivityPage() {
 
   useEffect(() => { setClaims(currentClaims()); }, []);
   const mayReadRealm = can(claims, 'auditEvents', 'view');
+
+  // What the authority is asked for, shared by the page read and the export so they cannot disagree.
+  const filters = useMemo(() => ({
+    ...(scope === 'mine' && claims ? { subjectId: claims.sub } : {}),
+    ...(query.outcome ? { outcome: query.outcome } : {}),
+    ...(query.action ? { action: query.action } : {}),
+    ...(query.txn ? { txn: query.txn } : {}),
+    ...(actor === 'stakeholder' ? { scope: 'stakeholder' } : {}),
+    ...(actor === 'self' ? { actor: 'person' } : {}),
+    ...(actor === 'application' ? { actor: 'application' } : {}),
+    ...rangeBounds(range),
+  }), [claims, scope, query, actor, range]);
 
   const load = useCallback(async () => {
     if (!claims) return;
@@ -104,17 +120,7 @@ export default function ActivityPage() {
       const body = await callApi<{ events: SecurityEvent[]; total?: number }>('/security-events', {
         // Naming the subject asks for one person's slice; omitting it asks for the realm, which the
         // authority narrows back to the caller when their roles do not carry the wider view.
-        query: {
-          ...(scope === 'mine' ? { subjectId: claims.sub } : {}),
-          ...(query.outcome ? { outcome: query.outcome } : {}),
-          ...(query.action ? { action: query.action } : {}),
-          ...(query.txn ? { txn: query.txn } : {}),
-          ...(actor === 'stakeholder' ? { scope: 'stakeholder' } : {}),
-          ...(actor === 'self' ? { actor: 'person' } : {}),
-          ...(actor === 'application' ? { actor: 'application' } : {}),
-          offset: (page - 1) * limit,
-          limit,
-        },
+        query: { ...filters, offset: (page - 1) * limit, limit },
         subject: scope === 'mine' ? 'your activity' : "the realm's activity",
       });
       setEvents(body.events ?? []);
@@ -125,11 +131,11 @@ export default function ActivityPage() {
     } finally {
       setLoading(false);
     }
-  }, [claims, scope, query, actor, page, limit]);
+  }, [claims, scope, filters, page, limit]);
 
   // Back to the first page whenever the SEARCH changes, but not when the page itself does, which
   // would make paging impossible.
-  useEffect(() => { setPage(1); }, [scope, query, actor]);
+  useEffect(() => { setPage(1); }, [filters]);
   useEffect(() => { void load(); }, [load]);
 
   // Nothing is narrowed here any more: the authority applied every filter and returned this page.
@@ -137,25 +143,27 @@ export default function ActivityPage() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   /**
-   * The filtered trail as a file, exactly as the authority returned it.
+   * The filtered trail as a file: every event that matches, read from the authority at click time.
    *
-   * Every event that matches the search is written, not the page on screen: a page boundary is a
-   * display accident and an evidence file cut at one is misleading. The filters travel with the
-   * events so the file says what it is a slice of, and nothing is added that the API did not send.
+   * It used to write `events`, which is the page on screen, while saying it wrote every match. A
+   * page boundary is a display accident and an evidence file cut at one is misleading.
    */
-  function exportJson() {
-    const payload = {
+  async function buildExport() {
+    const all = await readAllSecurityEvents<SecurityEvent>(filters, 'the activity export');
+    return {
       exportedAt: new Date().toISOString(),
       filters: {
         scope: scope === 'mine' ? 'the signed-in principal' : 'the whole realm',
         action: query.action || null,
         outcome: query.outcome || null,
+        txn: query.txn || null,
         actor: actor || 'anyone',
+        from: rangeBounds(range).from ?? null,
+        to: rangeBounds(range).to ?? null,
       },
-      count: total,
-      events,
+      count: all.length,
+      events: all,
     };
-    downloadFile(`activity-${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json');
   }
 
   return (
@@ -261,17 +269,19 @@ export default function ActivityPage() {
           Search
         </button>
 
-        {/* Exports what the filters select, so it is disabled while there is nothing selected. */}
-        <button
-          type="button"
-          onClick={exportJson}
-          disabled={loading || total === 0}
-          title={total === 0 ? 'Nothing matches this search yet' : `Download ${total} events as JSON`}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-[#001E2B] transition-colors hover:border-[#001E2B] hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#001E2B]/20 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Download size={13} aria-hidden />
-          Download JSON
-        </button>
+        <div>
+          <span className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">When</span>
+          <DateRangeFilter value={range} onChange={setRange} />
+        </div>
+
+        <ExportJsonButton
+          filename="activity"
+          count={total}
+          noun="events"
+          disabled={loading}
+          build={buildExport}
+          onError={(failure) => setError(failure instanceof ApiError ? failure.message : 'The export could not be read.')}
+        />
       </form>
 
       {error && <ErrorState message={error} onRetry={() => void load()} />}

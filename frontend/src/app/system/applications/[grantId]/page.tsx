@@ -1,12 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Activity, Layers } from 'lucide-react';
 import { SectionHeader } from '../../../../components/SectionHeader';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../components/ResultState';
+import { ListToolbar } from '../../../../components/ListToolbar';
+import { Pagination } from '../../../../components/Pagination';
+import { ExportJsonButton } from '../../../../components/ExportJsonButton';
 import { ApiError, callApi, when } from '../../../../lib/console';
+import { useLocalList } from '../../../../lib/useLocalList';
+import { DateRangeFilter } from '../../../../components/DateRangeFilter';
+import { EMPTY_RANGE, inRange, rangeBounds, type DateRange } from '../../../../lib/dateRange';
 
 /**
  * One authorization, and what was done under it.
@@ -117,21 +123,74 @@ export default function GrantDetailPage() {
                   title="Nothing recorded yet"
                   description="No identity event has been recorded under this authorization. One appears the first time the application uses it."
                 />
-              : (
-                <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white">
-                  {operations.map((operation, index) => (
-                    <li key={`${operation.ts}-${index}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-                      <span className="w-44 shrink-0 text-xs text-gray-500">{when(operation.ts)}</span>
-                      <span className="min-w-0 flex-1 truncate font-mono text-xs text-[#001E2B]">{operation.action}</span>
-                      <StatusBadge status={operation.outcome} />
-                    </li>
-                  ))}
-                </ul>
-              ))}
+              : <OperationsTrail grant={grant} operations={operations} />)}
           </section>
         </>
       )}
     </main>
+  );
+}
+
+type OutcomeFilter = 'all' | 'success' | 'failure';
+
+const OUTCOME_OPTIONS: Array<{ key: OutcomeFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'success', label: 'Succeeded' },
+  { key: 'failure', label: 'Failed' },
+];
+
+const matchesOperation = (operation: Operation, needle: string) =>
+  [operation.action, operation.outcome, operation.clientId ?? ''].some((field) => field.toLowerCase().includes(needle));
+const outcomeIs = (operation: Operation, filter: OutcomeFilter) => filter === 'all' || operation.outcome === filter;
+
+/** The trail as it was read: searched, filtered and paged here, since the read is bounded. */
+function OperationsTrail({ grant, operations }: { grant: Grant; operations: Operation[] }) {
+  const [range, setRange] = useState<DateRange>(EMPTY_RANGE);
+  const inWindow = useMemo(() => operations.filter((operation) => inRange(operation.ts, range)), [operations, range]);
+  const list = useLocalList(inWindow, { matches: matchesOperation, filterBy: outcomeIs, initialFilter: 'all' as OutcomeFilter });
+
+  return (
+    <>
+      <ListToolbar
+        search={{ value: list.search, onChange: list.setSearch, placeholder: 'Search action, outcome or application', label: 'Search events' }}
+        filter={{ label: 'Outcome', options: OUTCOME_OPTIONS, value: list.filter, onChange: list.setFilter }}
+        extra={(
+          <>
+          <DateRangeFilter value={range} onChange={setRange} />
+          <ExportJsonButton
+            filename={`grant-${grant.grantId}-events`}
+            count={list.filtered.length}
+            noun="events"
+            // Every match, not the page on screen: a page boundary is a display accident.
+            build={() => ({
+              exportedAt: new Date().toISOString(),
+              grantId: grant.grantId,
+              clientId: grant.clientId,
+              filters: { search: list.search.trim() || null, outcome: list.filter, ...rangeBounds(range) },
+              count: list.filtered.length,
+              operations: list.filtered,
+            })}
+          />
+          </>
+        )}
+      />
+
+      {list.filtered.length === 0
+        ? <EmptyState icon={Activity} title="No matching events" description="Nothing in this trail matches the search. Widen it, or clear the filters." />
+        : (
+          <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white">
+            {list.visible.map((operation, index) => (
+              <li key={`${operation.ts}-${index}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+                <span className="w-44 shrink-0 text-xs text-gray-500">{when(operation.ts)}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-[#001E2B]">{operation.action}</span>
+                <StatusBadge status={operation.outcome} />
+              </li>
+            ))}
+          </ul>
+        )}
+
+      <Pagination {...list.pagination} noun="events" />
+    </>
   );
 }
 

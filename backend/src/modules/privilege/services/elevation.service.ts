@@ -57,6 +57,17 @@ export function isInForce(holding: RoleHolding, now = new Date()): boolean {
   return Date.parse(holding.expiresAt) > now.getTime();
 }
 
+/**
+ * Past its expiry: an elevation that has already been spent, whether or not it was ever approved.
+ *
+ * Distinct from `isInForce` being false, which is also true of one still awaiting a reviewer. A
+ * pending request is alive and must be left alone; a spent one grants nothing and never will again.
+ */
+export function isSpent(holding: RoleHolding, now = new Date()): boolean {
+  if (!holding.ephemeral || !holding.expiresAt) return false;
+  return Date.parse(holding.expiresAt) <= now.getTime();
+}
+
 export class ElevationService {
   constructor(private readonly db: Db) {}
 
@@ -193,9 +204,24 @@ export class ElevationService {
       if (!a || !b) return false;
       return a.kind === b.kind && a.ref === b.ref;
     };
-    const duplicate = existingHoldings.find(
+    const existing = existingHoldings.find(
       (entry) => entry.roleId === role.roleId && sameScope(entry.scope, input.scope),
     );
+
+    // An EXPIRED holding is not a duplicate of this request, it is the remains of an earlier one.
+    // Treating it as a duplicate made the expiry permanent in the wrong direction: the re-derivation
+    // branch below handed the dead entry back as a success, the resource server believed the access
+    // had been granted, and every check against it answered "not in force". The scope could then
+    // never be elevated again, because the spent entry went on matching. It is removed here, and the
+    // request proceeds as the genuinely new grant it is, with its own clock and its own audit event.
+    const duplicate = existing && !isSpent(existing) ? existing : undefined;
+    if (existing && !duplicate) {
+      await this.principals.updateOne(
+        { realmId: realm.realmId, subjectId: input.subjectId },
+        { $pull: { roles: { roleId: role.roleId, ephemeral: true, expiresAt: existing.expiresAt } } },
+      );
+    }
+
     if (duplicate) {
       // A repeat of the SAME request, by the SAME subject, for the SAME role and scope, grants no
       // authority the subject does not already hold, so answering it is a re-derivation rather than
