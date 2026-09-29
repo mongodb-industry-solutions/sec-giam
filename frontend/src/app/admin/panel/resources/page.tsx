@@ -21,10 +21,8 @@ import {
  * code-level guarantee anything actually enforces it. Do not copy this pattern elsewhere; the read
  * side (/system/resources) is what the rest of the console should look like.
  *
- * The endpoint underneath, PUT /api/v1/admin/resource-servers/:name/permissions, is documented at exactly
- * that bare path (docs/issuer-contract.md), not under /api/v1/admin like this panel's other tabs —
- * a pre-existing inconsistency kept as-is rather than silently changed, since other deployments may
- * already call it at that address.
+ * The endpoint underneath is PUT /api/v1/admin/resource-servers/:name/permissions
+ * (docs/issuer-contract.md), under the same prefix as this panel's other tabs.
  */
 
 export default function ResourcesAdminPage() {
@@ -44,7 +42,6 @@ export default function ResourcesAdminPage() {
     setLoading(true);
     setError(null);
     try {
-      // Bare /admin/..., not /api/v1/admin/...: see the module docstring above.
       const res = await fetch(`${API_BASE_URL}/api/v1/admin/resource-servers?realm=${encodeURIComponent(realm)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });

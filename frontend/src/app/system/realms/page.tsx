@@ -85,7 +85,7 @@ export default function RealmsPage() {
                 <RecordCard
                   key={realm.realmId}
                   title={(
-                    <Link href={`/system/api/v1/realms/${encodeURIComponent(realm.name)}`} className="hover:underline">
+                    <Link href={`/system/realms/${encodeURIComponent(realm.name)}`} className="hover:underline">
                       {realm.displayName}
                     </Link>
                   )}
