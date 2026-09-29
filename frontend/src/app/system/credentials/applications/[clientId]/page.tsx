@@ -11,6 +11,10 @@ import { Tooltip } from '../../../../../components/Tooltip';
 import { Fact } from '../../../../../components/Fact';
 import { SecretOnce } from '../../../../../components/SecretOnce';
 import { Pagination } from '../../../../../components/Pagination';
+import { DateRangeFilter } from '../../../../../components/DateRangeFilter';
+import { ExportJsonButton } from '../../../../../components/ExportJsonButton';
+import { EMPTY_RANGE, rangeBounds, type DateRange } from '../../../../../lib/dateRange';
+import { readAllSecurityEvents } from '../../../../../lib/securityEvents';
 import { UriListEditor } from '../../../../../components/UriListEditor';
 import { IntegrationUrls } from '../../../../../components/IntegrationUrls';
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from '../../../../../components/ResultState';
@@ -681,13 +685,19 @@ interface ClientSecurityEvent {
 function ActivityPanel({ clientId }: { clientId: string }) {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
+  const [range, setRange] = useState<DateRange>(EMPTY_RANGE);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const filters = useMemo(() => ({ clientId, ...rangeBounds(range) }), [clientId, range]);
+  const ranged = Boolean(range.from || range.to);
+
+  useEffect(() => { setPage(1); }, [filters]);
 
   const read = useCallback(
     () => callApi<{ events: ClientSecurityEvent[]; total?: number }>('/security-events', {
-      query: { clientId, offset: (page - 1) * limit, limit },
+      query: { ...filters, offset: (page - 1) * limit, limit },
       subject: 'this application\'s activity',
     }),
-    [clientId, page, limit],
+    [filters, page, limit],
   );
   const activity = useConsoleResource(read, 'This application\'s activity could not be read.');
 
@@ -706,6 +716,23 @@ function ActivityPanel({ clientId }: { clientId: string }) {
         identity evidence only.
       </p>
 
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <DateRangeFilter value={range} onChange={setRange} />
+        <ExportJsonButton
+          filename={`client-${clientId}-activity`}
+          count={total}
+          noun="events"
+          disabled={activity.loading}
+          onError={(failure) => setExportError(failure instanceof ApiError ? failure.message : 'The export could not be read.')}
+          build={async () => {
+            setExportError(null);
+            const events = await readAllSecurityEvents<ClientSecurityEvent>(filters, 'this application\'s activity');
+            return { exportedAt: new Date().toISOString(), filters, count: events.length, events };
+          }}
+        />
+      </div>
+      {exportError && <p className="mt-2 text-xs text-red-700">{exportError}</p>}
+
       {activity.error && <div className="mt-3"><ErrorState message={activity.error} onRetry={() => void activity.reload()} /></div>}
 
       {activity.loading
@@ -713,7 +740,11 @@ function ActivityPanel({ clientId }: { clientId: string }) {
         : rows.length === 0
           ? (
             <div className="mt-3">
-              <EmptyState icon={Activity} title="Nothing recorded yet" description="No identity event names this application yet." />
+              <EmptyState
+                icon={Activity}
+                title={ranged ? 'No matching events' : 'Nothing recorded yet'}
+                description={ranged ? 'No identity event names this application in those days.' : 'No identity event names this application yet.'}
+              />
             </div>
           )
           : (
