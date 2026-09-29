@@ -51,7 +51,9 @@ async function newApprovedPrincipal(password: string): Promise<{ subjectId: stri
   return { subjectId: created.subjectId, userName, token };
 }
 
-describe('a principal changes their own password', () => {
+// Each test runs two full sign-in flows and several password hashes, which under parallel workers
+// sits right at the global 30s limit.
+describe('a principal changes their own password', { timeout: 90_000 }, () => {
   let live = false;
 
   beforeAll(async () => { live = await reachable(); });
