@@ -86,6 +86,8 @@ export default function ActivityPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Kept apart from `error`: that one's retry reloads the page, which is not how to retry an export.
+  const [exportError, setExportError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
 
@@ -279,10 +281,11 @@ export default function ActivityPage() {
           count={total}
           noun="events"
           disabled={loading}
-          build={buildExport}
-          onError={(failure) => setError(failure instanceof ApiError ? failure.message : 'The export could not be read.')}
+          build={() => { setExportError(null); return buildExport(); }}
+          onError={(failure) => setExportError(failure instanceof ApiError ? failure.message : 'The export could not be read.')}
         />
       </form>
+      {exportError && <p className="mt-2 text-xs text-red-700">{exportError}</p>}
 
       {error && <ErrorState message={error} onRetry={() => void load()} />}
 

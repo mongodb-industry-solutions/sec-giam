@@ -225,7 +225,7 @@ describe('v41 P1: the refresh token and the id token', () => {
   it('carries only what redemption needs in the refresh token', async () => {
     const claims = decode((await personTokens()).refresh_token as string);
     expect(new Set(Object.keys(claims))).toEqual(new Set([
-      'iss', 'aud', 'sub', 'sid', 'gen', 'client_id', 'jti', 'iat', 'exp',
+      'iss', 'aud', 'sub', 'sid', 'gen', 'client_id', 'scope', 'jti', 'iat', 'exp',
     ]));
     // Addressed to the issuer itself: redeemed here, accepted nowhere else.
     expect(claims.aud).toBe('https://authority.example/api/v1/realms/acme');

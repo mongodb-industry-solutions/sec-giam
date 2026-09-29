@@ -177,4 +177,54 @@ describe('refresh_token grant preserves the original scope', () => {
     const body = JSON.parse(refreshedText3) as { error?: string };
     expect(body.error).toBe('invalid_scope');
   });
+
+  it('a refused scope leaves the presented token usable, so a corrected retry is not read as theft', async () => {
+    const tokens = await exchangeForTokens();
+    const refreshToken = tokens?.refresh_token as string | undefined;
+    expect(refreshToken).toBeTruthy();
+
+    const refused = await refresh(refreshToken!, 'openid write:payments_super_admin');
+    expect(refused.status).toBe(400);
+
+    // Before the fix the token had already been rotated, so this retry hit reuse detection and the
+    // whole session was deleted.
+    const retried = await refresh(refreshToken!);
+    const retriedText = await retried.text();
+    expect(retried.status, retriedText).toBe(200);
+  });
+
+  it('the refresh token carries its own scope, and a narrowed refresh does not shrink the next one', async () => {
+    const tokens = await exchangeForTokens();
+    const original = String(tokens?.scope ?? '').split(' ').filter(Boolean).sort();
+    const refreshToken = tokens?.refresh_token as string;
+    expect(claimsOf(refreshToken).scope?.split(' ').sort()).toEqual(original);
+
+    const narrowed = await refresh(refreshToken, 'openid read:accounts');
+    const narrowedBody = await narrowed.json() as { scope?: string; refresh_token?: string };
+    expect(narrowedBody.scope).toBe('openid read:accounts');
+
+    // RFC 6749 section 6: the new refresh token's scope is identical to the one presented.
+    const next = await refresh(narrowedBody.refresh_token!);
+    const nextBody = await next.json() as { scope?: string };
+    expect(String(nextBody.scope ?? '').split(' ').filter(Boolean).sort()).toEqual(original);
+  });
 });
+
+/** One refresh call, as the merchant app makes it. */
+function refresh(refreshToken: string, scope?: string): Promise<Response> {
+  return fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: MERCHANT_CLIENT.clientId,
+      ...(scope ? { scope } : {}),
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+}
+
+function claimsOf(jwt: string): { scope?: string } {
+  return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8'));
+}

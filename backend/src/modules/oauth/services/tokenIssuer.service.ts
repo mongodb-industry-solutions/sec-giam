@@ -39,6 +39,8 @@ export interface IssueTokensInput {
   client: OAuthClient;
   subjectId?: string;
   scope: string[];
+  /** Scope the refresh token carries when it differs from the access token's (RFC 6749 section 6). */
+  refreshScope?: string[];
   sessionId?: string;
   sessionEpoch?: number;
   /** Permissions the resource server enforces, resolved by the decision point at issuance. */
@@ -605,6 +607,7 @@ export class TokenIssuer {
         gen: session?.refreshGen ?? 0,
         ...(txn ? { txn } : {}),
         client_id: client.clientId,
+        scope: (input.refreshScope ?? input.scope).join(' '),
         jti: uuidv4(),
         iat: now,
         exp: now + ttl.refresh,
@@ -654,6 +657,12 @@ export class TokenIssuer {
   async redeemRefresh(
     realmId: string,
     presented: string,
+    /**
+     * Checked after verification and BEFORE rotation, so a request refused here (a scope beyond the
+     * grant) leaves the presented token current and the client can retry with it. Returns the
+     * refusal detail, or null to proceed.
+     */
+    admit?: (presented: { subjectId?: string; scope?: string[] }) => Promise<string | null>,
   ): Promise<
     | {
       ok: true; sessionId: string; subjectId?: string; clientId: string; generation: number;
@@ -661,7 +670,10 @@ export class TokenIssuer {
       /** ADR-004: the credential this SESSION was established with, read off the same document. */
       credentialId?: string;
     }
-    | { ok: false; cause: 'invalid' | 'expired' | 'no_session' | 'reuse_detected'; sessionId?: string; subjectId?: string }
+    | {
+      ok: false; cause: 'invalid' | 'expired' | 'no_session' | 'reuse_detected' | 'invalid_scope';
+      sessionId?: string; subjectId?: string; detail?: string;
+    }
   > {
     // `rt+jwt`, matching what issuance now stamps. Verification checks `typ` strictly, so redemption
     // and issuance have to name the same type or every refresh fails.
@@ -679,6 +691,16 @@ export class TokenIssuer {
     if (!claims.sid || typeof claims.gen !== 'number') return { ok: false, cause: 'invalid' };
     if (claims.exp && claims.exp * 1000 <= Date.now()) {
       return { ok: false, cause: 'expired', sessionId: claims.sid, subjectId: claims.sub };
+    }
+
+    const refusal = admit
+      ? await admit({
+        subjectId: claims.sub,
+        ...(typeof claims.scope === 'string' ? { scope: claims.scope.split(' ').filter(Boolean) } : {}),
+      })
+      : null;
+    if (refusal) {
+      return { ok: false, cause: 'invalid_scope', detail: refusal, sessionId: claims.sid, subjectId: claims.sub };
     }
 
     /**

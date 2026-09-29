@@ -333,7 +333,30 @@ export async function tokenController(fastify: FastifyInstance) {
        * Redemption verifies the token, compares its generation against the session's, and increments
        * atomically. Nothing is looked up in a token collection, because no token was ever stored.
        */
-      const redeemed = await issuer.redeemRefresh(realm.realmId, presentedToken);
+      /**
+       * The scope: never wider than the refresh token was issued with, and cut to what the grant
+       * still holds (RFC 6749 section 6).
+       *
+       * Read from the signed token, not from the live grant alone: a scope added to the grant later
+       * must not reach an older (possibly stolen) refresh token. Intersected with the grant so a
+       * withdrawn scope is gone on the next refresh. Validated inside `redeemRefresh`, before the
+       * rotation, so a refused request leaves the presented token usable for a corrected retry.
+       * Tokens minted before the scope claim existed fall back to the grant.
+       */
+      const requestedScope = String(body.scope ?? '').split(' ').filter(Boolean);
+      let refreshScope: string[] = [];
+      let scope: string[] = [];
+      const redeemed = await issuer.redeemRefresh(realm.realmId, presentedToken, async (presented) => {
+        const held = presented.subjectId
+          ? await new GrantService(fastify.db).grantedScopesFor(realm.realmId, presented.subjectId, client.clientId)
+          : [];
+        const allowed = (presented.scope ?? held).filter((s) => held.includes(s));
+        const beyondGrant = requestedScope.filter((s) => !allowed.includes(s));
+        if (beyondGrant.length > 0) return `not permitted: ${beyondGrant.join(' ')}`;
+        refreshScope = allowed;
+        scope = requestedScope.length > 0 ? requestedScope : allowed;
+        return null;
+      });
       // Named before the refusal is written, so it is recorded against the account it concerns.
       context.subjectId = redeemed.subjectId;
 
@@ -369,6 +392,9 @@ export async function tokenController(fastify: FastifyInstance) {
           });
           return refuse(400, 'invalid_grant', 'refresh token has already been used');
         }
+        if (redeemed.cause === 'invalid_scope') {
+          return refuse(400, 'invalid_scope', redeemed.detail ?? 'scope not permitted');
+        }
         return refuse(400, 'invalid_grant', 'refresh token is no longer valid');
       }
 
@@ -382,31 +408,6 @@ export async function tokenController(fastify: FastifyInstance) {
         return refuse(400, 'invalid_grant', 'subject no longer exists');
       }
 
-      /**
-       * The scope comes from the GRANT that established the session, not from this request.
-       *
-       * RFC 6749 6: a refresh request MAY narrow the scope and MUST NOT widen it; when the parameter
-       * is omitted (the common case, and the merchant app here never sends it), the refreshed token
-       * carries the scope of the original authorization.
-       *
-       * THE DEFECT THIS FIXED. The comment on this line already said the scope comes from the grant,
-       * and the code below it read `body.scope` regardless, an ordinary refresh call omits it, so
-       * every refresh minted a token with an EMPTY scope. Every application that follows the RFC and
-       * does not re-send its scope on refresh, this realm's own merchant app among them, worked until
-       * its first token expiry and then failed every call with insufficient_scope, having never lost
-       * a permission a person could see revoked. No stored token row survives redemption to read the
-       * scope back from, so it is read from the live consent grant instead: the same source a fresh
-       * authorization_code exchange already trusts.
-       */
-      const held = redeemed.subjectId
-        ? await new GrantService(fastify.db).grantedScopesFor(realm.realmId, redeemed.subjectId, client.clientId)
-        : [];
-      const requestedScope = String(body.scope ?? '').split(' ').filter(Boolean);
-      const beyondGrant = requestedScope.filter((s) => !held.includes(s));
-      if (beyondGrant.length > 0) {
-        return refuse(400, 'invalid_scope', `not permitted: ${beyondGrant.join(' ')}`);
-      }
-      const scope = requestedScope.length > 0 ? requestedScope : held;
       /**
        * Resolved again, exactly as every other grant resolves it.
        *
@@ -435,6 +436,7 @@ export async function tokenController(fastify: FastifyInstance) {
         // The flow the presented refresh token belongs to, so a rotation chain reads as one flow.
         ...(redeemed.txn ? { txn: redeemed.txn } : {}),
         scope,
+        refreshScope,
         sessionId: redeemed.sessionId,
         sessionEpoch: identity?.sessionEpoch,
         ...(decision ? { permissions: decision.permissions, roles: decision.roles } : {}),

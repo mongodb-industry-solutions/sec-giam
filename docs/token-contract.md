@@ -61,7 +61,7 @@ Carry roles.
 ## Refresh token
 
 Header `typ: rt+jwt`. Opaque to the client by RFC 6749 6, so every claim in it is this authority's
-own. Nothing is stored: `sid` plus `gen` is everything redemption needs.
+own. Nothing is stored: `sid` plus `gen` rotate it, and `scope` bounds what a refresh may carry.
 
 | Claim | What it is for |
 |---|---|
@@ -69,6 +69,7 @@ own. Nothing is stored: `sid` plus `gen` is everything redemption needs.
 | `aud` | The issuer itself. Redeemed here, accepted nowhere else. |
 | `sid` | The session it rotates against. |
 | `gen` | The session's refresh generation. A lower one on redemption means a rotated token was replayed, and the whole session is deleted on the assumption of theft. |
+| `scope` | The scope it was issued with. A refresh gets this cut to what the grant still holds, never wider (RFC 6749 6), and the new refresh token keeps it even when the access token was narrowed. |
 
 ---
 
