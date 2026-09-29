@@ -382,9 +382,31 @@ export async function tokenController(fastify: FastifyInstance) {
         return refuse(400, 'invalid_grant', 'subject no longer exists');
       }
 
-      // The scope comes from the grant that established the session rather than from a stored token
-      // row, since there is no longer one to read it back from.
-      const scope = String(body.scope ?? '').split(' ').filter(Boolean);
+      /**
+       * The scope comes from the GRANT that established the session, not from this request.
+       *
+       * RFC 6749 6: a refresh request MAY narrow the scope and MUST NOT widen it; when the parameter
+       * is omitted (the common case, and the merchant app here never sends it), the refreshed token
+       * carries the scope of the original authorization.
+       *
+       * THE DEFECT THIS FIXED. The comment on this line already said the scope comes from the grant,
+       * and the code below it read `body.scope` regardless, an ordinary refresh call omits it, so
+       * every refresh minted a token with an EMPTY scope. Every application that follows the RFC and
+       * does not re-send its scope on refresh, this realm's own merchant app among them, worked until
+       * its first token expiry and then failed every call with insufficient_scope, having never lost
+       * a permission a person could see revoked. No stored token row survives redemption to read the
+       * scope back from, so it is read from the live consent grant instead: the same source a fresh
+       * authorization_code exchange already trusts.
+       */
+      const held = redeemed.subjectId
+        ? await new GrantService(fastify.db).grantedScopesFor(realm.realmId, redeemed.subjectId, client.clientId)
+        : [];
+      const requestedScope = String(body.scope ?? '').split(' ').filter(Boolean);
+      const beyondGrant = requestedScope.filter((s) => !held.includes(s));
+      if (beyondGrant.length > 0) {
+        return refuse(400, 'invalid_scope', `not permitted: ${beyondGrant.join(' ')}`);
+      }
+      const scope = requestedScope.length > 0 ? requestedScope : held;
       /**
        * Resolved again, exactly as every other grant resolves it.
        *
