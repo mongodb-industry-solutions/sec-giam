@@ -346,7 +346,7 @@ export async function tokenController(fastify: FastifyInstance) {
       const requestedScope = String(body.scope ?? '').split(' ').filter(Boolean);
       let refreshScope: string[] = [];
       let scope: string[] = [];
-      const redeemed = await issuer.redeemRefresh(realm.realmId, presentedToken, async (presented) => {
+      const redeemed = await issuer.redeemRefresh(realm.realmId, presentedToken, { clientId: client.clientId, admit: async (presented) => {
         const held = presented.subjectId
           ? await new GrantService(fastify.db).grantedScopesFor(realm.realmId, presented.subjectId, client.clientId)
           : [];
@@ -356,7 +356,7 @@ export async function tokenController(fastify: FastifyInstance) {
         refreshScope = allowed;
         scope = requestedScope.length > 0 ? requestedScope : allowed;
         return null;
-      });
+      } });
       // Named before the refusal is written, so it is recorded against the account it concerns.
       context.subjectId = redeemed.subjectId;
 
@@ -392,14 +392,14 @@ export async function tokenController(fastify: FastifyInstance) {
           });
           return refuse(400, 'invalid_grant', 'refresh token has already been used');
         }
+        if (redeemed.cause === 'client_mismatch') {
+          // Refused before rotation, so another client cannot burn this token for its holder.
+          return refuse(400, 'invalid_grant', 'unknown refresh token');
+        }
         if (redeemed.cause === 'invalid_scope') {
           return refuse(400, 'invalid_scope', redeemed.detail ?? 'scope not permitted');
         }
         return refuse(400, 'invalid_grant', 'refresh token is no longer valid');
-      }
-
-      if (redeemed.clientId !== client.clientId) {
-        return refuse(400, 'invalid_grant', 'unknown refresh token');
       }
 
       const directory = new DirectoryService(fastify.db);

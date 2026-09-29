@@ -208,6 +208,25 @@ describe('refresh_token grant preserves the original scope', () => {
     const nextBody = await next.json() as { scope?: string };
     expect(String(nextBody.scope ?? '').split(' ').filter(Boolean).sort()).toEqual(original);
   });
+
+  it('a replayed token with a refused scope is still caught as reuse, and ends the session', async () => {
+    const tokens = await exchangeForTokens();
+    const first = tokens?.refresh_token as string;
+    const rotated = await refresh(first);
+    expect(rotated.status).toBe(200);
+    const { refresh_token: current } = await rotated.json() as { refresh_token: string };
+
+    // The already-rotated token, with a scope beyond the grant: invalid_scope here would hide theft.
+    const replayed = await refresh(first, 'openid write:payments_super_admin');
+    const replayedBody = await replayed.json() as { error?: string; error_description?: string };
+    expect(replayed.status).toBe(400);
+    expect(replayedBody.error).toBe('invalid_grant');
+    expect(replayedBody.error_description).toMatch(/already been used/);
+
+    // The session is gone, so even the current token no longer refreshes.
+    const after = await refresh(current);
+    expect(after.status).toBe(400);
+  });
 });
 
 /** One refresh call, as the merchant app makes it. */
