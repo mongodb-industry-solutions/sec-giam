@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { apiUrl } from '../../../lib/env';
+import { API_PREFIX, apiUrl } from '../../../lib/env';
 import { storedToken, storedSessionId, clearSession } from '../../../lib/session';
 import { AuthBackdrop } from '../../../components/AuthBackdrop';
 
@@ -40,7 +40,7 @@ function LogoutInner() {
 
     // Called regardless of whether this tab remembers a session id: a relying party's sign-in never
     // gives it one, the session lives only in the cookie this fetch carries.
-    fetch(apiUrl(`/realms/${DEFAULT_REALM}/protocol/openid-connect/logout`), {
+    fetch(apiUrl(`${API_PREFIX}/realms/${DEFAULT_REALM}/protocol/oidc/logout`), {
       method: 'POST',
       credentials: 'include',
       headers: {

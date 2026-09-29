@@ -48,8 +48,11 @@ Every operation declares its category:
 | **Standard-defined** | Implements a published specification verbatim. The description cites the RFC or specification clause. The error shape is the specification's own, never a house envelope. |
 | **No applicable standard** | Plain REST: plural resources, correct verb semantics, \`PATCH\` for partial updates, RFC 9457 \`application/problem+json\` errors, \`ETag\` and \`If-Match\` on mutable resources, cursor pagination. |
 
-Public protocol endpoints live under a realm's issuer path; administrative ones live under
-\`/api/v1/admin/\`, so a reader can tell them apart from the URL alone.
+Everything is versioned under \`/api/v1/\`. A realm's issuer is \`/api/v1/realms/:realm\`: its
+protocol endpoints sit at \`/api/v1/realms/:realm/protocol/oidc/...\` and its API beside them
+(\`/api/v1/realms/:realm/...\`); operations live at \`/api/v1/admin/...\`. Only RFC 8414's root
+metadata path (\`/.well-known/oauth-authorization-server/api/v1/realms/:realm\`) and \`/health\`
+sit outside the prefix, because their location is fixed by specification or by the platform.
 
 ## Realms
 

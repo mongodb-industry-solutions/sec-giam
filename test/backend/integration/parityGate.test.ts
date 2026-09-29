@@ -70,7 +70,7 @@ afterAll(async () => {
 async function signIn(login: string, password: string) {
   return app.inject({
     method: 'POST',
-    url: `/realms/${realmName}/login`,
+    url: `/api/v1/realms/${realmName}/login`,
     payload: { login, password },
   });
 }
@@ -213,7 +213,7 @@ describe('v39 P5.8: every seeded principal signs in with today credentials', () 
      */
     const response = await app.inject({
       method: 'POST',
-      url: '/realms/a-realm-that-does-not-exist/login',
+      url: '/api/v1/realms/a-realm-that-does-not-exist/login',
       payload: { login: identities[0].userName, password: demoPassword as string },
     });
     expect(response.statusCode).toBe(404);

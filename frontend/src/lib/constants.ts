@@ -1,3 +1,5 @@
+import { API_PREFIX } from './env';
+
 /**
  * The authority's own addresses, for the operations panel.
  *
@@ -49,7 +51,7 @@ export function demoPublicUrl(path = ''): string {
 export const SIMULATOR_REALM = process.env.NEXT_PUBLIC_GIAM_REALM || 'LeafyIdp';
 
 // Served by the API host, and the one document that proves the endpoints below it are real.
-export const DISCOVERY_URL = `${BACKEND_PUBLIC_URL}/realms/${SIMULATOR_REALM}/.well-known/openid-configuration`;
+export const DISCOVERY_URL = `${BACKEND_PUBLIC_URL}${API_PREFIX}/realms/${SIMULATOR_REALM}/.well-known/openid-configuration`;
 
 // The API reference, on the same host as the API it documents.
 export const API_DOC_URL = `${BACKEND_PUBLIC_URL}/doc`;

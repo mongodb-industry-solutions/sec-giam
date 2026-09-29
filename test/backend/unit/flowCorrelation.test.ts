@@ -25,7 +25,7 @@ const FLOW = 'f7c1a9e0-3b52-4d18-9a44-0e6b2c8d5511';
 function realm(): RealmRecord {
   return {
     realmId: 'realm-1', tenantId: 'default', name: 'acme', displayName: 'Acme',
-    issuer: 'https://authority.example/realms/acme', enabled: true, aliases: [],
+    issuer: 'https://authority.example/api/v1/realms/acme', enabled: true, aliases: [],
     registration: { selfServiceEnabled: false, autoApprove: false },
     tokenPolicy: {
       accessTokenTtlSeconds: 900, refreshTokenTtlSeconds: 3600, codeTtlSeconds: 120,

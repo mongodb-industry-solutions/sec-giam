@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ConsentPanel } from '../../../components/ConsentPanel';
 import { AuthBackdrop } from '../../../components/AuthBackdrop';
 import { LoadingState } from '../../../components/ResultState';
-import { apiUrl } from '../../../lib/env';
+import { API_PREFIX, apiUrl } from '../../../lib/env';
 import type { ConsentPrompt } from '../../../lib/authorizationRequest';
 
 /**
@@ -36,7 +36,7 @@ export default function ConsentPage() {
     }
     setContext({ realm, requestId });
 
-    fetch(apiUrl(`/realms/${realm}/protocol/openid-connect/auth/consent?request_id=${encodeURIComponent(requestId)}`), {
+    fetch(apiUrl(`${API_PREFIX}/realms/${realm}/protocol/oidc/auth/consent?request_id=${encodeURIComponent(requestId)}`), {
       // The session cookie is the whole point, so it has to be sent. Without this the browser omits
       // it on a cross-origin request and the authority correctly answers that nobody is signed in.
       credentials: 'include',
@@ -56,7 +56,7 @@ export default function ConsentPage() {
     if (!context) return;
     setBusy(true);
     try {
-      const response = await fetch(apiUrl(`/realms/${context.realm}/protocol/openid-connect/auth/consent`), {
+      const response = await fetch(apiUrl(`${API_PREFIX}/realms/${context.realm}/protocol/oidc/auth/consent`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'include',

@@ -125,7 +125,7 @@ describe('v42: a principal reads their own effective permissions, fresh', () => 
 
   it('refuses with no credential at all', async () => {
     if (!live) return;
-    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, { signal: AbortSignal.timeout(20000) });
+    const response = await fetch(`${GIAM}/api/v1/realms/leafypay/me/permissions`, { signal: AbortSignal.timeout(20000) });
     expect(response.status).toBe(401);
   });
 
@@ -133,7 +133,7 @@ describe('v42: a principal reads their own effective permissions, fresh', () => 
     if (!live) return;
     const token = await tokenFor(MATRIX[0]);
     expect(token).toBeTruthy();
-    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/leafypay/me/permissions`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(20000),
     });
@@ -148,7 +148,7 @@ describe('v42: a principal reads their own effective permissions, fresh', () => 
     if (!live) return;
     const token = await tokenFor(MATRIX[2]);
     expect(token).toBeTruthy();
-    const response = await fetch(`${GIAM}/realms/leafypay/me/permissions`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/leafypay/me/permissions`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(20000),
     });

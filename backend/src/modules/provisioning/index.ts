@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { API_PREFIX } from '../../shared/models/routes';
 import { reconcileController } from './controllers/reconcile.controller';
 import { bindProvisioningTargets } from './services/webhookTarget';
 
@@ -6,5 +7,5 @@ import { bindProvisioningTargets } from './services/webhookTarget';
 // the case where the push did not arrive: neither half is sufficient on its own.
 export async function provisioningModule(fastify: FastifyInstance) {
   bindProvisioningTargets(fastify.db);
-  await fastify.register(reconcileController);
+  await fastify.register(reconcileController, { prefix: API_PREFIX });
 }

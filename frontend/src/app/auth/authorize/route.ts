@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SIMULATOR_REALM } from '../../../lib/constants';
-import { API_PUBLIC_URL } from '../../../lib/env';
+import { API_PUBLIC_URL, API_PREFIX } from '../../../lib/env';
 
 /**
  * The authorization endpoint's old address, kept working.
  *
  * When GIAM lived inside LeafyPay, an application started a flow at this console path and the page
  * here drove the protocol itself. Since v41 P4 the authority owns the flow and the endpoint is the
- * standard one, `/realms/{realm}/protocol/openid-connect/auth`. An integration written against the
+ * standard one, `/api/v1/realms/{realm}/protocol/oidc/auth`. An integration written against the
  * old address would otherwise get a 404 before a single parameter was read, which tells whoever is
  * wiring it up nothing about what changed.
  *
@@ -20,7 +20,7 @@ export function GET(request: NextRequest) {
   const incoming = request.nextUrl.searchParams;
   const realm = incoming.get('realm') || SIMULATOR_REALM;
 
-  const target = new URL(`${API_PUBLIC_URL.replace(/\/$/, '')}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/auth`);
+  const target = new URL(`${API_PUBLIC_URL.replace(/\/$/, '')}${API_PREFIX}/realms/${encodeURIComponent(realm)}/protocol/oidc/auth`);
   for (const [key, value] of incoming.entries()) {
     if (key === 'realm') continue;
     target.searchParams.append(key, value);

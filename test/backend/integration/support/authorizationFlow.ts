@@ -38,7 +38,7 @@ export interface SignedInSession {
 
 /** Signs in and keeps both halves: the id for anything that names a session, the cookie for the flow. */
 export async function signIn(giam: string, realm: string, login: string, password: string): Promise<SignedInSession | null> {
-  const response = await fetch(`${giam}/realms/${realm}/login`, {
+  const response = await fetch(`${giam}/api/v1/realms/${realm}/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ login, password }),
@@ -87,7 +87,7 @@ export async function issueTokenFor(
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
 
-  const url = new URL(`${giam}/realms/${realm}/protocol/openid-connect/auth`);
+  const url = new URL(`${giam}/api/v1/realms/${realm}/protocol/oidc/auth`);
   url.searchParams.set('client_id', client.clientId);
   url.searchParams.set('redirect_uri', client.redirectUri);
   url.searchParams.set('response_type', 'code');
@@ -125,7 +125,7 @@ export async function issueTokenFor(
     const requestId = new URL(location).searchParams.get('request_id');
     if (!requestId) return nothing;
 
-    const decided = await fetch(`${giam}/realms/${realm}/protocol/openid-connect/auth/consent`, {
+    const decided = await fetch(`${giam}/api/v1/realms/${realm}/protocol/oidc/auth/consent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: session.cookie },
       // No `granted_scopes`, which means all of them: this helper exists to obtain a working token,
@@ -148,7 +148,7 @@ export async function issueTokenFor(
   // says to deliver one, so it is not an exception here either.
   if (!code) return nothing;
 
-  const token = await fetch(`${giam}/realms/${realm}/protocol/openid-connect/token`, {
+  const token = await fetch(`${giam}/api/v1/realms/${realm}/protocol/oidc/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -195,7 +195,7 @@ export async function endSession(
 ): Promise<void> {
   if (!token || !sessionId) return;
   try {
-    await fetch(`${giam}/realms/${realm}/sessions/${encodeURIComponent(sessionId)}`, {
+    await fetch(`${giam}/api/v1/realms/${realm}/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(TIMEOUT),

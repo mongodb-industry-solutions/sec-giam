@@ -50,7 +50,7 @@ export const resourceServerView = {
  * administers `permissions`.
  *
  * The write is new here. Until now the catalog was registered exclusively through
- * `PUT /admin/resource-servers/:name/permissions` (resource.controller.ts), admin-token gated and
+ * `PUT /api/v1/admin/resource-servers/:name/permissions` (resource.controller.ts), admin-token gated and
  * meant for a resource server's own deployment; an ordinary operator with no admin token had no way
  * to declare or edit one from the console at all. Both routes now call the identical
  * `ResourceAdminService.registerCatalog`, so neither can accept something the other would refuse.
@@ -94,7 +94,7 @@ export async function resourceCatalogController(fastify: FastifyInstance) {
       tags: ['authorization'],
       summary: 'Every resource server registered in this realm',
       description:
-        'No applicable standard. What `PUT /admin/resource-servers/:name/permissions` (or its '
+        'No applicable standard. What `PUT /api/v1/admin/resource-servers/:name/permissions` (or its '
         + 'RBAC-gated equivalent below) has registered: each application, tool or MCP server that '
         + 'declared enforcement points, and the resources and actions each one currently offers. '
         + 'Readable by any authenticated principal, the same reasoning `/permissions` already '
@@ -160,7 +160,7 @@ export async function resourceCatalogController(fastify: FastifyInstance) {
       tags: ['authorization'],
       summary: 'Declare a resource server\'s catalog, from the console',
       description:
-        'No applicable standard. Identical to `PUT /admin/resource-servers/:name/permissions`, '
+        'No applicable standard. Identical to `PUT /api/v1/admin/resource-servers/:name/permissions`, '
         + 'reached by a signed-in operator instead of an admin token: both call the same '
         + '`ResourceAdminService.registerCatalog`. Idempotent and versioned: registering the same '
         + 'catalog twice is one registration, and a permission that disappears from the declared set '

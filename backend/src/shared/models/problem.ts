@@ -57,7 +57,7 @@ export const OAUTH_ERROR_SCHEMA = {
 // The paths where a specification owns the error shape. Prefix matched, because a realm issuer path
 // carries the realm name in the middle.
 //
-// THE DEFECT THIS EXCLUSION FIXES. `/protocol/openid-connect/logout` sits under this same prefix but
+// THE DEFECT THIS EXCLUSION FIXES. `/protocol/oidc/logout` sits under this same prefix but
 // is deliberately Problem+json, per its own route schema (`response.400: { $ref: 'Problem#' }`) and
 // its own comment: OpenID Connect RP-Initiated Logout defines no error body shape the way the token
 // endpoint's family does, so it is not an "OAuth surface" in the sense this classifier means. Without
@@ -70,7 +70,7 @@ export const OAUTH_ERROR_SCHEMA = {
 // so neither is caught by the verb pattern's literal names.
 const OAUTH_PATH_PATTERNS = [
   /\/\.well-known\//,
-  /\/protocol\/openid-connect\/(?!logout(\/|$))/,
+  /\/protocol\/oidc\/(?!logout(\/|$))/,
   /\/(authorize|token|introspect|revoke|userinfo|bc-authorize|jwks)(\/|$|\?)/,
 ];
 

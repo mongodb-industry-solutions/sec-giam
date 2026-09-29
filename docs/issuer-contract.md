@@ -15,7 +15,7 @@ one environment variable, and the point of writing it down is that the claim is 
 An application configures **one** value:
 
 ```
-PSP_GIAM_ISSUER_URL = https://<authority>/realms/<realm>
+PSP_GIAM_ISSUER_URL = https://<authority>/api/v1/realms/<realm>
 ```
 
 Everything else is discovered. The application hardcodes no path beneath the issuer, because those
@@ -112,7 +112,7 @@ Two changes from v39, and both matter to a verifier:
 Read `roles`, and expand them against the published catalog:
 
 ```
-GET ${authority-origin}/realms/${realm}/permissions
+GET ${authority-origin}/api/v1/realms/${realm}/permissions
 { "catalogVersion": 3,
   "roles":       [ { "name": "level1_analyst", "permissions": ["transactions:view"] } ],
   "permissions": [ { "permission": "transactions:view", "resource": "transactions", ... } ] }
@@ -125,7 +125,7 @@ choice belongs to the resource server, per operation.
 A client that wants a narrower token asks for it, space-delimited, at the token endpoint:
 
 ```
-POST /realms/${realm}/protocol/openid-connect/token
+POST /api/v1/realms/${realm}/protocol/oidc/token
 grant_type=...&permissions=transactions%3Aview
 ```
 
@@ -212,7 +212,7 @@ Constraints, not preferences. An implementation violating any of these is not a 
 One call, at boot:
 
 ```
-PUT ${authority-origin}/admin/resource-servers/${name}/permissions
+PUT ${authority-origin}/api/v1/admin/resource-servers/${name}/permissions
 { "realm": "...", "audience": "...", "catalogVersion": 1, "permissions": [ ... ] }
 ```
 

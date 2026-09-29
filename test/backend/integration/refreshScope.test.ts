@@ -42,7 +42,7 @@ async function exchangeForTokens(): Promise<Record<string, unknown> | null> {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
 
-  const authorizeUrl = new URL(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`);
+  const authorizeUrl = new URL(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth`);
   authorizeUrl.searchParams.set('client_id', MERCHANT_CLIENT.clientId);
   authorizeUrl.searchParams.set('redirect_uri', MERCHANT_CLIENT.redirectUri);
   authorizeUrl.searchParams.set('response_type', 'code');
@@ -62,7 +62,7 @@ async function exchangeForTokens(): Promise<Record<string, unknown> | null> {
   if (location.includes('/auth/consent')) {
     const requestId = new URL(location).searchParams.get('request_id');
     if (!requestId) return null;
-    const decided = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth/consent`, {
+    const decided = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth/consent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: session.cookie },
       body: JSON.stringify({ request_id: requestId, approved: true }),
@@ -78,7 +78,7 @@ async function exchangeForTokens(): Promise<Record<string, unknown> | null> {
   const code = new URL(location).searchParams.get('code');
   if (!code) return null;
 
-  const tokenResponse = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+  const tokenResponse = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -111,7 +111,7 @@ describe('refresh_token grant preserves the original scope', () => {
     expect(refreshToken, 'no refresh_token in the token response').toBeTruthy();
 
     // Exactly what merchant/src/lib/oauth.ts refreshTokens() sends: no `scope` parameter at all.
-    const refreshed = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+    const refreshed = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
       body: new URLSearchParams({
@@ -138,7 +138,7 @@ describe('refresh_token grant preserves the original scope', () => {
     const refreshToken = tokens?.refresh_token as string | undefined;
     expect(refreshToken).toBeTruthy();
 
-    const refreshed = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+    const refreshed = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
       body: new URLSearchParams({
@@ -160,7 +160,7 @@ describe('refresh_token grant preserves the original scope', () => {
     const refreshToken = tokens?.refresh_token as string | undefined;
     expect(refreshToken).toBeTruthy();
 
-    const refreshed = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+    const refreshed = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
       body: new URLSearchParams({
@@ -177,4 +177,73 @@ describe('refresh_token grant preserves the original scope', () => {
     const body = JSON.parse(refreshedText3) as { error?: string };
     expect(body.error).toBe('invalid_scope');
   });
+
+  it('a refused scope leaves the presented token usable, so a corrected retry is not read as theft', async () => {
+    const tokens = await exchangeForTokens();
+    const refreshToken = tokens?.refresh_token as string | undefined;
+    expect(refreshToken).toBeTruthy();
+
+    const refused = await refresh(refreshToken!, 'openid write:payments_super_admin');
+    expect(refused.status).toBe(400);
+
+    // Before the fix the token had already been rotated, so this retry hit reuse detection and the
+    // whole session was deleted.
+    const retried = await refresh(refreshToken!);
+    const retriedText = await retried.text();
+    expect(retried.status, retriedText).toBe(200);
+  });
+
+  it('the refresh token carries its own scope, and a narrowed refresh does not shrink the next one', async () => {
+    const tokens = await exchangeForTokens();
+    const original = String(tokens?.scope ?? '').split(' ').filter(Boolean).sort();
+    const refreshToken = tokens?.refresh_token as string;
+    expect(claimsOf(refreshToken).scope?.split(' ').sort()).toEqual(original);
+
+    const narrowed = await refresh(refreshToken, 'openid read:accounts');
+    const narrowedBody = await narrowed.json() as { scope?: string; refresh_token?: string };
+    expect(narrowedBody.scope).toBe('openid read:accounts');
+
+    // RFC 6749 section 6: the new refresh token's scope is identical to the one presented.
+    const next = await refresh(narrowedBody.refresh_token!);
+    const nextBody = await next.json() as { scope?: string };
+    expect(String(nextBody.scope ?? '').split(' ').filter(Boolean).sort()).toEqual(original);
+  });
+
+  it('a replayed token with a refused scope is still caught as reuse, and ends the session', async () => {
+    const tokens = await exchangeForTokens();
+    const first = tokens?.refresh_token as string;
+    const rotated = await refresh(first);
+    expect(rotated.status).toBe(200);
+    const { refresh_token: current } = await rotated.json() as { refresh_token: string };
+
+    // The already-rotated token, with a scope beyond the grant: invalid_scope here would hide theft.
+    const replayed = await refresh(first, 'openid write:payments_super_admin');
+    const replayedBody = await replayed.json() as { error?: string; error_description?: string };
+    expect(replayed.status).toBe(400);
+    expect(replayedBody.error).toBe('invalid_grant');
+    expect(replayedBody.error_description).toMatch(/already been used/);
+
+    // The session is gone, so even the current token no longer refreshes.
+    const after = await refresh(current);
+    expect(after.status).toBe(400);
+  });
 });
+
+/** One refresh call, as the merchant app makes it. */
+function refresh(refreshToken: string, scope?: string): Promise<Response> {
+  return fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: BASIC_AUTH },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: MERCHANT_CLIENT.clientId,
+      ...(scope ? { scope } : {}),
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+}
+
+function claimsOf(jwt: string): { scope?: string } {
+  return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8'));
+}

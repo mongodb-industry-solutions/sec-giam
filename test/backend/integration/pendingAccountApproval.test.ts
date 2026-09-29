@@ -40,7 +40,7 @@ describe('v43: approving a self-registered account', () => {
     if (!live) return;
 
     const userName = `pending-${randomUUID().slice(0, 8)}`;
-    const registered = await fetch(`${GIAM}/realms/leafypay/register`, {
+    const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userName, password: 'Correct-Horse-1' }),
@@ -56,7 +56,7 @@ describe('v43: approving a self-registered account', () => {
       expect(token, 'the manager could not sign in').toBeTruthy();
       const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
 
-      const approved = await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${created.subjectId}`, {
+      const approved = await fetch(`${GIAM}/api/v1/realms/leafypay/scim/Users/${created.subjectId}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({
@@ -79,7 +79,7 @@ describe('v43: approving a self-registered account', () => {
       expect(extension?.domainId, 'self-registration should attribute the principal to a directory').toBeTruthy();
 
       const listedPending = await fetch(
-        `${GIAM}/realms/leafypay/scim/v2/Users?pending=true`,
+        `${GIAM}/api/v1/realms/leafypay/scim/Users?pending=true`,
         { headers, signal: AbortSignal.timeout(20000) },
       );
       expect(listedPending.status).toBe(200);

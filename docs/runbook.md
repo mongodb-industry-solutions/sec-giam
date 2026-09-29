@@ -292,4 +292,4 @@ propagation is exactly this lifetime. Shortening it shortens the exposure and co
 lengthening it does the reverse. Nothing else about revocation changes that trade.
 
 For a resource server that needs to hear sooner, subscribe it to the signal stream on its `resource`
-record, or poll `GET /realms/:realm/signals?since=<instant>`. Both carry the same events.
+record, or poll `GET /api/v1/realms/:realm/signals?since=<instant>`. Both carry the same events.

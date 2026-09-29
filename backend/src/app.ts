@@ -27,7 +27,8 @@ import { workloadModule } from './modules/workload';
 import { privilegeModule } from './modules/privilege';
 import { keysModule } from './modules/keys';
 import { auditModule } from './modules/audit';
-import { adminModule } from './modules/admin';
+import { adminModule, ADMIN_PREFIX } from './modules/admin';
+import { API_PREFIX } from './shared/models/routes';
 import { systemModule } from './modules/system';
 import { registerBuiltinPorts } from './shared/ports/builtins';
 import { config } from './config';
@@ -113,12 +114,12 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
   // "the directory is unreachable" instead of chasing a credentials problem that does not exist.
   fastify.addHook('preHandler', async (request, reply) => {
     const url = request.url;
-    const isProbe = url === '/health' || url.startsWith('/api/v1/system/health');
+    const isProbe = url === '/health' || url.startsWith(`${API_PREFIX}/system/health`);
     // The operations surface stays reachable with the datastore down: signing in, reading the logs and
     // rebuilding the runtime are what an operator needs at exactly that moment, and refusing them
     // would leave the only way to diagnose a broken database behind the broken database. The console
     // views are excluded, because reading a record with no datastore is not a thing that can succeed.
-    const isOperations = url.startsWith('/api/v1/admin/') && !url.startsWith('/api/v1/admin/views');
+    const isOperations = url.startsWith(`${ADMIN_PREFIX}/`) && !url.startsWith(`${ADMIN_PREFIX}/views`);
     if (fastify.dbError !== null && !isProbe && !isOperations && !url.startsWith('/doc')) {
       return reply.status(503).send(problem(503, 'Service unavailable', fastify.dbError));
     }
@@ -138,8 +139,8 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
    *
    * Keyed off `request.bearerProtected`, set by the middleware that expects a token, rather than off
    * the URL. Routing on the path would be wrong in both directions:
-   * `/protocol/openid-connect/userinfo` IS a protected resource and needs the challenge, while
-   * `/protocol/openid-connect/token` authenticates a CLIENT, answers with the RFC 6749 5.2 error
+   * `/protocol/oidc/userinfo` IS a protected resource and needs the challenge, while
+   * `/protocol/oidc/token` authenticates a CLIENT, answers with the RFC 6749 5.2 error
    * object, and must not carry one, since a challenge there invites a retry of a flow that is not
    * the one that failed. Both share a path prefix.
    */
@@ -310,7 +311,7 @@ export async function buildApp(options: BuildOptions = {}): Promise<FastifyInsta
   await fastify.register(privilegeModule);
   await fastify.register(auditModule);
   await fastify.register(adminModule);
-  await fastify.register(systemModule, { prefix: '/api/v1' });
+  await fastify.register(systemModule, { prefix: API_PREFIX });
 
   return fastify;
 }

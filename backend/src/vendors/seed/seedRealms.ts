@@ -1,9 +1,9 @@
-import { Db } from 'mongodb';
+import { Collection, Db } from 'mongodb';
 import { REALM_COLLECTION, DOMAIN_COLLECTION } from '../../shared/models/collections';
 import { RealmRecord } from '../../modules/realm/models/realm.model';
 import { DomainRecord } from '../../modules/realm/models/domain.model';
 import { DEFAULT_TOKEN_POLICY, localDomainRecord } from '../../modules/realm/models/realmDefaults';
-import { DEFAULT_TENANT_ID } from '../../shared/models/base.model';
+import { DEFAULT_TENANT_ID, touchMeta } from '../../shared/models/base.model';
 import { upsertSeed } from './upsertSeed';
 import { readSeedFile } from './readSeedFile';
 import { realmIssuer } from '../../config';
@@ -169,5 +169,32 @@ export async function seedRealms(db: Db): Promise<void> {
       const outcome = await upsertSeed<DomainRecord>(providers, { domainId }, changes, scope, 'Domain');
       console.log(`  domain:   ${fixture.name}/${domain.name} (${domain.protocol}) ${outcome.action}`);
     }
+  }
+
+  await recomposeIssuers(realms);
+}
+
+/**
+ * Every persisted realm's issuer, composed again from its name.
+ *
+ * The fixture loop above only reaches realms a fixture declares; a realm created at runtime
+ * (`POST /api/v1/realms`) keeps whatever issuer it was stored with. The issuer is always derived
+ * (`realmIssuer(name)`, and a realm cannot be renamed), so a stored one that differs is stale: after
+ * the address scheme moved under `/api/v1`, it pointed at routes that no longer exist. Idempotent,
+ * so a reseed is also the upgrade. Tokens minted under the old issuer stop validating, which is
+ * the release's documented breaking change: holders sign in again.
+ */
+export async function recomposeIssuers(realms: Collection<RealmRecord>): Promise<void> {
+  const stored = await realms
+    .find({}, { projection: { _id: 0, realmId: 1, name: 1, issuer: 1, meta: 1 } })
+    .toArray();
+  for (const realm of stored) {
+    const issuer = realmIssuer(realm.name);
+    if (realm.issuer === issuer) continue;
+    await realms.updateOne(
+      { realmId: realm.realmId },
+      { $set: { issuer, ...(realm.meta ? { meta: touchMeta(realm.meta) } : {}) } },
+    );
+    console.log(`  realm:    ${realm.name} issuer ${realm.issuer} -> ${issuer}`);
   }
 }

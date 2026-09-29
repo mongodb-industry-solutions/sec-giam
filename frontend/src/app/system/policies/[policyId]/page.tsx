@@ -89,7 +89,7 @@ export default function PolicyDetailPage() {
    * anything beyond it is still nameable through the panel's own field.
    */
   const readPrincipals = useCallback(
-    () => callApi<ScimList>('/scim/v2/Users', { query: { count: 200 }, subject: 'the principal directory' }),
+    () => callApi<ScimList>('/scim/Users', { query: { count: 200 }, subject: 'the principal directory' }),
     [],
   );
   const principals = useConsoleResource(readPrincipals, 'The principal directory could not be read.');
@@ -644,7 +644,7 @@ function PolicyBody({
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-gray-500">
-              The whole statement, in the shape `PATCH /realms/:realm/policies/:policyId` accepts:
+              The whole statement, in the shape `PATCH /api/v1/realms/:realm/policies/:policyId` accepts:
               effect, all four selectors, the conditions and the reason. Editing it here is the same
               edit as ticking a row, and enables Save the same way.
             </p>

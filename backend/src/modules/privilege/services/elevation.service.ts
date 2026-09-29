@@ -215,11 +215,26 @@ export class ElevationService {
     // never be elevated again, because the spent entry went on matching. It is removed here, and the
     // request proceeds as the genuinely new grant it is, with its own clock and its own audit event.
     const duplicate = existing && !isSpent(existing) ? existing : undefined;
+    // What the principal holds once a spent entry is gone: the cap below counts this, not the
+    // holdings as read, or removing the spent entry would free a slot the check never sees.
+    let holdingsAfter = existingHoldings;
     if (existing && !duplicate) {
+      // Matched on scope too, so only THIS spent entry goes: the same role held for another scope
+      // with the same expiry is unrelated authority and must survive.
       await this.principals.updateOne(
         { realmId: realm.realmId, subjectId: input.subjectId },
-        { $pull: { roles: { roleId: role.roleId, ephemeral: true, expiresAt: existing.expiresAt } } },
+        {
+          $pull: {
+            roles: {
+              roleId: role.roleId,
+              ephemeral: true,
+              expiresAt: existing.expiresAt,
+              scope: existing.scope ?? { $exists: false },
+            },
+          },
+        } as never,
       );
+      holdingsAfter = existingHoldings.filter((entry) => entry !== existing);
     }
 
     if (duplicate) {
@@ -246,7 +261,7 @@ export class ElevationService {
         detail: 'An elevation adds authority the subject does not already have for this scope.',
       };
     }
-    if (existingHoldings.length >= MAX_ROLE_HOLDINGS) {
+    if (holdingsAfter.length >= MAX_ROLE_HOLDINGS) {
       this.audit(realm, {
         action: input.requiresApproval ? 'privilege.requested' : 'privilege.granted',
         outcome: 'failure',

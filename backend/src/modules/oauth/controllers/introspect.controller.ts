@@ -26,7 +26,7 @@ import { RESOURCE_COLLECTION, GRANT_COLLECTION } from '../../../shared/models/co
 export async function introspectController(fastify: FastifyInstance) {
   const ring = () => new KeyRing(new MongoSigningKeyStore(fastify.db));
 
-  fastify.post('/realms/:realm/protocol/openid-connect/token/introspect', {
+  fastify.post('/realms/:realm/protocol/oidc/token/introspect', {
     schema: {
       operationId: 'introspectToken',
       tags: ['oauth'],
@@ -244,7 +244,7 @@ export async function introspectController(fastify: FastifyInstance) {
     });
   });
 
-  fastify.post('/realms/:realm/protocol/openid-connect/revoke', {
+  fastify.post('/realms/:realm/protocol/oidc/revoke', {
     schema: {
       operationId: 'revokeToken',
       tags: ['oauth'],

@@ -153,7 +153,7 @@ async function machineToken(
 ) {
   return app.inject({
     method: 'POST',
-    url: `/realms/${realm}/protocol/openid-connect/token`,
+    url: `/api/v1/realms/${realm}/protocol/oidc/token`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     payload: new URLSearchParams({
       grant_type: 'client_credentials',

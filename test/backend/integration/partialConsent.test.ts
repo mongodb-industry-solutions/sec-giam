@@ -58,7 +58,7 @@ describe('v41 P5: consent may be partial, and it is incremental', () => {
   async function askFor(scope: string): Promise<{ requestId: string; verifier: string }> {
     const verifier = randomBytes(32).toString('base64url');
     const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const url = new URL(`${GIAM}/realms/${REALM}/protocol/openid-connect/auth`);
+    const url = new URL(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth`);
     for (const [key, value] of Object.entries({
       client_id: CLIENT.clientId,
       redirect_uri: CLIENT.redirectUri,
@@ -77,12 +77,12 @@ describe('v41 P5: consent may be partial, and it is incremental', () => {
   }
 
   const promptFor = async (requestId: string): Promise<Prompt> => fetch(
-    `${GIAM}/realms/${REALM}/protocol/openid-connect/auth/consent?request_id=${requestId}`,
+    `${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth/consent?request_id=${requestId}`,
     { headers: { cookie }, signal: AbortSignal.timeout(20000) },
   ).then((response) => response.json() as Promise<Prompt>);
 
   const decide = (requestId: string, approved: boolean, grantedScopes?: string[]) => fetch(
-    `${GIAM}/realms/${REALM}/protocol/openid-connect/auth/consent`,
+    `${GIAM}/api/v1/realms/${REALM}/protocol/oidc/auth/consent`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -125,7 +125,7 @@ describe('v41 P5: consent may be partial, and it is incremental', () => {
     const code = new URL(resumed.headers.get('location') as string).searchParams.get('code');
     expect(code).toBeTruthy();
 
-    const token = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+    const token = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

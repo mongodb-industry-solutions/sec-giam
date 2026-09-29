@@ -58,7 +58,7 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
     }).catch(() => {});
   });
 
-  const request = async () => fetch(`${GIAM}/realms/leafypay/elevations`, {
+  const request = async () => fetch(`${GIAM}/api/v1/realms/leafypay/elevations`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -127,7 +127,7 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
   it('re-grants a scope whose earlier elevation has expired', async () => {
     if (!live) return;
     const expiredScope = `${CASE}-expired`;
-    const requestFor = async (ref: string) => fetch(`${GIAM}/realms/leafypay/elevations`, {
+    const requestFor = async (ref: string) => fetch(`${GIAM}/api/v1/realms/leafypay/elevations`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -138,7 +138,7 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
     });
     const inForce = async (ref: string) => {
       const response = await fetch(
-        `${GIAM}/realms/leafypay/elevations/mine?scopeKind=case&scopeRef=${encodeURIComponent(ref)}`,
+        `${GIAM}/api/v1/realms/leafypay/elevations/mine?scopeKind=case&scopeRef=${encodeURIComponent(ref)}`,
         { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) },
       );
       return (await response.json() as { inForce: boolean }).inForce;
@@ -180,7 +180,7 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
     const headers = { authorization: `Bearer ${token}` };
     const mine = async (ref: string) => {
       const response = await fetch(
-        `${GIAM}/realms/leafypay/elevations/mine?scopeKind=case&scopeRef=${encodeURIComponent(ref)}`,
+        `${GIAM}/api/v1/realms/leafypay/elevations/mine?scopeKind=case&scopeRef=${encodeURIComponent(ref)}`,
         { headers, signal: AbortSignal.timeout(20000) },
       );
       expect(response.status).toBe(200);
@@ -199,7 +199,7 @@ describe('a scoped elevation, self-requested by the standing holder', () => {
      * If this ever stops being 403, the holder of any elevated role can enumerate everybody else's,
      * which is the reason the two questions are separate routes rather than one with a flag.
      */
-    const oversight = await fetch(`${GIAM}/realms/leafypay/elevations`, { headers, signal: AbortSignal.timeout(20000) });
+    const oversight = await fetch(`${GIAM}/api/v1/realms/leafypay/elevations`, { headers, signal: AbortSignal.timeout(20000) });
     expect(oversight.status).toBe(403);
   });
 

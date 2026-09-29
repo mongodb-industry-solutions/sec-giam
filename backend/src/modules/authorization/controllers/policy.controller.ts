@@ -1042,14 +1042,14 @@ export async function policyController(fastify: FastifyInstance) {
     return realm && realm.enabled !== false ? { realmId: realm.realmId, tenantId: realm.tenantId } : null;
   }
 
-  fastify.post('/api/v1/access/evaluation', {
+  fastify.post('/access/evaluation', {
     preHandler: requirePrincipalAtHome,
     schema: {
       operationId: 'evaluateDecisionAtHome',
       tags: ['authorization'],
       summary: 'Evaluate one authorization decision, at the AuthZEN-shaped compatibility path',
       description:
-        'The same evaluation as `POST /realms/:realm/decision`, at a path shaped for a generic '
+        'The same evaluation as `POST /api/v1/realms/:realm/decision`, at a path shaped for a generic '
         + 'AuthZEN 1.0 client rather than named to one realm. There is no realm segment because the '
         + 'specification has none: the realm evaluated is always the caller\'s own, resolved from '
         + 'the token that authenticated the request.',
@@ -1082,14 +1082,14 @@ export async function policyController(fastify: FastifyInstance) {
     return reply.send(outcome);
   });
 
-  fastify.post('/api/v1/access/evaluations', {
+  fastify.post('/access/evaluations', {
     preHandler: requirePrincipalAtHome,
     schema: {
       operationId: 'evaluateDecisionsAtHome',
       tags: ['authorization'],
       summary: 'Evaluate several authorization decisions in one call, at the AuthZEN-shaped compatibility path',
       description:
-        'The same batch evaluation as `POST /realms/:realm/decision/evaluations`, at the path shaped '
+        'The same batch evaluation as `POST /api/v1/realms/:realm/decision/evaluations`, at the path shaped '
         + 'for a generic AuthZEN 1.0 client. See that endpoint.',
       security: [{ bearerAuth: [] }],
       body: {
@@ -1177,14 +1177,14 @@ export async function policyController(fastify: FastifyInstance) {
     return reply.send({ evaluations: outcomes });
   });
 
-  fastify.post('/api/v1/access/search/action', {
+  fastify.post('/access/search/action', {
     preHandler: requirePrincipalAtHome,
     schema: {
       operationId: 'searchActionsAtHome',
       tags: ['authorization'],
       summary: 'Which actions a subject may take on a resource, at the AuthZEN-shaped compatibility path',
       description:
-        'The same reverse search as `POST /realms/:realm/decision/search/action`, at the path shaped '
+        'The same reverse search as `POST /api/v1/realms/:realm/decision/search/action`, at the path shaped '
         + 'for a generic AuthZEN 1.0 client. See that endpoint.',
       security: [{ bearerAuth: [] }],
       body: {

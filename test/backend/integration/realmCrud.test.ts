@@ -38,7 +38,7 @@ describe('v43: realm CRUD provisions a whole, usable realm', () => {
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
     const name = `v43-realm-${randomUUID().slice(0, 8)}`;
 
-    const created = await fetch(`${GIAM}/realms`, {
+    const created = await fetch(`${GIAM}/api/v1/realms`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ name, displayName: 'V43 Test Realm' }),
@@ -56,26 +56,26 @@ describe('v43: realm CRUD provisions a whole, usable realm', () => {
       expect(realm.issuer).toContain(name);
       expect(realm.enabled).toBe(true);
 
-      // Note: `GET /realms/:realm/domains` cannot be asserted here with the manager's own token. That
+      // Note: `GET /api/v1/realms/:realm/domains` cannot be asserted here with the manager's own token. That
       // route is scoped INSIDE the new realm, and nobody holds an assignment there yet: bootstrapping
       // an administrator for a realm just created is the pre-existing cross-realm grant mechanism
-      // (`POST /realms/:realm/realm-grants`), a separate capability, not this endpoint's job. The
+      // (`POST /api/v1/realms/:realm/realm-grants`), a separate capability, not this endpoint's job. The
       // domain's existence is evidence enough here: a token for the new realm could only ever be
       // minted at all because `localDomain` resolved and the invariant-hardening added in this same
       // session (P12) did not throw.
 
       // A signing key was published: discovery answers for the new realm's own JWKS immediately.
-      const jwks = await fetch(`${GIAM}/realms/${name}/protocol/openid-connect/certs`, { signal: AbortSignal.timeout(20000) });
+      const jwks = await fetch(`${GIAM}/api/v1/realms/${name}/protocol/oidc/certs`, { signal: AbortSignal.timeout(20000) });
       expect(jwks.status).toBe(200);
       const keySet = await jwks.json() as { keys: unknown[] };
       expect(keySet.keys.length).toBeGreaterThan(0);
 
-      const listed = await fetch(`${GIAM}/realms`, { headers, signal: AbortSignal.timeout(20000) });
+      const listed = await fetch(`${GIAM}/api/v1/realms`, { headers, signal: AbortSignal.timeout(20000) });
       expect(listed.status).toBe(200);
       const realmList = await listed.json() as { realms: Array<{ name: string }> };
       expect(realmList.realms.map((r) => r.name)).toContain(name);
 
-      const updated = await fetch(`${GIAM}/realms/${name}`, {
+      const updated = await fetch(`${GIAM}/api/v1/realms/${name}`, {
         method: 'PATCH', headers, body: JSON.stringify({ displayName: 'Renamed Display' }), signal: AbortSignal.timeout(20000),
       });
       expect(updated.status).toBe(200);
@@ -85,7 +85,7 @@ describe('v43: realm CRUD provisions a whole, usable realm', () => {
       // Fastify strips a property the schema does not declare rather than refusing the request (the
       // same convention every other PATCH in this authority already follows), so the assertion is
       // that the name is UNCHANGED, not that the request itself was rejected.
-      const attemptRename = await fetch(`${GIAM}/realms/${name}`, {
+      const attemptRename = await fetch(`${GIAM}/api/v1/realms/${name}`, {
         method: 'PATCH', headers, body: JSON.stringify({ name: 'something-else' }), signal: AbortSignal.timeout(20000),
       });
       expect(attemptRename.status).toBe(200);
@@ -98,7 +98,7 @@ describe('v43: realm CRUD provisions a whole, usable realm', () => {
   it('refuses a name that is already taken', async () => {
     if (!live) return;
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
-    const response = await fetch(`${GIAM}/realms`, {
+    const response = await fetch(`${GIAM}/api/v1/realms`, {
       method: 'POST', headers, body: JSON.stringify({ name: 'leafypay', displayName: 'Duplicate' }), signal: AbortSignal.timeout(20000),
     });
     expect(response.status).toBe(409);

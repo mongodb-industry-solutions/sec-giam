@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { API_PREFIX } from '../../shared/models/routes';
 import { discoveryController } from './controllers/discovery.controller';
 import { tokenController } from './controllers/token.controller';
 import { authorizeController } from './controllers/authorize.controller';
@@ -11,9 +12,9 @@ import { userinfoController } from './controllers/userinfo.controller';
 // this project's.
 export async function oauthModule(fastify: FastifyInstance) {
   await fastify.register(discoveryController);
-  await fastify.register(userinfoController);
-  await fastify.register(authorizeController);
-  await fastify.register(tokenController);
-  await fastify.register(introspectController);
-  await fastify.register(clientRegistrationController);
+  await fastify.register(userinfoController, { prefix: API_PREFIX });
+  await fastify.register(authorizeController, { prefix: API_PREFIX });
+  await fastify.register(tokenController, { prefix: API_PREFIX });
+  await fastify.register(introspectController, { prefix: API_PREFIX });
+  await fastify.register(clientRegistrationController, { prefix: API_PREFIX });
 }

@@ -19,7 +19,7 @@ afterAll(async () => { await app?.close(); });
 
 describe('the authorization endpoint accepts the hosted sign-in prefill hints', () => {
   const parameters = () => {
-    const path = document.paths?.['/realms/{realm}/protocol/openid-connect/auth'];
+    const path = document.paths?.['/api/v1/realms/{realm}/protocol/oidc/auth'];
     const operation = path?.get as { parameters?: Array<{ name: string; in: string }> } | undefined;
     return operation?.parameters ?? [];
   };

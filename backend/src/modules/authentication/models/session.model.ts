@@ -110,4 +110,10 @@ export interface RefreshClaims {
    * under one flow with no stored state.
    */
   txn?: string;
+  /**
+   * The scope this refresh token was issued with, space separated. A refresh may narrow it and never
+   * widen it (RFC 6749 section 6), so it is carried in the signed token rather than read from the
+   * grant, which can grow after issuance.
+   */
+  scope?: string;
 }

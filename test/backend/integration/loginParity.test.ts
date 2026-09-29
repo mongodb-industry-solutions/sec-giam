@@ -62,7 +62,7 @@ beforeAll(async () => {
   app = await buildApp();
   await app.ready();
 
-  const response = await app.inject({ method: 'GET', url: `/realms/${REALM}/login-context` });
+  const response = await app.inject({ method: 'GET', url: `/api/v1/realms/${REALM}/login-context` });
   expect(response.statusCode, 'the sign-in screen must be able to render at all').toBe(200);
   context = response.json() as LoginContext;
 }, 120_000);

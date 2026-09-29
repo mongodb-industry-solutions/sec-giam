@@ -156,7 +156,7 @@ const VIEWS: Record<string, ConsoleView> = {
 export async function consoleController(fastify: FastifyInstance) {
   const names = Object.keys(VIEWS);
 
-  fastify.get('/api/v1/admin/views', {
+  fastify.get('/views', {
     preHandler: requireAuthorityCaller,
     schema: {
       operationId: 'listConsoleViews',
@@ -220,7 +220,7 @@ export async function consoleController(fastify: FastifyInstance) {
     }),
   }));
 
-  fastify.get('/api/v1/admin/views/:view', {
+  fastify.get('/views/:view', {
     preHandler: requireAuthorityCaller,
     schema: {
       operationId: 'readConsoleView',

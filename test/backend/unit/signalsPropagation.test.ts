@@ -117,7 +117,7 @@ describe('P10.2: the signal is a signed CAEP event a receiver can verify', () =>
       subjectId: 'sub-1',
       sessionId: 'sess-1',
       reason: 'logout',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
 
     const payload = JSON.parse(Buffer.from(minted.jwt.split('.')[1], 'base64url').toString('utf8'));
     expect(Object.keys(payload.events)).toEqual([
@@ -126,7 +126,7 @@ describe('P10.2: the signal is a signed CAEP event a receiver can verify', () =>
     const event = payload.events['https://schemas.openid.net/secevent/caep/event-type/session-revoked'];
     expect(event.subject).toEqual({ format: 'opaque', id: 'sub-1' });
     expect(event.session).toEqual({ format: 'opaque', id: 'sess-1' });
-    expect(payload.iss).toBe('https://authority.example/realms/leafypay');
+    expect(payload.iss).toBe('https://authority.example/api/v1/realms/leafypay');
     expect(payload.jti).toBeTruthy();
   });
 
@@ -134,7 +134,7 @@ describe('P10.2: the signal is a signed CAEP event a receiver can verify', () =>
     const signals = new SignalsService(resourcesHolding([]), ring);
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'session-revoked', subjectId: 'sub-1',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
     const [header, payload, signature] = minted.jwt.split('.');
     expect(header && payload && signature).toBeTruthy();
     expect(signature.length).toBeGreaterThan(0);
@@ -159,7 +159,7 @@ describe('P10: a revocation reaches a subscribed receiver, over the wire', () =>
     const signals = new SignalsService(resourcesHolding([subscribed]), ring);
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'session-revoked', subjectId: 'sub-1', sessionId: 'sess-1',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
 
     const outcomes = await signals.deliver(minted, [subscribed]);
     expect(outcomes).toEqual([{ resourceId: 'resource:api:payments', delivered: true, status: 202 }]);
@@ -178,7 +178,7 @@ describe('P10: a revocation reaches a subscribed receiver, over the wire', () =>
     const signals = new SignalsService(resourcesHolding([subscribed]), ring);
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'session-revoked', subjectId: 'sub-1',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
     const outcomes = await signals.deliver(minted, [subscribed]);
     expect(outcomes[0].delivered).toBe(false);
     expect(outcomes[0].status).toBe(500);
@@ -194,7 +194,7 @@ describe('P10: a revocation reaches a subscribed receiver, over the wire', () =>
     const signals = new SignalsService(resourcesHolding([unreachable]), ring);
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'session-revoked', subjectId: 'sub-1',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
     const outcomes = await signals.deliver(minted, [unreachable]);
     expect(outcomes[0].delivered).toBe(false);
     expect(outcomes[0].error).toBeTruthy();
@@ -209,7 +209,7 @@ describe('P10: a revocation reaches a subscribed receiver, over the wire', () =>
     const signals = new SignalsService(resourcesHolding([polling]), ring);
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'session-revoked', subjectId: 'sub-1',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
     expect(await signals.deliver(minted, [polling])).toEqual([]);
   });
 });
@@ -244,7 +244,7 @@ describe('P10.2: a credential change is emitted, not merely advertised', () => {
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'credential-change', subjectId: 'sub-1',
       reason: 'the credential was revoked by its owner',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
 
     const payload = JSON.parse(Buffer.from(minted.jwt.split('.')[1], 'base64url').toString('utf8'));
     const uri = 'https://schemas.openid.net/secevent/caep/event-type/credential-change';
@@ -265,7 +265,7 @@ describe('P10.2: a credential change is emitted, not merely advertised', () => {
     const signals = new SignalsService(resourcesHolding([]), ring);
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'credential-change', subjectId: 'sub-1',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
 
     const uri = 'https://schemas.openid.net/secevent/caep/event-type/credential-change';
     const payload = JSON.parse(Buffer.from(minted.jwt.split('.')[1], 'base64url').toString('utf8'));
@@ -285,7 +285,7 @@ describe('P10.2: a credential change is emitted, not merely advertised', () => {
 
     const minted = await signals.mint({
       realmId: 'r1', tenantId: 'default', event: 'credential-change', subjectId: 'sub-1',
-    }, 'https://authority.example/realms/leafypay');
+    }, 'https://authority.example/api/v1/realms/leafypay');
     const outcomes = await signals.deliver(minted, receivers);
 
     expect(outcomes).toEqual([{ resourceId: 'resource:api:payments', delivered: true, status: 202 }]);

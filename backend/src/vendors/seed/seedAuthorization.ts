@@ -340,7 +340,7 @@ export async function seedAuthorization(
     roles: ['view', 'manage'],
     assignments: ['view', 'manage'],
     // `manage` declares or edits a resource server's own catalog from the console (the same write
-    // `PUT /admin/resource-servers/:name/permissions` already offers admin-token callers); `view` is
+    // `PUT /api/v1/admin/resource-servers/:name/permissions` already offers admin-token callers); `view` is
     // reading what is already declared, the tier `/permissions` and the read side of the resource
     // catalog both ask for.
     permissions: ['view', 'manage'],

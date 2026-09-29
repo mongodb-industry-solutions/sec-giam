@@ -367,7 +367,7 @@ export class GiamClient {
   ): Promise<{ active: boolean; [claim: string]: unknown }> {
     const issuer = this.options.issuerUrl.replace(/\/+$/, '');
     try {
-      const response = await this.fetchImpl(`${issuer}/protocol/openid-connect/token/introspect`, {
+      const response = await this.fetchImpl(`${issuer}/protocol/oidc/token/introspect`, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -483,7 +483,7 @@ export function createCatalogCache(options: {
       try {
         const bearer = await options.token?.();
         const response = await fetch(
-          `${options.origin.replace(/\/$/, '')}/realms/${options.realm}/permissions`,
+          `${options.origin.replace(/\/$/, '')}/api/v1/realms/${options.realm}/permissions`,
           {
             headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
             signal: AbortSignal.timeout(5_000),

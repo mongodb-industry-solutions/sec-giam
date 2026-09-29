@@ -41,7 +41,7 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
 
     // A fresh, unassigned role so nothing outside this test is affected by disabling it.
     const roleName = `v43-toggle-${randomUUID().slice(0, 8)}`;
-    const created = await fetch(`${GIAM}/realms/leafypay/roles`, {
+    const created = await fetch(`${GIAM}/api/v1/realms/leafypay/roles`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -55,7 +55,7 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
 
     // A throwaway principal to hold it, provisioned and approved.
     const userName = `v43-holder-${randomUUID().slice(0, 8)}`;
-    const registered = await fetch(`${GIAM}/realms/leafypay/register`, {
+    const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userName, password: 'Correct-Horse-1' }),
@@ -70,19 +70,19 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
     try {
       expect(role.enabled).toBe(true);
 
-      await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${holder.subjectId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/scim/Users/${holder.subjectId}`, {
         method: 'PATCH', headers,
         body: JSON.stringify({ schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', value: { active: true } }] }),
         signal: AbortSignal.timeout(20000),
       });
 
-      const granted = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}/assignments`, {
+      const granted = await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${role.roleId}/assignments`, {
         method: 'POST', headers, body: JSON.stringify({ subjectId: holder.subjectId }), signal: AbortSignal.timeout(20000),
       });
       expect(granted.status).toBe(201);
 
       async function decide(): Promise<boolean> {
-        const response = await fetch(`${GIAM}/realms/leafypay/decision`, {
+        const response = await fetch(`${GIAM}/api/v1/realms/leafypay/decision`, {
           method: 'POST', headers,
           body: JSON.stringify({
             subject: { type: 'identity', id: holder.subjectId },
@@ -98,7 +98,7 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
 
       expect(await decide()).toBe(true);
 
-      const disabled = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
+      const disabled = await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${role.roleId}`, {
         method: 'PATCH', headers, body: JSON.stringify({ enabled: false }), signal: AbortSignal.timeout(20000),
       });
       expect(disabled.status).toBe(200);
@@ -107,11 +107,11 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
       expect(await decide()).toBe(false);
 
       // The assignment itself is untouched: re-enabling resumes granting without re-assigning.
-      const listed = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}/assignments`, { headers, signal: AbortSignal.timeout(20000) });
+      const listed = await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${role.roleId}/assignments`, { headers, signal: AbortSignal.timeout(20000) });
       const assignments = await listed.json() as { assignments: Array<{ subjectId: string }> };
       expect(assignments.assignments.some((a) => a.subjectId === holder.subjectId)).toBe(true);
 
-      const reenabled = await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
+      const reenabled = await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${role.roleId}`, {
         method: 'PATCH', headers, body: JSON.stringify({ enabled: true }), signal: AbortSignal.timeout(20000),
       });
       expect(reenabled.status).toBe(200);
@@ -119,10 +119,10 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
     } finally {
       // A role still assigned refuses deletion (409): the assignment goes first, or this leaves
       // the role behind on every run exactly like the leak this whole file exists to close.
-      await fetch(`${GIAM}/realms/leafypay/principals/${holder.subjectId}/roles/${role.roleId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/principals/${holder.subjectId}/roles/${role.roleId}`, {
         method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
       }).catch(() => {});
-      await fetch(`${GIAM}/realms/leafypay/roles/${role.roleId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${role.roleId}`, {
         method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
       }).catch(() => {});
       await deleteTestPrincipal(holder.subjectId).catch(() => {});
@@ -134,7 +134,7 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
     const headers = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
 
     const parentName = `v43-parent-${randomUUID().slice(0, 8)}`;
-    const parent = await fetch(`${GIAM}/realms/leafypay/roles`, {
+    const parent = await fetch(`${GIAM}/api/v1/realms/leafypay/roles`, {
       method: 'POST', headers,
       body: JSON.stringify({ name: parentName, displayName: 'v43 parent', scopeKind: 'all', permissions: [{ resource: 'keys', action: 'view' }] }),
       signal: AbortSignal.timeout(20000),
@@ -142,7 +142,7 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
     const parentRole = await parent.json() as { roleId: string };
 
     const childName = `v43-child-${randomUUID().slice(0, 8)}`;
-    const child = await fetch(`${GIAM}/realms/leafypay/roles`, {
+    const child = await fetch(`${GIAM}/api/v1/realms/leafypay/roles`, {
       method: 'POST', headers,
       body: JSON.stringify({
         name: childName, displayName: 'v43 child', scopeKind: 'all',
@@ -156,22 +156,22 @@ describe('v43: a role switched off grants nothing, held directly or inherited', 
     // parent, so it goes first: deleting the parent while something still names it is exactly the
     // state disabling it is supposed to make harmless, not a state removing it should ever produce.
     try {
-      const detailBefore = await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
+      const detailBefore = await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
       const beforeBody = await detailBefore.json() as { effectivePermissionCount: number };
       expect(beforeBody.effectivePermissionCount).toBe(2);
 
-      await fetch(`${GIAM}/realms/leafypay/roles/${parentRole.roleId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${parentRole.roleId}`, {
         method: 'PATCH', headers, body: JSON.stringify({ enabled: false }), signal: AbortSignal.timeout(20000),
       });
 
-      const detailAfter = await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
+      const detailAfter = await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${childRole.roleId}`, { headers, signal: AbortSignal.timeout(20000) });
       const afterBody = await detailAfter.json() as { effectivePermissionCount: number };
       expect(afterBody.effectivePermissionCount).toBe(1);
     } finally {
-      await fetch(`${GIAM}/realms/leafypay/roles/${childRole.roleId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${childRole.roleId}`, {
         method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
       }).catch(() => {});
-      await fetch(`${GIAM}/realms/leafypay/roles/${parentRole.roleId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/roles/${parentRole.roleId}`, {
         method: 'DELETE', headers: { authorization: `Bearer ${managerToken}` }, signal: AbortSignal.timeout(20000),
       }).catch(() => {});
     }

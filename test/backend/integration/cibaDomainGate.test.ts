@@ -30,7 +30,7 @@ async function reachable(): Promise<boolean> {
 }
 
 async function tryCiba(userName: string): Promise<{ error?: string }> {
-  const response = await fetch(`${GIAM}/realms/leafypay/protocol/openid-connect/ext/ciba/auth`, {
+  const response = await fetch(`${GIAM}/api/v1/realms/leafypay/protocol/oidc/ext/ciba/auth`, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -57,7 +57,7 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
     // A fresh registration, on this realm's own local domain (v43's earlier fix), approved so it is
     // a real active principal rather than a pending one.
     userName = `ciba-gate-${randomUUID().slice(0, 8)}`;
-    const registered = await fetch(`${GIAM}/realms/leafypay/register`, {
+    const registered = await fetch(`${GIAM}/api/v1/realms/leafypay/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userName, password: 'Correct-Horse-1' }),
@@ -66,7 +66,7 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
     const created = await registered.json() as { subjectId: string };
     subjectId = created.subjectId;
     const approveHeaders = { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' };
-    const approved = await fetch(`${GIAM}/realms/leafypay/scim/v2/Users/${created.subjectId}`, {
+    const approved = await fetch(`${GIAM}/api/v1/realms/leafypay/scim/Users/${created.subjectId}`, {
       method: 'PATCH',
       headers: approveHeaders,
       body: JSON.stringify({
@@ -95,7 +95,7 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
     try {
       // A principal with no registered device key still reaches the domain gate FIRST: turned off,
       // the refusal is the domain's, not "no authenticator".
-      const off = await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
+      const off = await fetch(`${GIAM}/api/v1/realms/leafypay/domains/${domainId}`, {
         method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: false } }), signal: AbortSignal.timeout(20000),
       });
       expect(off.status).toBe(200);
@@ -103,7 +103,7 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
       const refused = await tryCiba(userName);
       expect(refused.error).toBe('unauthorized_client');
 
-      const on = await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
+      const on = await fetch(`${GIAM}/api/v1/realms/leafypay/domains/${domainId}`, {
         method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: true } }), signal: AbortSignal.timeout(20000),
       });
       expect(on.status).toBe(200);
@@ -113,7 +113,7 @@ describe('v43: CIBA is gated by the identified principal\'s own domain', () => {
       // changes to that instead of the domain's.
       expect(allowedPastTheGate.error).not.toBe('unauthorized_client');
     } finally {
-      await fetch(`${GIAM}/realms/leafypay/domains/${domainId}`, {
+      await fetch(`${GIAM}/api/v1/realms/leafypay/domains/${domainId}`, {
         method: 'PATCH', headers, body: JSON.stringify({ authentication: { cibaEnabled: true } }), signal: AbortSignal.timeout(20000),
       }).catch(() => {});
     }

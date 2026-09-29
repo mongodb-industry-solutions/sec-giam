@@ -75,13 +75,13 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
       expect(token, `${persona.login} could not sign in`).toBeTruthy();
       const headers = { authorization: `Bearer ${token}` };
 
-      const mine = await fetch(`${GIAM}/realms/${REALM}/sessions`, { headers, signal: AbortSignal.timeout(20000) });
+      const mine = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions`, { headers, signal: AbortSignal.timeout(20000) });
       expect(mine.status).toBe(200);
       const own = await mine.json() as { scope: string; total: number };
       expect(own.scope).toBe('mine');
       expect(own.total).toBeGreaterThan(0);
 
-      const wide = await fetch(`${GIAM}/realms/${REALM}/sessions?scope=realm`, { headers, signal: AbortSignal.timeout(20000) });
+      const wide = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions?scope=realm`, { headers, signal: AbortSignal.timeout(20000) });
       if (persona.realmScope === 403) {
         expect(wide.status).toBe(403);
       } else {
@@ -96,7 +96,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
     it(`${persona.label}: /me/permissions agrees with what the sessions endpoint does`, async () => {
       if (!live) return;
       const token = await runFlow(GIAM, 'leafypay', persona.login, DEMO_PASSWORD, { client: CONSOLE });
-      const response = await fetch(`${GIAM}/realms/${REALM}/me/permissions`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/me/permissions`, {
         headers: { authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(20000),
       });
@@ -127,7 +127,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
     ).sub as string;
 
     const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: CONSOLE });
-    const response = await fetch(`${GIAM}/realms/${REALM}/sessions?scope=realm&limit=200`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions?scope=realm&limit=200`, {
       headers: { authorization: `Bearer ${managerToken}` },
       signal: AbortSignal.timeout(20000),
     });
@@ -149,7 +149,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
     it('offers the applications of the realm by name', async () => {
       if (!live) return;
       const token = await runFlow(GIAM, 'leafypay', 'luis.fernandez', DEMO_PASSWORD, { client: CONSOLE });
-      const response = await fetch(`${GIAM}/realms/${REALM}/sessions`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions`, {
         headers: { authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(20000),
       });
@@ -175,7 +175,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
       const token = await runFlow(GIAM, 'leafypay', 'luis.fernandez', DEMO_PASSWORD, { client: CONSOLE });
       const headers = { authorization: `Bearer ${token}` };
 
-      const held = await fetch(`${GIAM}/realms/${REALM}/sessions?clientId=${CONSOLE.clientId}`, {
+      const held = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions?clientId=${CONSOLE.clientId}`, {
         headers, signal: AbortSignal.timeout(20000),
       });
       expect(held.status).toBe(200);
@@ -185,7 +185,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
         expect(session.clientIds).toContain(CONSOLE.clientId);
       }
 
-      const none = await fetch(`${GIAM}/realms/${REALM}/sessions?clientId=no-such-application`, {
+      const none = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions?clientId=no-such-application`, {
         headers, signal: AbortSignal.timeout(20000),
       });
       expect(none.status).toBe(200);
@@ -195,7 +195,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
     it('refuses the people search to a caller who does not reach other people', async () => {
       if (!live) return;
       const token = await runFlow(GIAM, 'leafypay', 'luis.fernandez', DEMO_PASSWORD, { client: CONSOLE });
-      const response = await fetch(`${GIAM}/realms/${REALM}/sessions?q=alex`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions?q=alex`, {
         headers: { authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(20000),
       });
@@ -209,7 +209,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
       await runFlow(GIAM, 'leafypay', 'luis.fernandez', DEMO_PASSWORD, { client: CONSOLE });
       const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: CONSOLE });
 
-      const response = await fetch(`${GIAM}/realms/${REALM}/sessions?scope=realm&q=luis.fernandez&limit=200`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions?scope=realm&q=luis.fernandez&limit=200`, {
         headers: { authorization: `Bearer ${managerToken}` },
         signal: AbortSignal.timeout(20000),
       });
@@ -225,7 +225,7 @@ describe('sessions: the realm-wide view is gated by the role, not by the console
     it('answers nothing, rather than everything, when the search matches nobody', async () => {
       if (!live) return;
       const managerToken = await runFlow(GIAM, 'leafypay', 'alex.rivera', DEMO_PASSWORD, { client: CONSOLE });
-      const response = await fetch(`${GIAM}/realms/${REALM}/sessions?scope=realm&q=nobody-by-this-name`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/sessions?scope=realm&q=nobody-by-this-name`, {
         headers: { authorization: `Bearer ${managerToken}` },
         signal: AbortSignal.timeout(20000),
       });

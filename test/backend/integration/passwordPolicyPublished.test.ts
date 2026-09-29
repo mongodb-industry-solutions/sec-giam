@@ -72,7 +72,7 @@ describe('the password policy is published, not guessed at by the console', () =
 
   it('refuses the policy to a caller with no token', async () => {
     if (!live) return;
-    const response = await fetch(`${GIAM}/realms/${REALM}/credentials/password/policy`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/credentials/password/policy`, {
       signal: AbortSignal.timeout(20000),
     });
     expect(response.status).toBe(401);
@@ -80,7 +80,7 @@ describe('the password policy is published, not guessed at by the console', () =
 
   it('answers an ordinary user holding no permission at all', async () => {
     if (!live) return;
-    const response = await fetch(`${GIAM}/realms/${REALM}/credentials/password/policy`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/credentials/password/policy`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(20000),
     });
@@ -103,14 +103,14 @@ describe('the password policy is published, not guessed at by the console', () =
    */
   it('refuses a password shorter than the published minimum, changing nothing', async () => {
     if (!live) return;
-    const read = await fetch(`${GIAM}/realms/${REALM}/credentials/password/policy`, {
+    const read = await fetch(`${GIAM}/api/v1/realms/${REALM}/credentials/password/policy`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(20000),
     });
     const { policy } = await read.json() as { policy: Policy };
 
     const short = 'a'.repeat(Math.max(1, policy.minLength - 1));
-    const response = await fetch(`${GIAM}/realms/${REALM}/credentials/password`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/credentials/password`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({

@@ -62,7 +62,7 @@ afterAll(async () => {
 async function signIn(): Promise<{ sessionId: string; subjectId: string; epoch: number } | null> {
   const response = await app.inject({
     method: 'POST',
-    url: `/realms/${REALM}/login`,
+    url: `/api/v1/realms/${REALM}/login`,
     payload: { login: subject?.userName, password: DEMO_PASSWORD },
   });
   if (response.statusCode !== 200) return null;
@@ -94,7 +94,7 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/logout`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
       payload: { session_id: session.sessionId },
     });
     expect(response.statusCode).toBe(200);
@@ -133,12 +133,12 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
 
     const first = await app.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/logout`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
       payload: { session_id: session.sessionId },
     });
     const second = await app.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/logout`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
       payload: { session_id: session.sessionId },
     });
 
@@ -151,7 +151,7 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
   it('does not disclose whether an unknown session ever existed', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/logout`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
       payload: { session_id: 'a-session-that-never-existed' },
     });
     // The same answer as a real one. Distinguishing them would let anyone holding a list of
@@ -166,7 +166,7 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
 
     await app.inject({
       method: 'POST',
-      url: `/realms/${REALM}/protocol/openid-connect/logout`,
+      url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
       payload: { session_id: one.sessionId },
     });
 

@@ -24,7 +24,7 @@ function basic(): string {
 }
 
 async function machineToken(): Promise<string> {
-  const response = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token`, {
+  const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: basic() },
     body: new URLSearchParams({ grant_type: 'client_credentials' }),
@@ -35,7 +35,7 @@ async function machineToken(): Promise<string> {
 }
 
 async function introspect(token: string) {
-  const response = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token/introspect`, {
+  const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token/introspect`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: basic() },
     body: new URLSearchParams({ token }),
@@ -95,7 +95,7 @@ describe('v41 P7: introspection and revocation follow RFC 7662 and RFC 7009', ()
    */
   it('reveals nothing about whether a revocation found anything', async () => {
     if (!live) return;
-    const revoke = (value: string) => fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/revoke`, {
+    const revoke = (value: string) => fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/revoke`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: basic() },
       body: new URLSearchParams({ token: value }),
@@ -114,7 +114,7 @@ describe('v41 P7: introspection and revocation follow RFC 7662 and RFC 7009', ()
 
   it('refuses an unauthenticated caller, because an open introspection endpoint is an oracle', async () => {
     if (!live) return;
-    const response = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/token/introspect`, {
+    const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/token/introspect`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ token }),
@@ -130,7 +130,7 @@ describe('v41 P7: the discovery document advertises what is implemented, and not
 
   beforeAll(async () => {
     try {
-      const response = await fetch(`${GIAM}/realms/${REALM}/.well-known/openid-configuration`, {
+      const response = await fetch(`${GIAM}/api/v1/realms/${REALM}/.well-known/openid-configuration`, {
         signal: AbortSignal.timeout(5000),
       });
       metadata = await response.json() as Record<string, unknown>;
@@ -154,7 +154,7 @@ describe('v41 P7: the discovery document advertises what is implemented, and not
   it('names the algorithms the realm can actually sign with, read from the key set', async () => {
     if (!live) return;
     const advertised = metadata.id_token_signing_alg_values_supported as string[];
-    const keySet = await fetch(`${GIAM}/realms/${REALM}/protocol/openid-connect/certs`)
+    const keySet = await fetch(`${GIAM}/api/v1/realms/${REALM}/protocol/oidc/certs`)
       .then((response) => response.json()) as { keys: Array<{ alg?: string }> };
     const held = [...new Set(keySet.keys.map((key) => key.alg).filter(Boolean))].sort();
     expect(advertised).toEqual(held);
@@ -184,7 +184,7 @@ describe('v41 P7: the discovery document advertises what is implemented, and not
    */
   it('serves the metadata at the location RFC 8414 specifies, as well as the OIDC one', async () => {
     if (!live) return;
-    const rfc8414 = await fetch(`${GIAM}/.well-known/oauth-authorization-server/realms/${REALM}`, {
+    const rfc8414 = await fetch(`${GIAM}/.well-known/oauth-authorization-server/api/v1/realms/${REALM}`, {
       signal: AbortSignal.timeout(5000),
     });
     expect(rfc8414.status).toBe(200);

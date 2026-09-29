@@ -14,7 +14,7 @@ import { problem } from '../../../shared/models/problem';
  *
  * **No applicable standard.** Every other administrative surface in this authority is reached
  * through `/realms/:realm/...` because it acts INSIDE a realm; this acts ON one, so it has no realm
- * to nest under and lives at `/realms` directly.
+ * to nest under and lives at `/api/v1/realms` directly.
  *
  * Gated on the CALLER'S OWN (home) realm, because that is the only realm a brand-new realm could
  * possibly be judged against: there is nothing else to check a not-yet-created realm's permissions
@@ -59,7 +59,7 @@ export async function realmAdminController(fastify: FastifyInstance) {
       realmId: 'd1a2b3c4-0001-0001-0001-000000000001',
       name: 'acme',
       displayName: 'Acme',
-      issuer: 'https://issuer.example/realms/acme',
+      issuer: 'https://issuer.example/api/v1/realms/acme',
       enabled: true,
       aliases: [],
       tokenPolicy: {
@@ -198,7 +198,7 @@ export async function realmAdminController(fastify: FastifyInstance) {
       summary: 'One realm',
       description:
         '**No applicable standard.** The caller\'s own home realm always resolves; reading another '
-        + 'is the same `realms:view` oversight permission `GET /realms` already requires.',
+        + 'is the same `realms:view` oversight permission `GET /api/v1/realms` already requires.',
       security: [{ bearerAuth: [] }],
       params: { type: 'object', required: ['realm'], properties: { realm: { type: 'string' } } },
       response: {

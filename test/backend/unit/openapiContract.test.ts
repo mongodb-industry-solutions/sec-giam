@@ -38,15 +38,15 @@ const PROVABLY_PUBLIC = new Set([
   // Public BY SPECIFICATION. Discovery names endpoints and the key set contains public keys whose
   // entire purpose is to be held by anyone verifying a signature. Requiring a credential to read
   // either would break every conforming client and protect nothing.
-  'get /realms/{realm}/.well-known/openid-configuration',
-  'get /realms/{realm}/.well-known/oauth-authorization-server',
+  'get /api/v1/realms/{realm}/.well-known/openid-configuration',
+  'get /api/v1/realms/{realm}/.well-known/oauth-authorization-server',
   // RFC 8414 3.1 puts the well-known segment BETWEEN the host and the path when the issuer has
   // path components, so this is the location a client following that RFC actually requests.
-  'get /.well-known/oauth-authorization-server/realms/{realm}',
-  'get /realms/{realm}/protocol/openid-connect/certs',
+  'get /.well-known/oauth-authorization-server/api/v1/realms/{realm}',
+  'get /api/v1/realms/{realm}/protocol/oidc/certs',
 
   // Public by nature: it is where a credential is presented, so it cannot require one first.
-  'post /realms/{realm}/login',
+  'post /api/v1/realms/{realm}/login',
 
   /**
    * The authorization endpoint, and the consent decision that belongs to it.
@@ -63,39 +63,39 @@ const PROVABLY_PUBLIC = new Set([
    * was an accurate description of the defect: a session identifier accepted from a caller as a
    * bearer credential, on a route nothing protected.
    */
-  'get /realms/{realm}/protocol/openid-connect/auth',
-  'get /realms/{realm}/protocol/openid-connect/auth/consent',
-  'post /realms/{realm}/protocol/openid-connect/auth/consent',
+  'get /api/v1/realms/{realm}/protocol/oidc/auth',
+  'get /api/v1/realms/{realm}/protocol/oidc/auth/consent',
+  'post /api/v1/realms/{realm}/protocol/oidc/auth/consent',
 
   // Public because a session identifier is the thing being surrendered. Requiring a credential to
   // END a session would leave a session alive whenever the credential was the problem.
-  'post /realms/{realm}/protocol/openid-connect/logout',
+  'post /api/v1/realms/{realm}/protocol/oidc/logout',
 
   // The two halves of a federated sign-in, public for the same reason the local one is. Starting the
   // flow is the first step for somebody who has nothing to present yet, and completing it presents
   // the upstream code, which IS the credential being offered. The code is verified against the
   // provider's published keys before any claim in it is believed.
-  'get /realms/{realm}/federation/{provider}/start',
-  'post /realms/{realm}/federation/{provider}/callback',
+  'get /api/v1/realms/{realm}/federation/{provider}/start',
+  'post /api/v1/realms/{realm}/federation/{provider}/callback',
 
   // Public by nature, like the login route above it: somebody who has no account cannot present one
   // in order to make one. The realm decides whether the route does anything at all, and whether the
   // principal it creates may sign in yet.
-  'post /realms/{realm}/register',
+  'post /api/v1/realms/{realm}/register',
 
   // Public because it is what an unauthenticated visitor is about to be shown. It carries branding,
   // the providers a person may choose and, where a realm declares them, its demo personas: nothing a
   // sign-in page does not already display.
-  'get /realms/{realm}/login-context',
+  'get /api/v1/realms/{realm}/login-context',
 
   // The device-facing half of backchannel authentication. Holding the request identifier lets a
   // device see what it would be signing and act on it, and every one of these still requires a
   // signature from a registered private key: the identifier alone approves nothing and denies
   // nothing. Requiring a credential here would mean the approving device had to hold one, which is
   // the assumption the flow exists to remove.
-  'get /realms/{realm}/protocol/openid-connect/ext/ciba/auth/{authReqId}',
-  'post /realms/{realm}/protocol/openid-connect/ext/ciba/auth/{authReqId}/approve',
-  'post /realms/{realm}/protocol/openid-connect/ext/ciba/auth/{authReqId}/deny',
+  'get /api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth/{authReqId}',
+  'post /api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth/{authReqId}/approve',
+  'post /api/v1/realms/{realm}/protocol/oidc/ext/ciba/auth/{authReqId}/deny',
 ]);
 
 let app: FastifyInstance;

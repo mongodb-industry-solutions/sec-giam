@@ -63,7 +63,7 @@ function IdentitiesInner() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setList(await callApi<ScimList>('/scim/v2/Users', {
+      setList(await callApi<ScimList>('/scim/Users', {
         subject: 'the principal directory',
         query: {
           filter: applied,
@@ -93,7 +93,7 @@ function IdentitiesInner() {
     setDecisionBusy(user.id);
     try {
       if (decision === 'approve') {
-        await callApi(`/scim/v2/Users/${encodeURIComponent(user.id)}`, {
+        await callApi(`/scim/Users/${encodeURIComponent(user.id)}`, {
           method: 'PATCH',
           subject: 'that principal',
           body: { schemas: [PATCH_SCHEMA], Operations: [{ op: 'replace', value: { active: true } }] },
@@ -103,7 +103,7 @@ function IdentitiesInner() {
           setDecisionBusy(null);
           return;
         }
-        await callApi(`/scim/v2/Users/${encodeURIComponent(user.id)}`, { method: 'DELETE', subject: 'that principal' });
+        await callApi(`/scim/Users/${encodeURIComponent(user.id)}`, { method: 'DELETE', subject: 'that principal' });
       }
       await load();
     } catch (failure) {
@@ -366,7 +366,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     setBusy(true);
     try {
       const formatted = [given.trim(), family.trim()].filter(Boolean).join(' ');
-      await callApi('/scim/v2/Users', {
+      await callApi('/scim/Users', {
         method: 'POST',
         subject: 'that principal',
         body: {

@@ -63,7 +63,7 @@ export async function userinfoController(fastify: FastifyInstance) {
   // Both verbs, as the specification requires. A GET is what every client sends; a POST exists for
   // the ones that will not put a token in a URL-adjacent place, and returns the same thing.
   for (const method of ['get', 'post'] as const) {
-    fastify[method]('/realms/:realm/protocol/openid-connect/userinfo', {
+    fastify[method]('/realms/:realm/protocol/oidc/userinfo', {
       preHandler: requirePrincipal,
       schema: { ...schema, operationId: `userinfo${method === 'get' ? '' : 'Post'}` },
     }, async (request, reply) => {
