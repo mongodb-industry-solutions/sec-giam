@@ -136,11 +136,11 @@ export type PlatformEnvironment = typeof PLATFORM_ENVIRONMENTS[number];
  * carrying the same three names would have had to be added to every manifest to say what one of them
  * already said.
  *
- * It is read LAST, and an unrecognised value there is tolerated rather than fatal, because NODE_ENV
- * legitimately holds names this platform has no column for (`test` under a test runner, and
- * `production` is the only value Node itself defines). The dedicated names keep throwing on a typo:
- * setting one is a deliberate statement about this deployment, and a misspelling of it is a mistake
- * rather than a different vocabulary.
+ * It is read LAST. Only an absent value, or `test` (what a test runner sets and this platform has no
+ * column for), is treated the same as an absent dedicated variable and falls back to development.
+ * Anything else unrecognised still throws: NODE_ENV is as deployment-controlled as the dedicated
+ * names, and a typo in it must not silently resolve to the development column the way the genuinely
+ * unset case does.
  */
 export function platformEnvironment(env: Env = process.env): PlatformEnvironment {
   const declared = (env.PSP_ENVIRONMENT ?? env.ENVIRONMENT ?? '').trim();
@@ -154,7 +154,18 @@ export function platformEnvironment(env: Env = process.env): PlatformEnvironment
     return match;
   }
   const nodeEnv = (env.NODE_ENV ?? '').trim().toLowerCase();
-  return PLATFORM_ENVIRONMENTS.find((name) => name === nodeEnv) ?? 'development';
+  // Absent, or the one name a test runner sets that this platform has no column for: development,
+  // the same as an absent dedicated variable. Anything ELSE unrecognised still throws: NODE_ENV is as
+  // deployment-controlled as the dedicated names, and a typo in it (`prodution`) must not silently
+  // resolve to the development column the way an unset variable legitimately does.
+  if (!nodeEnv || nodeEnv === 'test') return 'development';
+  const match = PLATFORM_ENVIRONMENTS.find((name) => name === nodeEnv);
+  if (!match) {
+    throw new Error(
+      `unknown NODE_ENV "${nodeEnv}"; expected one of ${PLATFORM_ENVIRONMENTS.join(', ')} (or unset, or "test")`,
+    );
+  }
+  return match;
 }
 
 /**
