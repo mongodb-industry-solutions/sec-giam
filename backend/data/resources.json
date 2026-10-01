@@ -146,6 +146,11 @@
         "description": "Posted debits and credits against a bank account."
       },
       {
+        "name": "permissions",
+        "displayName": "Permission Catalog",
+        "description": "The `resource:action` pairs this resource server declares it enforces, which it registers itself."
+      },
+      {
         "name": "psd2Role",
         "displayName": "PSD2 Provider Roles",
         "description": "The regulated role a third-party provider is authorised to act in: AISP for account information, PISP for payment initiation."
@@ -233,6 +238,11 @@
         "name": "paymentRequests",
         "displayName": "Payment Requests",
         "description": "Requests to pay raised against a merchant or a peer."
+      },
+      {
+        "name": "permissions",
+        "displayName": "Permission Catalog",
+        "description": "The `resource:action` pairs this resource server declares it enforces, which it registers itself."
       },
       {
         "name": "providers",
