@@ -148,7 +148,10 @@ export default function ClientDetailPage() {
           redirect_uris: redirectUris,
           post_logout_redirect_uris: logoutUris,
           scope: scope.trim(),
-          ...(logoUri.trim() ? { logo_uri: logoUri.trim() } : {}),
+          // Only when the person changed it. The API shows the logo already bound to this
+          // environment's address, so sending it back unchanged would store that resolved host in
+          // place of the stored path and defeat the binding on the next read.
+          ...(logoUri.trim() && logoUri.trim() !== (client?.logo_uri ?? '') ? { logo_uri: logoUri.trim() } : {}),
           base_url_by_environment: filledBaseUrls(baseUrls),
         },
       });

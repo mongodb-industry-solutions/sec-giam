@@ -1,4 +1,4 @@
-import { platformEnvironment, type PlatformEnvironment } from '@leafypay/platform-links';
+import { PLATFORM_ENVIRONMENTS, platformEnvironment, type PlatformEnvironment } from '@leafypay/platform-links';
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
 import { CredentialRecord, OAuthClientMetadata } from '../../directory/models/credential.model';
 
@@ -185,6 +185,45 @@ export function resolveClientLogoUri(
   const base = metadata.baseUrlByEnvironment?.[platformEnvironment(env)]?.trim();
   if (!base) return undefined;
   return `${base.replace(/\/$/, '')}/${declared.replace(/^\//, '')}`;
+}
+
+/**
+ * An application's addresses, parsed and normalised, or the reason one is refused.
+ *
+ * A pattern is not validation: `https://[broken` matches one, and a base carrying a query or fragment
+ * is worse, because the logo join appends a path to the STRING and the path then lands inside the
+ * fragment, so the browser asks for the base path instead. Each value is parsed here, must be http(s),
+ * must name a host, and may carry no credentials, query or fragment. It is stored without a trailing
+ * slash, so the join writes exactly one.
+ */
+export function normalizeBaseUrls(
+  input: Partial<Record<string, string>>,
+): { urls: Partial<Record<PlatformEnvironment, string>> } | { refused: string } {
+  const urls: Partial<Record<PlatformEnvironment, string>> = {};
+  for (const [environment, raw] of Object.entries(input)) {
+    if (!(PLATFORM_ENVIRONMENTS as readonly string[]).includes(environment)) {
+      return { refused: `"${environment}" is not an environment this platform is deployed to` };
+    }
+    if (raw === undefined || raw.trim() === '') continue;
+    let parsed: URL;
+    try {
+      parsed = new URL(raw.trim());
+    } catch {
+      return { refused: `The ${environment} address is not a valid URL` };
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { refused: `The ${environment} address must be http or https` };
+    }
+    if (!parsed.hostname) return { refused: `The ${environment} address has no host` };
+    if (parsed.username || parsed.password) {
+      return { refused: `The ${environment} address must not carry credentials` };
+    }
+    if (parsed.search || parsed.hash) {
+      return { refused: `The ${environment} address must not carry a query or a fragment` };
+    }
+    urls[environment as PlatformEnvironment] = `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+  }
+  return { urls };
 }
 
 export function clientFromCredential(credential: CredentialRecord): OAuthClient {

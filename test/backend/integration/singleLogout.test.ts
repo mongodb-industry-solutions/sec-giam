@@ -188,6 +188,18 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
 });
 
 
+async function endSession(payload: Record<string, unknown>) {
+  const session = await signIn();
+  if (!session) return null;
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
+    payload: { session_id: session.sessionId, ...payload },
+  });
+  expect(response.statusCode).toBe(200);
+  return response.json() as { post_logout_redirect_uri?: string };
+}
+
 /**
  * A return address belongs to the client that registered it, and to no other client in the realm.
  *
@@ -198,18 +210,6 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
  * client, which is why the request has to say who that is.
  */
 describe('a post-logout address is held against the registration of the client that asked', () => {
-  async function endSession(payload: Record<string, unknown>) {
-    const session = await signIn();
-    if (!session) return null;
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
-      payload: { session_id: session.sessionId, ...payload },
-    });
-    expect(response.statusCode).toBe(200);
-    return response.json() as { post_logout_redirect_uri?: string };
-  }
-
   it('has two clients with registered return addresses, so the checks below are not vacuous', () => {
     expect(clients.length, 'fewer than two clients declare a post-logout address').toBeGreaterThan(1);
   });
@@ -245,6 +245,82 @@ describe('a post-logout address is held against the registration of the client t
       post_logout_redirect_uri: 'https://somewhere-else.example/landing',
       client_id: client.clientId,
     });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBeUndefined();
+  });
+});
+
+/**
+ * `id_token_hint`: the evidence a client is who it says, as opposed to the `client_id` it claims.
+ *
+ * Real tokens, signed with the realm's own key, because the property under test is the verification
+ * itself: a hint this authority did not sign, or signed as the wrong kind of token, must name no
+ * client, and an expired one must still name its client (RP-Initiated Logout 1.0: a session being over
+ * is exactly when somebody signs out). Only the lifetime is ever relaxed, never the signature.
+ */
+describe('id_token_hint identifies the client that is signing out', () => {
+  const first = clients[0];
+  const second = clients[1];
+  const own = first.postLogoutRedirectUris![0];
+
+  async function mint(options: { audience?: string; expiresIn?: number; typ?: string } = {}): Promise<string> {
+    const { RealmService } = await import('../../../backend/src/modules/realm/services/realm.service');
+    const { KeyRing } = await import('../../../backend/src/modules/keys/services/keyRing.service');
+    const { MongoSigningKeyStore } = await import('../../../backend/src/modules/keys/services/signingKeyStore');
+    const { JwtTokenFormat } = await import('../../../backend/src/modules/oauth/services/jwtTokenFormat');
+    const realm = await new RealmService(app.db).byName(REALM);
+    const ring = new KeyRing(new MongoSigningKeyStore(app.db));
+    const now = Math.floor(Date.now() / 1000);
+    return new JwtTokenFormat(ring, realm!.realmId, options.typ ?? 'JWT').issue({
+      iss: realm!.issuer,
+      aud: options.audience ?? first.clientId,
+      sub: subject?.subjectId,
+      jti: `hint-${Math.random().toString(36).slice(2)}`,
+      iat: now - 7200,
+      exp: now + (options.expiresIn ?? 300),
+    }, await ring.signingKid(realm!.realmId));
+  }
+
+  it('honours the address of the client the hint was issued to, with no client_id sent', async () => {
+    const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: await mint() });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBe(own);
+  });
+
+  it('still identifies the client when the hint has expired, because a session ending is when one signs out', async () => {
+    const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: await mint({ expiresIn: -3600 }) });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBe(own);
+  });
+
+  it('honours nothing when the hint and an explicit client_id name different clients', async () => {
+    const body = await endSession({
+      post_logout_redirect_uri: own,
+      id_token_hint: await mint(),
+      client_id: second.clientId,
+    });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBeUndefined();
+  });
+
+  it('honours nothing for a hint whose signature was altered', async () => {
+    const hint = await mint();
+    const forged = `${hint.slice(0, -4)}${hint.endsWith('AAAA') ? 'BBBB' : 'AAAA'}`;
+    const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: forged });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBeUndefined();
+  });
+
+  it('honours nothing for a token signed as another kind, so an access token cannot stand in for a hint', async () => {
+    const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: await mint({ typ: 'at+jwt' }) });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBeUndefined();
+  });
+
+  it('holds the address against the hinted client, not against whichever client registered it', async () => {
+    const foreign = second.postLogoutRedirectUris!.find((uri) => !(first.postLogoutRedirectUris ?? []).includes(uri));
+    expect(foreign, 'the two clients register identical addresses, so this proves nothing').toBeTruthy();
+    const body = await endSession({ post_logout_redirect_uri: foreign, id_token_hint: await mint() });
     if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });

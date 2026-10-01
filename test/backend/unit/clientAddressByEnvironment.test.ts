@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { resolveClientLogoUri } from '../../../backend/src/modules/oauth/models/client.model';
+import { resolveClientLogoUri, normalizeBaseUrls } from '../../../backend/src/modules/oauth/models/client.model';
 
 const DATA = resolve(__dirname, '../../../backend/data');
 
@@ -84,5 +84,37 @@ describe('a client logo is bound to the environment the authority is running as'
       .filter((client) => Object.keys(client.baseUrlByEnvironment!).length !== 3)
       .map((client) => client.clientName);
     expect(partial, `declares some environments but not all: ${partial.join(', ')}`).toEqual([]);
+  });
+});
+
+describe('an application address is parsed, not pattern-matched', () => {
+  const refused = (value: string) => normalizeBaseUrls({ staging: value });
+
+  it('accepts a plain origin, and one under a path, stored without the trailing slash', () => {
+    expect(normalizeBaseUrls({ development: 'http://localhost:8082', staging: 'https://app.example/' }))
+      .toEqual({ urls: { development: 'http://localhost:8082', staging: 'https://app.example' } });
+    expect(normalizeBaseUrls({ production: 'https://example.com/portal/' }))
+      .toEqual({ urls: { production: 'https://example.com/portal' } });
+  });
+
+  it('refuses a value that looks like a URL to a pattern and is not one', () => {
+    expect(refused('https://[broken')).toHaveProperty('refused');
+    expect(refused('not a url')).toHaveProperty('refused');
+  });
+
+  it('refuses a query or a fragment, which would swallow the path the logo join appends', () => {
+    expect(refused('https://app.example/?x=1')).toHaveProperty('refused');
+    expect(refused('https://app.example/#section')).toHaveProperty('refused');
+  });
+
+  it('refuses a scheme that is not http(s), and credentials embedded in the address', () => {
+    expect(refused('javascript:alert(1)')).toHaveProperty('refused');
+    expect(refused('ftp://app.example')).toHaveProperty('refused');
+    expect(refused('https://user:secret@app.example')).toHaveProperty('refused');
+  });
+
+  it('refuses an environment this platform has no column for, and skips a blank one', () => {
+    expect(normalizeBaseUrls({ qa: 'https://qa.example' })).toHaveProperty('refused');
+    expect(normalizeBaseUrls({ staging: '  ' })).toEqual({ urls: {} });
   });
 });

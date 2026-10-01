@@ -7,7 +7,7 @@ import { DirectoryService } from '../../directory/services/directory.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
 import { requireAuthorityCaller, AuthorityCaller } from '../../../vendors/middleware/authorityAuth';
-import { OAuthClient, clientFromCredential, clientMetadata } from '../models/client.model';
+import { OAuthClient, clientFromCredential, clientMetadata, normalizeBaseUrls } from '../models/client.model';
 import { CredentialRecord } from '../../directory/models/credential.model';
 import { clientCredentials, clientFilter, clientUpdate } from '../services/clientRegistry';
 import { withinActiveSecretCap } from '../../directory/models/credential.model';
@@ -518,6 +518,16 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     if (grantTypes.length === 0) grantTypes = ['client_credentials'];
     if (scopes.length === 0) scopes = ['openid'];
 
+    // Checked before a secret is minted, so a refused address leaves nothing behind.
+    let addresses: OAuthClient['baseUrlByEnvironment'] | undefined;
+    if (body.base_url_by_environment) {
+      const checked = normalizeBaseUrls(body.base_url_by_environment);
+      if ('refused' in checked) {
+        return refuse(400, 'Application address refused', checked.refused, 'invalid_application_address');
+      }
+      addresses = checked.urls;
+    }
+
     const clientId = `cli-${randomUUID()}`;
     const { secret, hash, prefix } = await mintSecret();
     const isPublic = grantTypes.every((grant) => grant === 'authorization_code');
@@ -571,9 +581,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
         grantTypes: grantTypes as OAuthClient['grantTypes'],
         scope: scopes.join(' '),
         ...(body.logo_uri ? { logoUri: body.logo_uri } : {}),
-        ...(body.base_url_by_environment
-          ? { baseUrlByEnvironment: body.base_url_by_environment as OAuthClient['baseUrlByEnvironment'] }
-          : {}),
+        ...(addresses ? { baseUrlByEnvironment: addresses } : {}),
         requirePkce: true,
         tokenEndpointAuthMethod: isPublic ? 'none' : 'client_secret_basic',
         applicationType: 'web',
@@ -666,7 +674,11 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     if (body.logo_uri) update.logoUri = body.logo_uri;
     // The application's own addresses, which it may correct without an operator: nothing here is a
     // permission, and it is the one party that knows where it is published.
-    if (body.base_url_by_environment) update.baseUrlByEnvironment = body.base_url_by_environment;
+    if (body.base_url_by_environment) {
+      const checked = normalizeBaseUrls(body.base_url_by_environment);
+      if ('refused' in checked) return reply.status(400).send(problem(400, 'Application address refused', checked.refused));
+      update.baseUrlByEnvironment = checked.urls;
+    }
 
     if (body.scope !== undefined) {
       const scopes = body.scope.split(' ').filter(Boolean);
@@ -690,7 +702,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       }
     }
 
-    await clients().updateOne(
+    // Every credential of the registration, not one of them: after a rotation there are two, they carry
+    // the same metadata, and the newest active one is what the authority reads, so editing only one
+    // could leave the edit without effect.
+    await clients().updateMany(
       clientFilter({ realmId: realm.realmId, clientId }),
       { $set: { ...clientUpdate(update), 'meta.lastModified': new Date().toISOString() } },
     );

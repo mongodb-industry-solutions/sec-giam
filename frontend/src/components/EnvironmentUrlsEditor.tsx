@@ -31,6 +31,7 @@ export function EnvironmentUrlsEditor({
               <span className="w-24 shrink-0 text-xs text-gray-500">{environment}</span>
               <input
                 value={value}
+                aria-label={`${environment} address`}
                 onChange={(event) => onChange({ ...values, [environment]: event.target.value })}
                 placeholder={environment === 'development' ? 'http://localhost:3000' : 'https://app.example'}
                 className={`flex-1 rounded-lg border px-2.5 py-2 font-mono text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10 ${
