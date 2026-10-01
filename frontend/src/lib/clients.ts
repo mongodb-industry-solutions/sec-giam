@@ -22,6 +22,24 @@ export interface ClientOwner {
   is_caller?: boolean;
 }
 
+/**
+ * The environments this platform is deployed to, in the order a screen should show them.
+ *
+ * The same three the authority resolves against. Named here rather than imported because the console
+ * is a browser bundle and this is the only part of that vocabulary it needs.
+ */
+export const PLATFORM_ENVIRONMENTS = ['development', 'staging', 'production'] as const;
+export type PlatformEnvironmentName = typeof PLATFORM_ENVIRONMENTS[number];
+
+/**
+ * Where an application answers, per environment.
+ *
+ * Declared on the registration so one registration serves a laptop, staging and production. A
+ * relative `logo_uri` is resolved against the entry for whichever environment the authority is
+ * running as, which is why the two fields belong together on the screen.
+ */
+export type ClientBaseUrls = Partial<Record<PlatformEnvironmentName, string>>;
+
 export interface RegisteredClient {
   client_id: string;
   client_name: string;
@@ -32,6 +50,7 @@ export interface RegisteredClient {
   grant_types?: string[];
   scope?: string;
   logo_uri?: string;
+  base_url_by_environment?: ClientBaseUrls;
   application_type?: string;
   token_endpoint_auth_method?: string;
   require_pkce?: boolean;
@@ -88,6 +107,48 @@ export function redirectUriProblem(uri: string): string | null {
     return 'Must be HTTPS. Plain HTTP is accepted only on a loopback address.';
   }
   return null;
+}
+
+/**
+ * Checks one application address the way the authority will use it.
+ *
+ * An ORIGIN, not an endpoint: it is the half a relative logo path is appended to, so a query or a
+ * fragment on it would survive the join and produce a URL that asks for an icon with somebody's
+ * search string still attached. Otherwise the same rules a redirect follows, through the same
+ * function, so the two cannot disagree about what a usable address is.
+ */
+export function baseUrlProblem(url: string): string | null {
+  const problem = redirectUriProblem(url);
+  if (problem) return problem;
+  const parsed = new URL(url);
+  if (parsed.search) return 'A base address carries no query string. Remove everything from the ?.';
+  return null;
+}
+
+/** The first problem in a set of per-environment addresses, named by its environment. */
+export function firstBaseUrlProblem(urls: ClientBaseUrls): string | null {
+  for (const environment of PLATFORM_ENVIRONMENTS) {
+    const value = urls[environment]?.trim();
+    if (!value) continue;
+    const problem = baseUrlProblem(value);
+    if (problem) return `${environment}: ${problem}`;
+  }
+  return null;
+}
+
+/** The addresses that were actually filled in, so an empty row is never stored as an empty string. */
+export function filledBaseUrls(urls: ClientBaseUrls): ClientBaseUrls {
+  const filled: ClientBaseUrls = {};
+  for (const environment of PLATFORM_ENVIRONMENTS) {
+    const value = urls[environment]?.trim();
+    if (value) filled[environment] = value.replace(/\/$/, '');
+  }
+  return filled;
+}
+
+/** Whether two sets of addresses say the same thing, for a dirty check. */
+export function sameBaseUrls(a: ClientBaseUrls, b: ClientBaseUrls): boolean {
+  return PLATFORM_ENVIRONMENTS.every((name) => (a[name] ?? '') === (b[name] ?? ''));
 }
 
 /** How a set of owners reads in one line, with the reader named as themselves. */

@@ -13,10 +13,20 @@ import { BRAND } from '../config/brand';
  * authority is what a person is actually trusting to hand identity over.
  */
 function PartyBadge({ logoUri, name }: { logoUri?: string; name: string }) {
+  // A registration can name a logo that does not answer: an application moved, or its host is not
+  // reachable from where the person is. A broken image on the screen where somebody decides whether
+  // to trust an application reads as a compromised screen, so a failed load falls back to the same
+  // neutral icon an application with no logo at all gets.
+  const [unavailable, setUnavailable] = useState(false);
   return (
     <div className="flex w-24 flex-col items-center gap-1.5">
-      {logoUri ? (
-        <img src={logoUri} alt={`${name} icon`} className="h-12 w-12 rounded-xl object-contain" />
+      {logoUri && !unavailable ? (
+        <img
+          src={logoUri}
+          alt={`${name} icon`}
+          className="h-12 w-12 rounded-xl object-contain"
+          onError={() => setUnavailable(true)}
+        />
       ) : (
         <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-gray-400">
           <AppWindow size={22} aria-hidden />

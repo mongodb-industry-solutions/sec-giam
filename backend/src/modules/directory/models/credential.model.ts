@@ -1,5 +1,6 @@
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
 import { RoleHolding } from './principal.model';
+import type { PlatformEnvironment } from '@leafypay/platform-links';
 
 /**
  * One collection for every authentication factor, discriminated by type.
@@ -59,6 +60,19 @@ export interface OAuthClientMetadata {
   tokenPolicy?: Record<string, unknown>;
   logoUri?: string;
   clientUri?: string;
+  /**
+   * Where THIS application answers, per environment. Declared by the application, on its own record.
+   *
+   * The same shape a provider arrangement already uses for the same question, and for the same
+   * reason: one registration has to serve a laptop, staging and production, and the alternative is a
+   * host frozen into whichever one happened to be seeded. It is on the REGISTRATION and not in the
+   * authority's configuration because adding an application is then a registration, not a
+   * redeployment of the authority, and because each application owns what is true about itself.
+   *
+   * Partial on purpose: an application that is not deployed to an environment has no entry for it,
+   * and that must read as "not published here" rather than as an empty address.
+   */
+  baseUrlByEnvironment?: Partial<Record<PlatformEnvironment, string>>;
   demoRoster?: string[];
   /** Resource servers a token for this client is addressed to. Declared, never inferred. */
   audience?: string[];

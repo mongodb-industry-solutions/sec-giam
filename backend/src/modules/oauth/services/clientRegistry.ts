@@ -32,7 +32,7 @@ const RENAMED: Record<string, string> = {
 const METADATA_FIELDS = new Set([
   'clientName', 'clientType', 'redirectUris', 'postLogoutRedirectUris', 'grantTypes',
   'requirePkce', 'tokenEndpointAuthMethod', 'applicationType', 'tokenPolicy',
-  'logoUri', 'clientUri', 'demoRoster', 'firstParty', 'backchannel', 'mtls', 'claimMappings',
+  'logoUri', 'clientUri', 'baseUrlByEnvironment', 'demoRoster', 'firstParty', 'backchannel', 'mtls', 'claimMappings',
   'provisioning',
 ]);
 

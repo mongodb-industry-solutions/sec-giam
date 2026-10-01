@@ -1,3 +1,4 @@
+import { PLATFORM_ENVIRONMENTS, platformEnvironment, type PlatformEnvironment } from '@leafypay/platform-links';
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
 import { CredentialRecord, OAuthClientMetadata } from '../../directory/models/credential.model';
 
@@ -68,8 +69,18 @@ export interface OAuthClient extends Scoped {
     refreshTokenTtlSeconds?: number;
   };
 
+  /**
+   * ABSOLUTE, always, whichever shape it was registered in.
+   *
+   * RFC 7591 defines `logo_uri` as a URL, and a consent screen renders it in a browser that has no
+   * idea which application it belongs to, so it cannot be anything else on the way out. What a
+   * registration may STORE is a path, bound here against `baseUrlByEnvironment`; see the resolver.
+   */
   logoUri?: string;
   clientUri?: string;
+
+  /** Where this application answers, per environment, as its own registration declares it. */
+  baseUrlByEnvironment?: Partial<Record<PlatformEnvironment, string>>;
 
   /**
    * Which roles this client's sign-in screen offers as demo personas.
@@ -150,8 +161,90 @@ export function isConfidential(client: Pick<OAuthClient, 'clientSecretHash'>): b
  * `scope` is rebuilt space-delimited because that is RFC 7591's shape and the standard's shape is
  * what the wire contract owes, even though the stored form is an array.
  */
+/** Set after the first time an unrecognised environment name is reported, so it is said once. */
+let environmentFailureReported = false;
+
+/**
+ * The application's logo as an absolute URL, bound to where it answers in THIS environment.
+ *
+ * Bound when the record is READ and not when it was written, because the same database is restored
+ * across environments: a host written at seed time in one cluster is not where the application
+ * answers in the next, and the result is a browser asked for an icon from an address that is not
+ * serving one. The registration states the application's own addresses; this picks the one that
+ * applies now.
+ *
+ * An absolute `logo_uri` is returned untouched, which is what a self-registered third party gives:
+ * its own host is not this platform's to decide. A path with no address for this environment is
+ * dropped rather than half-resolved, so a screen shows its neutral placeholder instead of a broken
+ * image.
+ */
+export function resolveClientLogoUri(
+  metadata: Pick<OAuthClientMetadata, 'logoUri' | 'baseUrlByEnvironment'>,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const declared = metadata.logoUri?.trim();
+  if (!declared) return undefined;
+  if (/^https?:\/\//i.test(declared)) return declared;
+  let base: string | undefined;
+  try {
+    base = metadata.baseUrlByEnvironment?.[platformEnvironment(env)]?.trim();
+  } catch (error) {
+    // An unrecognised environment name throws, which is right for a provider address: a wrong host
+    // there is dangerous. A logo is cosmetic and this runs on every client read, including the ones
+    // behind authorize and token, so a typo in the variable must cost an icon and not the sign-in of
+    // the whole realm. Said once, because it would otherwise repeat on every read.
+    if (!environmentFailureReported) {
+      environmentFailureReported = true;
+      console.error(`[client] logos are not resolved: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return undefined;
+  }
+  if (!base) return undefined;
+  return `${base.replace(/\/$/, '')}/${declared.replace(/^\//, '')}`;
+}
+
+/**
+ * An application's addresses, parsed and normalised, or the reason one is refused.
+ *
+ * A pattern is not validation: `https://[broken` matches one, and a base carrying a query or fragment
+ * is worse, because the logo join appends a path to the STRING and the path then lands inside the
+ * fragment, so the browser asks for the base path instead. Each value is parsed here, must be http(s),
+ * must name a host, and may carry no credentials, query or fragment. It is stored without a trailing
+ * slash, so the join writes exactly one.
+ */
+export function normalizeBaseUrls(
+  input: Partial<Record<string, string>>,
+): { urls: Partial<Record<PlatformEnvironment, string>> } | { refused: string } {
+  const urls: Partial<Record<PlatformEnvironment, string>> = {};
+  for (const [environment, raw] of Object.entries(input)) {
+    if (!(PLATFORM_ENVIRONMENTS as readonly string[]).includes(environment)) {
+      return { refused: `"${environment}" is not an environment this platform is deployed to` };
+    }
+    if (raw === undefined || raw.trim() === '') continue;
+    let parsed: URL;
+    try {
+      parsed = new URL(raw.trim());
+    } catch {
+      return { refused: `The ${environment} address is not a valid URL` };
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { refused: `The ${environment} address must be http or https` };
+    }
+    if (!parsed.hostname) return { refused: `The ${environment} address has no host` };
+    if (parsed.username || parsed.password) {
+      return { refused: `The ${environment} address must not carry credentials` };
+    }
+    if (parsed.search || parsed.hash) {
+      return { refused: `The ${environment} address must not carry a query or a fragment` };
+    }
+    urls[environment as PlatformEnvironment] = `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+  }
+  return { urls };
+}
+
 export function clientFromCredential(credential: CredentialRecord): OAuthClient {
   const metadata = credential.metadata ?? ({} as OAuthClientMetadata);
+  const logoUri = resolveClientLogoUri(metadata);
   return {
     realmId: credential.realmId,
     tenantId: credential.tenantId,
@@ -169,7 +262,8 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
     tokenEndpointAuthMethod: metadata.tokenEndpointAuthMethod ?? 'none',
     ...(metadata.applicationType ? { applicationType: metadata.applicationType } : {}),
     ...(metadata.tokenPolicy ? { tokenPolicy: metadata.tokenPolicy as OAuthClient['tokenPolicy'] } : {}),
-    ...(metadata.logoUri ? { logoUri: metadata.logoUri } : {}),
+    ...(logoUri ? { logoUri } : {}),
+    ...(metadata.baseUrlByEnvironment ? { baseUrlByEnvironment: metadata.baseUrlByEnvironment } : {}),
     ...(metadata.clientUri ? { clientUri: metadata.clientUri } : {}),
     ...(metadata.demoRoster ? { demoRoster: metadata.demoRoster } : {}),
     ...(metadata.audience ? { audience: metadata.audience } : {}),
@@ -201,6 +295,7 @@ export function clientMetadata(client: Partial<OAuthClient>): OAuthClientMetadat
     ...(client.applicationType ? { applicationType: client.applicationType } : {}),
     ...(client.tokenPolicy ? { tokenPolicy: client.tokenPolicy as Record<string, unknown> } : {}),
     ...(client.logoUri ? { logoUri: client.logoUri } : {}),
+    ...(client.baseUrlByEnvironment ? { baseUrlByEnvironment: client.baseUrlByEnvironment } : {}),
     ...(client.clientUri ? { clientUri: client.clientUri } : {}),
     ...(client.demoRoster ? { demoRoster: client.demoRoster } : {}),
     ...(client.audience ? { audience: client.audience } : {}),

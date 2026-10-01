@@ -599,7 +599,7 @@ describe('the condition vocabulary is closed, in the contract', () => {
     // untrue about the service. This is the assertion that keeps it true.
     const evaluate = document.paths?.['/api/v1/realms/{realm}/decision']?.post;
     expect(evaluate?.operationId).toBe('evaluateDecision');
-    expect(evaluate?.tags).toContain('authorization');
+    expect(evaluate?.tags).toContain('decision');
     expect(evaluate?.description).toMatch(/AuthZEN/);
   });
 });

@@ -8,7 +8,8 @@ import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { OAuthClient } from '../../oauth/models/client.model';
-import { listOAuthClients } from '../../oauth/services/clientAuth.service';
+import { findOAuthClient } from '../../oauth/services/clientAuth.service';
+import { JwtTokenFormat } from '../../oauth/services/jwtTokenFormat';
 import { problem } from '../../../shared/models/problem';
 
 /**
@@ -27,26 +28,82 @@ export async function logoutController(fastify: FastifyInstance) {
   const notify = (clients: OAuthClient[], realmIssuer: string, realmId: string, subjectId: string, sessionId: string) =>
     new LogoutNotifier(fastify.db).notify(clients, { issuer: realmIssuer, realmId }, subjectId, sessionId);
 
-  // Only a URI a REGISTERED client declared; echoing back whatever a caller sent would make this an
-  // open redirect built into the sign-out flow.
-  async function registeredLogoutRedirect(realmId: string, uri: string | undefined): Promise<string | undefined> {
-    if (!uri) return undefined;
+  /**
+   * WHICH client is asking to sign out, from what the standard provides for saying so.
+   *
+   * `id_token_hint` first, because it is evidence rather than a claim: this authority signed it, so
+   * the `aud` inside it cannot be changed to name a client the caller is not. An explicit
+   * `client_id` is accepted on its own as the standard allows, and when both arrive they must agree,
+   * since a mismatch is either a mistake or an attempt to borrow another client's registration.
+   *
+   * A bare `client_id` is a CLAIM, not proof: it is public, and any caller can name any client. What
+   * it buys is narrower than the hint's guarantee. The redirect is held to the addresses THAT client
+   * registered, never to the whole realm's, so the worst a forged claim reaches is another
+   * application's own registered landing page, not an arbitrary address. Only a verified
+   * `id_token_hint` proves who is asking; an application that needs that guarantee sends one.
+   *
+   * Returns undefined when neither was sent. The caller then honours no redirect at all, which is
+   * what RP-Initiated Logout 1.0 requires: without knowing the client, there is no registration to
+   * verify a return address against.
+   */
+  async function requestingClient(
+    realm: { realmId: string; issuer: string },
+    body: { client_id?: string; id_token_hint?: string },
+  ): Promise<string | undefined> {
+    if (!body.id_token_hint) return body.client_id;
+
+    // `JWT`, the type an ID token is signed with here, so an access or refresh token cannot stand in
+    // for one. The audience has to be read before it can be checked, which is not circular: a forged
+    // audience does not survive the signature check below.
+    const format = new JwtTokenFormat(ring(), realm.realmId, 'JWT');
+    const unverified = await format.inspect(body.id_token_hint);
+    const audience = Array.isArray(unverified?.aud) ? unverified?.aud[0] : unverified?.aud;
+    if (typeof audience !== 'string' || !audience) return undefined;
+
+    const claims = await format.verify(
+      body.id_token_hint,
+      { issuer: realm.issuer, audience },
+      // An expired hint still identifies the client. See the note on `verify`.
+      { allowExpired: true },
+    );
+    if (!claims) return undefined;
+    // `azp` when the token was issued for a party other than its audience; otherwise the audience is
+    // the client. Both are the same value here, and reading azp first keeps that an implementation
+    // detail of issuance rather than something this check depends on.
+    const party = typeof claims.azp === 'string' ? claims.azp : audience;
+    if (body.client_id && body.client_id !== party) return undefined;
+    return party;
+  }
+
+  /**
+   * A return address the REQUESTING client registered, and no one else's.
+   *
+   * It used to be any URI any client in the realm had registered, which is a closed list and so not
+   * an open redirect, but it let one application end a session and send the browser to another
+   * application's address. Each client declares where it wants to land and is held to its own
+   * declaration, which is what the standard says. How strong that is depends on how the client was
+   * identified: proven by a verified `id_token_hint`, merely claimed by a bare `client_id`.
+   */
+  async function registeredLogoutRedirect(
+    realmId: string,
+    uri: string | undefined,
+    clientId: string | undefined,
+  ): Promise<string | undefined> {
+    if (!uri || !clientId) return undefined;
     let canonical: string;
     try {
       canonical = new URL(uri).toString();
     } catch {
       return undefined;
     }
-    const clients = await listOAuthClients(fastify.db, realmId);
-    const registered = clients.some(
-      (client) => client.postLogoutRedirectUris?.some((registered) => {
-        try {
-          return new URL(registered).toString() === canonical;
-        } catch {
-          return false;
-        }
-      }),
-    );
+    const client = await findOAuthClient(fastify.db, realmId, clientId);
+    const registered = client?.postLogoutRedirectUris?.some((declared) => {
+      try {
+        return new URL(declared).toString() === canonical;
+      } catch {
+        return false;
+      }
+    });
     return registered ? uri : undefined;
   }
 
@@ -74,7 +131,23 @@ export async function logoutController(fastify: FastifyInstance) {
           subject_id: { type: 'string', description: 'Ends EVERY session this principal holds.' },
           post_logout_redirect_uri: {
             type: 'string',
-            description: 'Honoured only when a registered client declares it in postLogoutRedirectUris.',
+            description:
+              'Honoured only when the REQUESTING client declares it in its own postLogoutRedirectUris, '
+              + 'which means one of id_token_hint or client_id must identify that client.',
+          },
+          id_token_hint: {
+            type: 'string',
+            description:
+              'An ID token this authority issued to the client that is signing out. Preferred over '
+              + 'client_id: it is signed, so the client it names cannot be substituted. An expired '
+              + 'one is accepted.',
+          },
+          client_id: {
+            type: 'string',
+            description:
+              'The client that is signing out, when no id_token_hint is sent. A claim rather than proof: '
+              + 'it limits the redirect to the addresses registered by that client, and only a verified '
+              + 'id_token_hint establishes who is actually asking.',
           },
         },
       },
@@ -99,7 +172,10 @@ export async function logoutController(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const { realm: realmName } = request.params as { realm: string };
-    const body = (request.body ?? {}) as { session_id?: string; subject_id?: string; post_logout_redirect_uri?: string };
+    const body = (request.body ?? {}) as {
+      session_id?: string; subject_id?: string; post_logout_redirect_uri?: string;
+      id_token_hint?: string; client_id?: string;
+    };
 
     const realm = await new RealmService(fastify.db).byName(realmName);
     if (!realm) return reply.status(404).send(problem(404, 'Unknown realm'));
@@ -111,7 +187,9 @@ export async function logoutController(fastify: FastifyInstance) {
     if (body.subject_id) {
       const outcome = await sessions.terminateAllFor(realm.realmId, body.subject_id, 'logout', issuer);
       const notified = await notify(outcome.notify, realm.issuer, realm.realmId, body.subject_id, 'all');
-      const redirect = await registeredLogoutRedirect(realm.realmId, body.post_logout_redirect_uri);
+      const redirect = await registeredLogoutRedirect(
+        realm.realmId, body.post_logout_redirect_uri, await requestingClient(realm, body),
+      );
 
       await audit.record({
         realmId: realm.realmId,
@@ -164,7 +242,9 @@ export async function logoutController(fastify: FastifyInstance) {
      * nothing, which reads as an expiry rather than as a sign-out.
      */
     clearSessionCookie(request, reply);
-    const redirect = await registeredLogoutRedirect(realm.realmId, body.post_logout_redirect_uri);
+    const redirect = await registeredLogoutRedirect(
+      realm.realmId, body.post_logout_redirect_uri, await requestingClient(realm, body),
+    );
 
     // 200 whether or not a session was found, for the same reason revocation does: reporting "no
     // such session" would confirm which session identifiers are real.

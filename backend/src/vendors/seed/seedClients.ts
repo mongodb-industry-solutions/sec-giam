@@ -43,8 +43,15 @@ interface ClientFixture {
   scope: string;
   requirePkce: boolean;
   tokenEndpointAuthMethod: OAuthClient['tokenEndpointAuthMethod'];
-  /** Shown on the sign-in and consent screens, so a person sees who is asking before they agree. */
+  /**
+   * Shown on the sign-in and consent screens, so a person sees who is asking before they agree.
+   *
+   * A PATH here, bound to `baseUrlByEnvironment` when the registration is read. An absolute URL is
+   * accepted too, for an application this platform does not host.
+   */
   logoUri?: string;
+  /** Where this application answers, per environment. Its own record, its own addresses. */
+  baseUrlByEnvironment?: Record<string, string>;
   applicationType?: OAuthClient['applicationType'];
   status: OAuthClient['status'];
   backchannel?: OAuthClient['backchannel'];
@@ -265,6 +272,9 @@ export async function seedClients(db: Db): Promise<void> {
           requirePkce: fixture.requirePkce,
           tokenEndpointAuthMethod: fixture.tokenEndpointAuthMethod,
           ...(fixture.logoUri ? { logoUri: fixture.logoUri } : {}),
+          ...(fixture.baseUrlByEnvironment
+            ? { baseUrlByEnvironment: fixture.baseUrlByEnvironment as OAuthClient['baseUrlByEnvironment'] }
+            : {}),
           ...(fixture.applicationType ? { applicationType: fixture.applicationType } : {}),
           ...(fixture.backchannel ? { backchannel: fixture.backchannel } : {}),
           ...(fixture.demoRoster ? { demoRoster: fixture.demoRoster } : {}),

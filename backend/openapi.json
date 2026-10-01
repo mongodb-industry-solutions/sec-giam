@@ -1746,6 +1746,28 @@
                           "logo_uri": {
                             "type": "string"
                           },
+                          "base_url_by_environment": {
+                            "type": "object",
+                            "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                            "additionalProperties": false,
+                            "properties": {
+                              "development": {
+                                "type": "string",
+                                "pattern": "^https?://\\S+$",
+                                "maxLength": 2048
+                              },
+                              "staging": {
+                                "type": "string",
+                                "pattern": "^https?://\\S+$",
+                                "maxLength": 2048
+                              },
+                              "production": {
+                                "type": "string",
+                                "pattern": "^https?://\\S+$",
+                                "maxLength": 2048
+                              }
+                            }
+                          },
                           "application_type": {
                             "type": "string"
                           },
@@ -1941,6 +1963,28 @@
                   "logo_uri": {
                     "type": "string"
                   },
+                  "base_url_by_environment": {
+                    "type": "object",
+                    "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                    "additionalProperties": false,
+                    "properties": {
+                      "development": {
+                        "type": "string",
+                        "pattern": "^https?://\\S+$",
+                        "maxLength": 2048
+                      },
+                      "staging": {
+                        "type": "string",
+                        "pattern": "^https?://\\S+$",
+                        "maxLength": 2048
+                      },
+                      "production": {
+                        "type": "string",
+                        "pattern": "^https?://\\S+$",
+                        "maxLength": 2048
+                      }
+                    }
+                  },
                   "owner_ref": {
                     "type": "string"
                   }
@@ -2018,6 +2062,28 @@
                     },
                     "logo_uri": {
                       "type": "string"
+                    },
+                    "base_url_by_environment": {
+                      "type": "object",
+                      "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "development": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "staging": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "production": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        }
+                      }
                     },
                     "application_type": {
                       "type": "string"
@@ -2234,6 +2300,28 @@
                     "logo_uri": {
                       "type": "string"
                     },
+                    "base_url_by_environment": {
+                      "type": "object",
+                      "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "development": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "staging": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "production": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        }
+                      }
+                    },
                     "application_type": {
                       "type": "string"
                     },
@@ -2369,6 +2457,28 @@
                   },
                   "logo_uri": {
                     "type": "string"
+                  },
+                  "base_url_by_environment": {
+                    "type": "object",
+                    "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                    "additionalProperties": false,
+                    "properties": {
+                      "development": {
+                        "type": "string",
+                        "pattern": "^https?://\\S+$",
+                        "maxLength": 2048
+                      },
+                      "staging": {
+                        "type": "string",
+                        "pattern": "^https?://\\S+$",
+                        "maxLength": 2048
+                      },
+                      "production": {
+                        "type": "string",
+                        "pattern": "^https?://\\S+$",
+                        "maxLength": 2048
+                      }
+                    }
                   }
                 }
               }
@@ -2451,6 +2561,28 @@
                     },
                     "logo_uri": {
                       "type": "string"
+                    },
+                    "base_url_by_environment": {
+                      "type": "object",
+                      "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "development": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "staging": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "production": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        }
+                      }
                     },
                     "application_type": {
                       "type": "string"
@@ -2645,6 +2777,28 @@
                     "logo_uri": {
                       "type": "string"
                     },
+                    "base_url_by_environment": {
+                      "type": "object",
+                      "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "development": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "staging": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "production": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        }
+                      }
+                    },
                     "application_type": {
                       "type": "string"
                     },
@@ -2829,6 +2983,28 @@
                     },
                     "logo_uri": {
                       "type": "string"
+                    },
+                    "base_url_by_environment": {
+                      "type": "object",
+                      "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "development": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "staging": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "production": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        }
+                      }
                     },
                     "application_type": {
                       "type": "string"
@@ -3046,6 +3222,28 @@
                     "logo_uri": {
                       "type": "string"
                     },
+                    "base_url_by_environment": {
+                      "type": "object",
+                      "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "development": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "staging": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "production": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        }
+                      }
+                    },
                     "application_type": {
                       "type": "string"
                     },
@@ -3259,6 +3457,28 @@
                     },
                     "logo_uri": {
                       "type": "string"
+                    },
+                    "base_url_by_environment": {
+                      "type": "object",
+                      "description": "Where this application answers, per environment (absolute http(s) URLs), so one registration serves them all. A relative logo_uri is resolved against the entry for the environment the authority is running as.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "development": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "staging": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        },
+                        "production": {
+                          "type": "string",
+                          "pattern": "^https?://\\S+$",
+                          "maxLength": 2048
+                        }
+                      }
                     },
                     "application_type": {
                       "type": "string"
@@ -4499,7 +4719,7 @@
         "operationId": "initiateBackchannelAuthentication",
         "summary": "Ask a principal to approve, out of band",
         "tags": [
-          "authentication"
+          "ciba"
         ],
         "description": "Standard-defined: OpenID Connect Client-Initiated Backchannel Authentication Core 1.0. The client authenticates as itself and names the principal by hint. No browser and no password is involved: approval happens on a device that signs the returned challenge.",
         "requestBody": {
@@ -4623,7 +4843,7 @@
         "operationId": "listPendingBackchannelRequests",
         "summary": "Approvals waiting for the calling principal",
         "tags": [
-          "authentication"
+          "ciba"
         ],
         "description": "OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half. Scoped to the CALLER: an approving device shows its owner what is waiting for them, and this cannot be used to discover what anybody else has been asked to approve.",
         "parameters": [
@@ -4755,7 +4975,7 @@
         "operationId": "getBackchannelChallenge",
         "summary": "The challenge for a pending request",
         "tags": [
-          "authentication"
+          "ciba"
         ],
         "description": "OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half, which the specification leaves to the provider. Public by design: holding the identifier lets a device see what it would be signing, and approval still requires the private key. Nothing here is a secret.",
         "parameters": [
@@ -4862,7 +5082,7 @@
         "operationId": "approveBackchannelRequest",
         "summary": "Approve, by signing the challenge",
         "tags": [
-          "authentication"
+          "ciba"
         ],
         "description": "OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half. The signature over the challenge IS the authentication, so no session and no password is involved. The key must belong to the principal the request named.",
         "requestBody": {
@@ -4971,7 +5191,7 @@
         "operationId": "denyBackchannelRequest",
         "summary": "Refuse a pending request",
         "tags": [
-          "authentication"
+          "ciba"
         ],
         "description": "OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half. A refusal is authorised the same way an approval is, because otherwise anyone who saw an identifier could cancel another person's sign-in.",
         "requestBody": {
@@ -5095,7 +5315,15 @@
                   },
                   "post_logout_redirect_uri": {
                     "type": "string",
-                    "description": "Honoured only when a registered client declares it in postLogoutRedirectUris."
+                    "description": "Honoured only when the REQUESTING client declares it in its own postLogoutRedirectUris, which means one of id_token_hint or client_id must identify that client."
+                  },
+                  "id_token_hint": {
+                    "type": "string",
+                    "description": "An ID token this authority issued to the client that is signing out. Preferred over client_id: it is signed, so the client it names cannot be substituted. An expired one is accepted."
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "description": "The client that is signing out, when no id_token_hint is sent. A claim rather than proof: it limits the redirect to the addresses registered by that client, and only a verified id_token_hint establishes who is actually asking."
                   }
                 }
               }
@@ -12038,7 +12266,7 @@
         "operationId": "myPermissions",
         "summary": "What this principal may do to the authority's own objects, resolved fresh",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard; console UI gating. The access token carries roles rather than entitlements by default (P9), so a screen deciding what to show cannot read the token alone without the answer being wrong for every default login. This is the same read the authority does to decide, not a claim the caller could be stale about: a role withdrawn a moment ago is withdrawn here too. It answers only for the CALLER, so no permission beyond \"read your own\" gates it.",
         "parameters": [
@@ -12135,7 +12363,7 @@
         "operationId": "listRoles",
         "summary": "The roles this realm defines",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. Each row carries what the role grants directly and what it grants once composition through its parents is resolved, because the two differ and only one of them is what a token will actually carry. The assignment count is here rather than a screen away: a role nobody holds and a role everybody holds are different objects.",
         "parameters": [
@@ -12360,7 +12588,7 @@
         "operationId": "createRole",
         "summary": "Define a role",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. Every permission named has to be one a resource server already registered, and one that is not is refused rather than stored: the authority grants what applications say they enforce, and a role granting something nothing checks looks identical to one that works.",
         "requestBody": {
@@ -12722,7 +12950,7 @@
         "operationId": "listPermissionCatalog",
         "summary": "Every permission a role could be given",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. The union of the enforcement points the realm's resource servers have registered. It is a separate read from the roles themselves because a role can only ever grant what an application declared it enforces, and building one against a list of free text would produce permissions nothing checks.",
         "parameters": [
@@ -12881,7 +13109,7 @@
         "operationId": "getRole",
         "summary": "One role, with everything it inherits",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. Both permission sets are returned: what the role states itself and what it grants once its parents are resolved. A reader shown only the second cannot tell which line to edit, and one shown only the first does not know what the role actually does. Any recorded separation-of-duties reasoning travels with it.",
         "parameters": [
@@ -13165,7 +13393,7 @@
         "operationId": "updateRole",
         "summary": "Change what a role grants",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. Partial: only the fields present are changed. The permission list is replaced rather than merged, because a role is a statement of what it grants and merging would make removing a permission impossible through this route. Built-in roles can be edited; setup recreates the fields it owns on the next run, which is stated here rather than discovered.",
         "requestBody": {
@@ -13527,7 +13755,7 @@
         "operationId": "deleteRole",
         "summary": "Remove a role",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. Refused while anything still depends on it, and the refusal names how many assignments or child roles do. Cascading would take authority away from everyone holding it in one unwatched moment, which is a decision nobody made.",
         "parameters": [
@@ -13630,7 +13858,7 @@
         "operationId": "listRoleAssignments",
         "summary": "Who holds this role",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. Lapsed assignments are listed alongside live ones, because \"who used to hold this, and until when\" is the question asked after something goes wrong, and a list that quietly drops them cannot answer it.",
         "parameters": [
@@ -13804,7 +14032,7 @@
         "operationId": "grantRoleAssignment",
         "summary": "Give a principal this role",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. An assignment with an expiry is a time-bound elevation and is marked as one, so the expiry sweep can never touch a standing grant. The same record type expresses both, which is what makes an elevation listable and revocable in the way a stateless capability token is not.",
         "requestBody": {
@@ -13962,7 +14190,7 @@
         "operationId": "listPrincipalRoles",
         "summary": "The roles one principal holds",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. The reverse of \"who holds this role\": one principal's own assignments, lapsed ones included, read from that principal's own record rather than by scanning every role in the catalog for a match.",
         "parameters": [
@@ -14105,7 +14333,7 @@
         "operationId": "revokeRoleAssignment",
         "summary": "Take a role back from a principal",
         "tags": [
-          "authorization"
+          "roles"
         ],
         "description": "No applicable standard. Removes one holding and nothing else: the role, and everyone else holding it, are untouched. Addressed by the subject and the role, because a role a subject holds lives on the subject and has no identifier of its own. It takes effect at the next token issued, which is why access-token lifetimes are short and why the irreversible operations introspect.",
         "parameters": [
@@ -14211,7 +14439,7 @@
         "operationId": "listPolicies",
         "summary": "The conditional statements this realm applies",
         "tags": [
-          "authorization"
+          "policies"
         ],
         "description": "No applicable standard. Evaluated AFTER roles and combined deny-wins, so a policy can only ever narrow what a role granted. Each row carries how many of its statements prohibit rather than permit, because a policy that denies and one that only permits are different objects and a single count hides which is which.",
         "parameters": [
@@ -14454,7 +14682,7 @@
         "operationId": "createPolicy",
         "summary": "State a policy",
         "tags": [
-          "authorization"
+          "policies"
         ],
         "description": "No applicable standard. A condition outside the identity vocabulary is refused rather than stored: assurance, network, time of day, tenant and attestation are what an identity authority can observe, and a threshold expressing business materiality is a judgement for the system that can see the inputs. Test the result on the decision endpoint before trusting it.",
         "requestBody": {
@@ -15059,7 +15287,7 @@
         "operationId": "getPolicy",
         "summary": "One policy, statement by statement",
         "tags": [
-          "authorization"
+          "policies"
         ],
         "description": "No applicable standard. Returns the statements in the order the evaluator reads them, with the reason each carries. The order does not change the outcome, since deny wins wherever it appears, but it is the order the editor and the decision trace both refer to.",
         "parameters": [
@@ -15416,7 +15644,7 @@
         "operationId": "updatePolicy",
         "summary": "Change what a policy states",
         "tags": [
-          "authorization"
+          "policies"
         ],
         "description": "No applicable standard. Partial: only the fields present change. The statement list is replaced rather than merged, because a policy is a statement of what it says and merging would make removing a statement impossible from here. Switching `enabled` off is the reversible way to stop a policy deciding, and is preferable to removing it.",
         "requestBody": {
@@ -16004,7 +16232,7 @@
         "operationId": "deletePolicy",
         "summary": "Remove a policy",
         "tags": [
-          "authorization"
+          "policies"
         ],
         "description": "No applicable standard. Nothing else in the model references a policy, so there is no dependant to orphan and no refusal to make. Removing one that DENIES widens access immediately, which is why disabling it is offered alongside: that is reversible and this is not.",
         "parameters": [
@@ -16097,7 +16325,7 @@
         "operationId": "listPolicyResources",
         "summary": "Which resources this policy actually governs",
         "tags": [
-          "authorization"
+          "policies"
         ],
         "description": "No applicable standard. Every resource in this realm's own catalog that this policy's `resource` selector matches, exact name or pattern, resolved with the identical `resourceApplies` the decision engine uses. Not paged: a realm's resource catalog is the kind of thing read whole, the same reasoning `/permissions` and `/resource-servers` follow.",
         "parameters": [
@@ -16221,7 +16449,7 @@
         "operationId": "evaluateDecision",
         "summary": "Evaluate one authorization decision",
         "tags": [
-          "authorization"
+          "decision"
         ],
         "description": "Shaped after the OpenID AuthZEN Authorization API 1.0 evaluation request and response: a subject, a resource, an action and a context, answered with a boolean `decision`. Two deviations, both stated rather than discovered. First, the path is realm scoped instead of a single global evaluation path, because a realm is this authority's trust boundary and a decision has no meaning outside one. Second, the response `context` carries the effect, the reason, the deciding policy with its version and statement position, and what each evaluator said on its own, which the specification permits as an extension and this authority requires: a decision a log cannot explain is not auditable, and a rule nobody can test is a rule that gets written wrong and stays wrong.",
         "requestBody": {
@@ -16537,7 +16765,7 @@
         "operationId": "evaluateDecisions",
         "summary": "Evaluate several authorization decisions in one call",
         "tags": [
-          "authorization"
+          "decision"
         ],
         "description": "AuthZEN 1.0's batch evaluation extension. A `subject`, `resource`, `action` or `context` named at the top level is the default for every entry in `evaluations` that omits it. Answered in the same order asked, one `decision` per entry, each carrying this authority's own extended trace exactly as the single `/decision` endpoint does.",
         "requestBody": {
@@ -17021,7 +17249,7 @@
         "operationId": "searchActions",
         "summary": "Which actions a subject may take on a resource",
         "tags": [
-          "authorization"
+          "decision"
         ],
         "description": "AuthZEN 1.0's `/access/v1/search/action` extension. Only the resource's DECLARED actions are considered, the same catalog a role can only ever be granted from, and each is asked through the identical decision path the single and batch endpoints use, with the SAME context: nothing here is answered by a cheaper approximation that drops a condition to make a reverse search possible.",
         "requestBody": {
@@ -17208,7 +17436,7 @@
         "operationId": "evaluateDecisionAtHome",
         "summary": "Evaluate one authorization decision, at the AuthZEN-shaped compatibility path",
         "tags": [
-          "authorization"
+          "decision"
         ],
         "description": "The same evaluation as `POST /api/v1/realms/:realm/decision`, at a path shaped for a generic AuthZEN 1.0 client rather than named to one realm. There is no realm segment because the specification has none: the realm evaluated is always the caller's own, resolved from the token that authenticated the request.",
         "requestBody": {
@@ -17496,7 +17724,7 @@
         "operationId": "evaluateDecisionsAtHome",
         "summary": "Evaluate several authorization decisions in one call, at the AuthZEN-shaped compatibility path",
         "tags": [
-          "authorization"
+          "decision"
         ],
         "description": "The same batch evaluation as `POST /api/v1/realms/:realm/decision/evaluations`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
         "requestBody": {
@@ -17931,7 +18159,7 @@
         "operationId": "searchActionsAtHome",
         "summary": "Which actions a subject may take on a resource, at the AuthZEN-shaped compatibility path",
         "tags": [
-          "authorization"
+          "decision"
         ],
         "description": "The same reverse search as `POST /api/v1/realms/:realm/decision/search/action`, at the path shaped for a generic AuthZEN 1.0 client. See that endpoint.",
         "requestBody": {
@@ -21408,7 +21636,11 @@
     },
     {
       "name": "authentication",
-      "description": "**Standard-defined where a specification exists.** Interactive sign-in, passwordless, backchannel authentication, enrolment, logout."
+      "description": "**Standard-defined where a specification exists.** Interactive sign-in, passwordless, enrolment, logout."
+    },
+    {
+      "name": "ciba",
+      "description": "**Standard-defined where a specification exists.** Client-Initiated Backchannel Authentication (OpenID CIBA Core 1.0): a client asks for a principal to be approved out of band. The approving side (pending list, challenge, approve, deny) is an extension of this authority, since CIBA leaves the authentication device to the implementer."
     },
     {
       "name": "consent",
@@ -21428,7 +21660,19 @@
     },
     {
       "name": "authorization",
-      "description": "Resource servers, permission catalogs, roles, assignments, policies, and the decision endpoint."
+      "description": "Resource servers and the permissions each declares, administering another realm, and the security-event feed a receiver polls."
+    },
+    {
+      "name": "roles",
+      "description": "Roles, who holds them, the permission catalog they draw from, and the permissions a caller effectively holds."
+    },
+    {
+      "name": "policies",
+      "description": "Conditional statements evaluated after roles: create, read, change and withdraw a policy."
+    },
+    {
+      "name": "decision",
+      "description": "**Standard-defined where AuthZEN 1.0 applies.** Ask whether a subject may perform an action on a resource, singly or in batch, or which actions it may perform."
     },
     {
       "name": "keys",

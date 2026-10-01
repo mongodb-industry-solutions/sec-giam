@@ -7,7 +7,7 @@ import { DirectoryService } from '../../directory/services/directory.service';
 import { SecurityEventService } from '../../audit/services/securityEvent.service';
 import { SignalDispatcher } from '../../authorization/services/signalDispatcher';
 import { requireAuthorityCaller, AuthorityCaller } from '../../../vendors/middleware/authorityAuth';
-import { OAuthClient, clientFromCredential, clientMetadata } from '../models/client.model';
+import { OAuthClient, clientFromCredential, clientMetadata, normalizeBaseUrls } from '../models/client.model';
 import { CredentialRecord } from '../../directory/models/credential.model';
 import { clientCredentials, clientFilter, clientUpdate } from '../services/clientRegistry';
 import { withinActiveSecretCap } from '../../directory/models/credential.model';
@@ -38,6 +38,22 @@ import {
  * case. Every owner holds the same authority as every other, and a registration can never reach zero
  * owners: at that point nobody but an operator credential could administer it again.
  */
+/**
+ * Where an application answers, per environment, so one registration serves them all. A relative
+ * logo_uri is resolved against the entry for the environment the authority is running as. Absolute
+ * http(s) only: the value is joined into a URL the consent screen loads, so any other scheme is refused.
+ */
+const BASE_URL = { type: 'string', pattern: '^https?://\\S+$', maxLength: 2048 } as const;
+const BASE_URL_BY_ENVIRONMENT_SCHEMA = {
+  type: 'object',
+  description:
+    'Where this application answers, per environment (absolute http(s) URLs), so one registration '
+    + 'serves them all. A relative logo_uri is resolved against the entry for the environment the '
+    + 'authority is running as.',
+  additionalProperties: false,
+  properties: { development: BASE_URL, staging: BASE_URL, production: BASE_URL },
+} as const;
+
 export async function clientRegistrationController(fastify: FastifyInstance) {
   const base = '/realms/:realm/clients';
 
@@ -61,6 +77,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       grant_types: { type: 'array', items: { type: 'string' } },
       scope: { type: 'string' },
       logo_uri: { type: 'string' },
+      base_url_by_environment: BASE_URL_BY_ENVIRONMENT_SCHEMA,
       application_type: { type: 'string' },
       token_endpoint_auth_method: { type: 'string' },
       require_pkce: { type: 'boolean' },
@@ -219,6 +236,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       grant_types: record.grantTypes ?? [],
       scope: record.scope ?? '',
       ...(record.logoUri ? { logo_uri: record.logoUri } : {}),
+      ...(record.baseUrlByEnvironment ? { base_url_by_environment: record.baseUrlByEnvironment } : {}),
       ...(record.applicationType ? { application_type: record.applicationType } : {}),
       token_endpoint_auth_method: record.tokenEndpointAuthMethod,
       require_pkce: record.requirePkce,
@@ -418,6 +436,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
           grant_types: { type: 'array', items: { type: 'string' } },
           scope: { type: 'string' },
           logo_uri: { type: 'string' },
+          base_url_by_environment: BASE_URL_BY_ENVIRONMENT_SCHEMA,
           /** The consumer's own record for whoever owns this client. Administrators only. */
           owner_ref: { type: 'string' },
         },
@@ -437,6 +456,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const body = request.body as {
       client_name: string; redirect_uris?: string[]; post_logout_redirect_uris?: string[];
       grant_types?: string[]; scope?: string; logo_uri?: string; owner_ref?: string;
+      base_url_by_environment?: OAuthClient['baseUrlByEnvironment'];
     };
 
     const realm = await realmOf(realmName);
@@ -498,6 +518,16 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     if (grantTypes.length === 0) grantTypes = ['client_credentials'];
     if (scopes.length === 0) scopes = ['openid'];
 
+    // Checked before a secret is minted, so a refused address leaves nothing behind.
+    let addresses: OAuthClient['baseUrlByEnvironment'] | undefined;
+    if (body.base_url_by_environment) {
+      const checked = normalizeBaseUrls(body.base_url_by_environment);
+      if ('refused' in checked) {
+        return refuse(400, 'Application address refused', checked.refused, 'invalid_application_address');
+      }
+      addresses = checked.urls;
+    }
+
     const clientId = `cli-${randomUUID()}`;
     const { secret, hash, prefix } = await mintSecret();
     const isPublic = grantTypes.every((grant) => grant === 'authorization_code');
@@ -551,6 +581,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
         grantTypes: grantTypes as OAuthClient['grantTypes'],
         scope: scopes.join(' '),
         ...(body.logo_uri ? { logoUri: body.logo_uri } : {}),
+        ...(addresses ? { baseUrlByEnvironment: addresses } : {}),
         requirePkce: true,
         tokenEndpointAuthMethod: isPublic ? 'none' : 'client_secret_basic',
         applicationType: 'web',
@@ -612,6 +643,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
           post_logout_redirect_uris: { type: 'array', items: { type: 'string' } },
           scope: { type: 'string' },
           logo_uri: { type: 'string' },
+          base_url_by_environment: BASE_URL_BY_ENVIRONMENT_SCHEMA,
         },
       },
       response: {
@@ -627,6 +659,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const body = request.body as {
       client_name?: string; redirect_uris?: string[]; post_logout_redirect_uris?: string[];
       scope?: string; logo_uri?: string;
+      base_url_by_environment?: OAuthClient['baseUrlByEnvironment'];
     };
 
     const realm = await realmOf(realmName);
@@ -639,6 +672,13 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     const update: Record<string, unknown> = {};
     if (body.client_name) update.clientName = body.client_name;
     if (body.logo_uri) update.logoUri = body.logo_uri;
+    // The application's own addresses, which it may correct without an operator: nothing here is a
+    // permission, and it is the one party that knows where it is published.
+    if (body.base_url_by_environment) {
+      const checked = normalizeBaseUrls(body.base_url_by_environment);
+      if ('refused' in checked) return reply.status(400).send(problem(400, 'Application address refused', checked.refused));
+      update.baseUrlByEnvironment = checked.urls;
+    }
 
     if (body.scope !== undefined) {
       const scopes = body.scope.split(' ').filter(Boolean);
@@ -662,7 +702,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       }
     }
 
-    await clients().updateOne(
+    // Every credential of the registration, not one of them: after a rotation there are two, they carry
+    // the same metadata, and the newest active one is what the authority reads, so editing only one
+    // could leave the edit without effect.
+    await clients().updateMany(
       clientFilter({ realmId: realm.realmId, clientId }),
       { $set: { ...clientUpdate(update), 'meta.lastModified': new Date().toISOString() } },
     );
@@ -743,6 +786,13 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     }
 
     const { secret, hash, prefix } = await mintSecret();
+    // The STORED metadata, not the projection in `existing`: that one carries a logo already bound to
+    // this environment's address, and writing it back would freeze the host of whichever cluster
+    // rotated the secret into a record that is restored across all of them.
+    const stored = await clients().findOne(
+      clientFilter({ ...reach(caller, realm.realmId, 'rotateSecret'), clientId }),
+      { projection: { _id: 0, metadata: 1 } },
+    );
     await clients().insertOne({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
@@ -755,7 +805,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       hash: hash,
       secretPrefix: prefix,
       // The same registration metadata: this is a second secret for one client, not a second client.
-      metadata: clientMetadata(existing),
+      metadata: stored?.metadata ?? clientMetadata(existing),
       status: 'active',
       assurance: { level: 'aal1', method: 'client_secret' },
       createdAt: new Date().toISOString(),
