@@ -230,7 +230,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'listPolicies',
-      tags: ['authorization'],
+      tags: ['policies'],
       summary: 'The conditional statements this realm applies',
       description:
         'No applicable standard. Evaluated AFTER roles and combined deny-wins, so a policy can only '
@@ -288,7 +288,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'getPolicy',
-      tags: ['authorization'],
+      tags: ['policies'],
       summary: 'One policy, statement by statement',
       description:
         'No applicable standard. Returns the statements in the order the evaluator reads them, with '
@@ -327,7 +327,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'listPolicyResources',
-      tags: ['authorization'],
+      tags: ['policies'],
       summary: 'Which resources this policy actually governs',
       description:
         'No applicable standard. Every resource in this realm\'s own catalog that this policy\'s '
@@ -384,7 +384,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'createPolicy',
-      tags: ['authorization'],
+      tags: ['policies'],
       summary: 'State a policy',
       description:
         'No applicable standard. A condition outside the identity vocabulary is refused rather than '
@@ -436,7 +436,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'updatePolicy',
-      tags: ['authorization'],
+      tags: ['policies'],
       summary: 'Change what a policy states',
       description:
         'No applicable standard. Partial: only the fields present change. The statement list is '
@@ -485,7 +485,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'deletePolicy',
-      tags: ['authorization'],
+      tags: ['policies'],
       summary: 'Remove a policy',
       description:
         'No applicable standard. Nothing else in the model references a policy, so there is no '
@@ -750,7 +750,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'evaluateDecision',
-      tags: ['authorization'],
+      tags: ['decision'],
       summary: 'Evaluate one authorization decision',
       description:
         'Shaped after the OpenID AuthZEN Authorization API 1.0 evaluation request and response: a '
@@ -817,7 +817,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'evaluateDecisions',
-      tags: ['authorization'],
+      tags: ['decision'],
       summary: 'Evaluate several authorization decisions in one call',
       description:
         'AuthZEN 1.0\'s batch evaluation extension. A `subject`, `resource`, `action` or `context` '
@@ -957,7 +957,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'searchActions',
-      tags: ['authorization'],
+      tags: ['decision'],
       summary: 'Which actions a subject may take on a resource',
       description:
         'AuthZEN 1.0\'s `/access/v1/search/action` extension. Only the resource\'s DECLARED actions '
@@ -1046,7 +1046,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipalAtHome,
     schema: {
       operationId: 'evaluateDecisionAtHome',
-      tags: ['authorization'],
+      tags: ['decision'],
       summary: 'Evaluate one authorization decision, at the AuthZEN-shaped compatibility path',
       description:
         'The same evaluation as `POST /api/v1/realms/:realm/decision`, at a path shaped for a generic '
@@ -1086,7 +1086,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipalAtHome,
     schema: {
       operationId: 'evaluateDecisionsAtHome',
-      tags: ['authorization'],
+      tags: ['decision'],
       summary: 'Evaluate several authorization decisions in one call, at the AuthZEN-shaped compatibility path',
       description:
         'The same batch evaluation as `POST /api/v1/realms/:realm/decision/evaluations`, at the path shaped '
@@ -1181,7 +1181,7 @@ export async function policyController(fastify: FastifyInstance) {
     preHandler: requirePrincipalAtHome,
     schema: {
       operationId: 'searchActionsAtHome',
-      tags: ['authorization'],
+      tags: ['decision'],
       summary: 'Which actions a subject may take on a resource, at the AuthZEN-shaped compatibility path',
       description:
         'The same reverse search as `POST /api/v1/realms/:realm/decision/search/action`, at the path shaped '

@@ -229,7 +229,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'myPermissions',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'What this principal may do to the authority\'s own objects, resolved fresh',
       description:
         'No applicable standard; console UI gating. The access token carries roles rather than '
@@ -271,7 +271,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'listRoles',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'The roles this realm defines',
       description:
         'No applicable standard. Each row carries what the role grants directly and what it grants '
@@ -324,7 +324,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'listPermissionCatalog',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'Every permission a role could be given',
       description:
         'No applicable standard. The union of the enforcement points the realm\'s resource servers '
@@ -424,7 +424,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'getRole',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'One role, with everything it inherits',
       description:
         'No applicable standard. Both permission sets are returned: what the role states itself and '
@@ -457,7 +457,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'createRole',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'Define a role',
       description:
         'No applicable standard. Every permission named has to be one a resource server already '
@@ -518,7 +518,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'updateRole',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'Change what a role grants',
       description:
         'No applicable standard. Partial: only the fields present are changed. The permission list '
@@ -592,7 +592,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'deleteRole',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'Remove a role',
       description:
         'No applicable standard. Refused while anything still depends on it, and the refusal names '
@@ -636,7 +636,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'listRoleAssignments',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'Who holds this role',
       description:
         'No applicable standard. Lapsed assignments are listed alongside live ones, because "who '
@@ -686,7 +686,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'grantRoleAssignment',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'Give a principal this role',
       description:
         'No applicable standard. An assignment with an expiry is a time-bound elevation and is '
@@ -741,7 +741,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'listPrincipalRoles',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'The roles one principal holds',
       description:
         'No applicable standard. The reverse of "who holds this role": one principal\'s own '
@@ -782,7 +782,7 @@ export async function roleController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'revokeRoleAssignment',
-      tags: ['authorization'],
+      tags: ['roles'],
       summary: 'Take a role back from a principal',
       description:
         'No applicable standard. Removes one holding and nothing else: the role, and everyone '

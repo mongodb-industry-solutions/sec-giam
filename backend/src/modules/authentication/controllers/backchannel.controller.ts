@@ -67,7 +67,7 @@ export async function backchannelController(fastify: FastifyInstance) {
   fastify.post(`${base}/auth`, {
     schema: {
       operationId: 'initiateBackchannelAuthentication',
-      tags: ['authentication'],
+      tags: ['ciba'],
       summary: 'Ask a principal to approve, out of band',
       description:
         'Standard-defined: OpenID Connect Client-Initiated Backchannel Authentication Core 1.0. The '
@@ -148,7 +148,7 @@ export async function backchannelController(fastify: FastifyInstance) {
     preHandler: requirePrincipal,
     schema: {
       operationId: 'listPendingBackchannelRequests',
-      tags: ['authentication'],
+      tags: ['ciba'],
       summary: 'Approvals waiting for the calling principal',
       description:
         'OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half. '
@@ -182,7 +182,7 @@ export async function backchannelController(fastify: FastifyInstance) {
   fastify.get(`${base}/auth/:authReqId`, {
     schema: {
       operationId: 'getBackchannelChallenge',
-      tags: ['authentication'],
+      tags: ['ciba'],
       summary: 'The challenge for a pending request',
       description:
         'OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half, '
@@ -215,7 +215,7 @@ export async function backchannelController(fastify: FastifyInstance) {
   fastify.post(`${base}/auth/:authReqId/approve`, {
     schema: {
       operationId: 'approveBackchannelRequest',
-      tags: ['authentication'],
+      tags: ['ciba'],
       summary: 'Approve, by signing the challenge',
       description:
         'OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half. '
@@ -272,7 +272,7 @@ export async function backchannelController(fastify: FastifyInstance) {
   fastify.post(`${base}/auth/:authReqId/deny`, {
     schema: {
       operationId: 'denyBackchannelRequest',
-      tags: ['authentication'],
+      tags: ['ciba'],
       summary: 'Refuse a pending request',
       description:
         'OpenID Connect Client-Initiated Backchannel Authentication Core 1.0, the device-facing half. '
