@@ -85,7 +85,19 @@ export class JwtTokenFormat implements TokenFormat {
    *   token asserting its own authenticity.
    * - An unknown `kid` must be refused rather than resolved to whatever key happens to be at hand.
    */
-  async verify(token: string, expected: { issuer: string; audience: string }): Promise<Record<string, unknown> | null> {
+  /**
+   * `allowExpired` is for ONE caller: an `id_token_hint` at the logout endpoint.
+   *
+   * RP-Initiated Logout 1.0 says an expired ID token is acceptable there, and it has to be: the hint
+   * identifies which client is asking to end a session, and a session being over is exactly when
+   * somebody signs out. Everything else about the token is still checked, so what is relaxed is the
+   * lifetime and never the signature.
+   */
+  async verify(
+    token: string,
+    expected: { issuer: string; audience: string },
+    options: { allowExpired?: boolean } = {},
+  ): Promise<Record<string, unknown> | null> {
     const header = await this.header(token);
     if (!header) return null;
 
@@ -140,7 +152,7 @@ export class JwtTokenFormat implements TokenFormat {
     // future is a clock problem rather than a forgery.
     const now = Math.floor(Date.now() / 1000);
     const skew = 60;
-    if (claims.exp + skew < now) return null;
+    if (!options.allowExpired && claims.exp + skew < now) return null;
     // Still conditional, because `nbf` is OPTIONAL in RFC 7519 4.1.5 and this authority no longer
     // emits it. A token from elsewhere that carries one is still honoured.
     if (typeof claims.nbf === 'number' && claims.nbf - skew > now) return null;

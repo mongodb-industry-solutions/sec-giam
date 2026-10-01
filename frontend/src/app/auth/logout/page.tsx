@@ -36,6 +36,10 @@ function LogoutInner() {
     const token = storedToken();
     // A relying party's return address, validated server-side against its own registration.
     const postLogoutRedirectUri = params.get('post_logout_redirect_uri') ?? undefined;
+    // Which client is asking, relayed exactly as it arrived. Without one of these the authority
+    // honours no return address, because there is no registration to check it against.
+    const idTokenHint = params.get('id_token_hint') ?? undefined;
+    const clientId = params.get('client_id') ?? undefined;
     clearSession();
 
     // Called regardless of whether this tab remembers a session id: a relying party's sign-in never
@@ -50,6 +54,8 @@ function LogoutInner() {
       body: JSON.stringify({
         ...(sessionId ? { session_id: sessionId } : {}),
         ...(postLogoutRedirectUri ? { post_logout_redirect_uri: postLogoutRedirectUri } : {}),
+        ...(idTokenHint ? { id_token_hint: idTokenHint } : {}),
+        ...(clientId ? { client_id: clientId } : {}),
       }),
     })
       .then(async (response) => {

@@ -42,6 +42,16 @@ interface IdentityFixture {
 
 const identities = JSON.parse(readFileSync(resolve(DATA, 'identities.json'), 'utf8')) as IdentityFixture[];
 
+interface ClientFixture {
+  realm: string;
+  clientId: string;
+  postLogoutRedirectUris?: string[];
+}
+
+/** Two clients of the same realm that each declare a return address, read from the fixture. */
+const clients = (JSON.parse(readFileSync(resolve(DATA, 'clients.json'), 'utf8')) as ClientFixture[])
+  .filter((client) => client.realm === REALM && (client.postLogoutRedirectUris?.length ?? 0) > 0);
+
 /** Any principal who can actually sign in. The property under test is not specific to one person. */
 const subject = identities.find(
   (identity) => identity.realm === REALM && identity.demoFeatured && identity.lifecycleState !== 'deprovisioned',
@@ -174,5 +184,68 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
     // conflating them would make signing out of a laptop close a session on a phone.
     const other = await app.db.collection('session').findOne({ sessionId: two.sessionId });
     expect(other?.terminatedAt, 'a second session was ended by a single-session logout').toBeUndefined();
+  });
+});
+
+
+/**
+ * A return address belongs to the client that registered it, and to no other client in the realm.
+ *
+ * This used to be checked realm-wide: any URI any client had registered was honoured for anybody.
+ * That is a closed list and so never an open redirect, but it let one application end a session and
+ * send the browser to a DIFFERENT application's address, and it meant a client's own registration
+ * was not a boundary it could rely on. RP-Initiated Logout 1.0 puts the check on the requesting
+ * client, which is why the request has to say who that is.
+ */
+describe('a post-logout address is held against the registration of the client that asked', () => {
+  async function endSession(payload: Record<string, unknown>) {
+    const session = await signIn();
+    if (!session) return null;
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
+      payload: { session_id: session.sessionId, ...payload },
+    });
+    expect(response.statusCode).toBe(200);
+    return response.json() as { post_logout_redirect_uri?: string };
+  }
+
+  it('has two clients with registered return addresses, so the checks below are not vacuous', () => {
+    expect(clients.length, 'fewer than two clients declare a post-logout address').toBeGreaterThan(1);
+  });
+
+  it('honours a client its own registered address', async () => {
+    const client = clients[0];
+    const uri = client.postLogoutRedirectUris![0];
+    const body = await endSession({ post_logout_redirect_uri: uri, client_id: client.clientId });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBe(uri);
+  });
+
+  it('refuses one client the address another client registered', async () => {
+    const [first, second] = clients;
+    const foreign = second.postLogoutRedirectUris!
+      .find((uri) => !(first.postLogoutRedirectUris ?? []).includes(uri));
+    expect(foreign, 'the two clients register identical addresses, so this proves nothing').toBeTruthy();
+    const body = await endSession({ post_logout_redirect_uri: foreign, client_id: first.clientId });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBeUndefined();
+  });
+
+  it('honours nothing when the request does not say which client is asking', async () => {
+    const client = clients[0];
+    const body = await endSession({ post_logout_redirect_uri: client.postLogoutRedirectUris![0] });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBeUndefined();
+  });
+
+  it('refuses an address no client registered, named client or not', async () => {
+    const client = clients[0];
+    const body = await endSession({
+      post_logout_redirect_uri: 'https://somewhere-else.example/landing',
+      client_id: client.clientId,
+    });
+    if (!body) return;
+    expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 });
