@@ -112,6 +112,51 @@ export function assertLinks(assertions: LinkAssertion[]): Array<{ name: string; 
   });
 }
 
+// ── Deployment environment ─────────────────────────────────────────────────────────────────────
+// Byte-identical to the monorepo copy: one name, one variable, and the same accepted spellings, so
+// a record that declares an address per environment resolves the same way in both repositories.
+/**
+ * The environments this platform is deployed to. One name, selected by one variable.
+ */
+export const PLATFORM_ENVIRONMENTS = ['development', 'staging', 'production'] as const;
+export type PlatformEnvironment = typeof PLATFORM_ENVIRONMENTS[number];
+
+/**
+ * Which environment this process is running as.
+ *
+ * An unrecognised name THROWS rather than falling back to development. A typo in the deployment
+ * variable would otherwise point a production process at a development address, which is the exact class of
+ * failure this whole indirection exists to remove.
+ *
+ * `NODE_ENV` IS one of the sources, and in practice it is the only one anybody sets. Every manifest
+ * in this platform already declares `NODE_ENV: staging` or `production`, and no deployment has ever
+ * set either of the dedicated names, so this function answered `development` in staging and in
+ * production: every record declaring an address per environment resolved to its development column,
+ * which is a provider dispatched at a loopback host that nothing answers on. A second variable
+ * carrying the same three names would have had to be added to every manifest to say what one of them
+ * already said.
+ *
+ * It is read LAST, and an unrecognised value there is tolerated rather than fatal, because NODE_ENV
+ * legitimately holds names this platform has no column for (`test` under a test runner, and
+ * `production` is the only value Node itself defines). The dedicated names keep throwing on a typo:
+ * setting one is a deliberate statement about this deployment, and a misspelling of it is a mistake
+ * rather than a different vocabulary.
+ */
+export function platformEnvironment(env: Env = process.env): PlatformEnvironment {
+  const declared = (env.PSP_ENVIRONMENT ?? env.ENVIRONMENT ?? '').trim();
+  if (declared) {
+    const match = PLATFORM_ENVIRONMENTS.find((name) => name === declared.toLowerCase());
+    if (!match) {
+      throw new Error(
+        `unknown platform environment "${declared}"; expected one of ${PLATFORM_ENVIRONMENTS.join(', ')}`,
+      );
+    }
+    return match;
+  }
+  const nodeEnv = (env.NODE_ENV ?? '').trim().toLowerCase();
+  return PLATFORM_ENVIRONMENTS.find((name) => name === nodeEnv) ?? 'development';
+}
+
 /**
  * The demo client secret for a client id: preconfiguration only, never a production credential.
  *

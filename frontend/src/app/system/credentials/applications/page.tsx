@@ -14,7 +14,9 @@ import { ApiError, callApi, can, currentClaims, when } from '../../../../lib/con
 import {
   ClientPage, PRIVILEGED_GRANTS, RegisteredClient, SELF_SERVICE_GRANTS, SELF_SERVICE_SCOPES,
   firstRedirectProblem, redirectUriProblem, ownersLabel,
+  firstBaseUrlProblem, filledBaseUrls, type ClientBaseUrls,
 } from '../../../../lib/clients';
+import { EnvironmentUrlsEditor } from '../../../../components/EnvironmentUrlsEditor';
 import { usePermissions } from '../../../../lib/profile';
 
 /**
@@ -277,6 +279,7 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
   const [scopes, setScopes] = useState<string[]>(['openid', 'profile']);
   const [grants, setGrants] = useState<string[]>(['authorization_code', 'refresh_token']);
   const [logoUri, setLogoUri] = useState('');
+  const [baseUrls, setBaseUrls] = useState<ClientBaseUrls>({});
   const [ownerRef, setOwnerRef] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -295,6 +298,9 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
     const logoutUris = postLogout.map((uri) => uri.trim()).filter(Boolean);
     const logoutProblem = firstRedirectProblem(logoutUris);
     if (logoutProblem) return setFailure(logoutProblem);
+    const addressProblem = firstBaseUrlProblem(baseUrls);
+    if (addressProblem) return setFailure(addressProblem);
+    const addresses = filledBaseUrls(baseUrls);
 
     setBusy(true);
     try {
@@ -308,6 +314,7 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
           grant_types: grants,
           scope: scopes.join(' '),
           ...(logoUri.trim() ? { logo_uri: logoUri.trim() } : {}),
+          ...(Object.keys(addresses).length ? { base_url_by_environment: addresses } : {}),
           ...(mayAdminister && ownerRef.trim() ? { owner_ref: ownerRef.trim() } : {}),
         },
       });
@@ -405,14 +412,27 @@ function CreateForm({ mayAdminister, onCancel, onCreated }: {
       </fieldset>
 
       <label className="block">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400">Logo URI</span>
+        <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+          Logo URI
+          <Tooltip text="Shown on the sign-in and consent screens, so a person sees who is asking. A full URL, or just a path such as /logo.png to have it resolved against this application's own address for the environment the authority is running in." />
+        </span>
         <input
           value={logoUri}
           onChange={(event) => setLogoUri(event.target.value)}
-          placeholder="https://acme.example/logo.png"
+          placeholder="/logo.png"
           className="mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10"
         />
       </label>
+
+      <fieldset>
+        <legend className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+          Application addresses
+          <Tooltip text="Where this application answers in each environment. Declared here so one registration serves them all, and so a relative logo path resolves to the right host wherever the authority is running. Leave an environment blank when the application is not deployed to it." />
+        </legend>
+        <div className="mt-1.5">
+          <EnvironmentUrlsEditor values={baseUrls} onChange={setBaseUrls} />
+        </div>
+      </fieldset>
 
       {mayAdminister && (
         <label className="block">

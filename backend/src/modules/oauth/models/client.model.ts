@@ -1,3 +1,4 @@
+import { platformEnvironment, type PlatformEnvironment } from '@leafypay/platform-links';
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
 import { CredentialRecord, OAuthClientMetadata } from '../../directory/models/credential.model';
 
@@ -68,8 +69,18 @@ export interface OAuthClient extends Scoped {
     refreshTokenTtlSeconds?: number;
   };
 
+  /**
+   * ABSOLUTE, always, whichever shape it was registered in.
+   *
+   * RFC 7591 defines `logo_uri` as a URL, and a consent screen renders it in a browser that has no
+   * idea which application it belongs to, so it cannot be anything else on the way out. What a
+   * registration may STORE is a path, bound here against `baseUrlByEnvironment`; see the resolver.
+   */
   logoUri?: string;
   clientUri?: string;
+
+  /** Where this application answers, per environment, as its own registration declares it. */
+  baseUrlByEnvironment?: Partial<Record<PlatformEnvironment, string>>;
 
   /**
    * Which roles this client's sign-in screen offers as demo personas.
@@ -150,8 +161,35 @@ export function isConfidential(client: Pick<OAuthClient, 'clientSecretHash'>): b
  * `scope` is rebuilt space-delimited because that is RFC 7591's shape and the standard's shape is
  * what the wire contract owes, even though the stored form is an array.
  */
+/**
+ * The application's logo as an absolute URL, bound to where it answers in THIS environment.
+ *
+ * Bound when the record is READ and not when it was written, because the same database is restored
+ * across environments: a host written at seed time in one cluster is not where the application
+ * answers in the next, and the result is a browser asked for an icon from an address that is not
+ * serving one. The registration states the application's own addresses; this picks the one that
+ * applies now.
+ *
+ * An absolute `logo_uri` is returned untouched, which is what a self-registered third party gives:
+ * its own host is not this platform's to decide. A path with no address for this environment is
+ * dropped rather than half-resolved, so a screen shows its neutral placeholder instead of a broken
+ * image.
+ */
+export function resolveClientLogoUri(
+  metadata: Pick<OAuthClientMetadata, 'logoUri' | 'baseUrlByEnvironment'>,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const declared = metadata.logoUri?.trim();
+  if (!declared) return undefined;
+  if (/^https?:\/\//i.test(declared)) return declared;
+  const base = metadata.baseUrlByEnvironment?.[platformEnvironment(env)]?.trim();
+  if (!base) return undefined;
+  return `${base.replace(/\/$/, '')}/${declared.replace(/^\//, '')}`;
+}
+
 export function clientFromCredential(credential: CredentialRecord): OAuthClient {
   const metadata = credential.metadata ?? ({} as OAuthClientMetadata);
+  const logoUri = resolveClientLogoUri(metadata);
   return {
     realmId: credential.realmId,
     tenantId: credential.tenantId,
@@ -169,7 +207,8 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
     tokenEndpointAuthMethod: metadata.tokenEndpointAuthMethod ?? 'none',
     ...(metadata.applicationType ? { applicationType: metadata.applicationType } : {}),
     ...(metadata.tokenPolicy ? { tokenPolicy: metadata.tokenPolicy as OAuthClient['tokenPolicy'] } : {}),
-    ...(metadata.logoUri ? { logoUri: metadata.logoUri } : {}),
+    ...(logoUri ? { logoUri } : {}),
+    ...(metadata.baseUrlByEnvironment ? { baseUrlByEnvironment: metadata.baseUrlByEnvironment } : {}),
     ...(metadata.clientUri ? { clientUri: metadata.clientUri } : {}),
     ...(metadata.demoRoster ? { demoRoster: metadata.demoRoster } : {}),
     ...(metadata.audience ? { audience: metadata.audience } : {}),
@@ -201,6 +240,7 @@ export function clientMetadata(client: Partial<OAuthClient>): OAuthClientMetadat
     ...(client.applicationType ? { applicationType: client.applicationType } : {}),
     ...(client.tokenPolicy ? { tokenPolicy: client.tokenPolicy as Record<string, unknown> } : {}),
     ...(client.logoUri ? { logoUri: client.logoUri } : {}),
+    ...(client.baseUrlByEnvironment ? { baseUrlByEnvironment: client.baseUrlByEnvironment } : {}),
     ...(client.clientUri ? { clientUri: client.clientUri } : {}),
     ...(client.demoRoster ? { demoRoster: client.demoRoster } : {}),
     ...(client.audience ? { audience: client.audience } : {}),

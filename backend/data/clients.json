@@ -4,7 +4,12 @@
     "clientId": "oauth001-0000-4000-8000-000000000001",
     "clientName": "Espresso Works",
     "clientType": "confidential",
-    "logoUri": "http://localhost:8082/espresso-logo.svg",
+    "logoUri": "/espresso-logo.svg",
+    "baseUrlByEnvironment": {
+      "development": "http://localhost:8082",
+      "staging": "https://sec-fsi-pci-dss-merchant.industrysolutions.staging.corp.mongodb.com",
+      "production": "https://sec-fsi-pci-dss-merchant.industrysolutions.prod.corp.mongodb.com"
+    },
     "redirectUris": [
       "http://localhost:8082/api/auth/callback",
       "http://127.0.0.1:8082/api/auth/callback",
@@ -106,6 +111,11 @@
     "clientId": "f1dc0169-4f90-402c-adc8-f7e2c5c0fc7d",
     "clientName": "Leafy Wallet",
     "clientType": "confidential",
+    "baseUrlByEnvironment": {
+      "development": "http://localhost:8080",
+      "staging": "https://leafy-wallet-frontend.industrysolutions.staging.corp.mongodb.com",
+      "production": "https://leafy-wallet-frontend.industrysolutions.prod.corp.mongodb.com"
+    },
     "redirectUris": [
       "http://localhost:8080/api/auth/callback",
       "http://127.0.0.1:8080/api/auth/callback",
@@ -364,7 +374,12 @@
     "clientId": "bankcore-console",
     "clientName": "BankCore administration console",
     "clientType": "public",
-    "logoUri": "http://localhost:8084/app-icon.png",
+    "logoUri": "/app-icon.png",
+    "baseUrlByEnvironment": {
+      "development": "http://localhost:8084",
+      "staging": "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.staging.corp.mongodb.com",
+      "production": "https://sec-fsi-pci-dss-bank-frontend.industrysolutions.prod.corp.mongodb.com"
+    },
     "redirectUris": [
       "http://localhost:8084/api/auth/callback",
       "http://127.0.0.1:8084/api/auth/callback",
@@ -409,7 +424,12 @@
     "clientId": "leafypay-console",
     "clientName": "LeafyPay administration console",
     "clientType": "public",
-    "logoUri": "http://localhost:8080/leafy-pay-icon.png",
+    "logoUri": "/leafy-pay-icon.png",
+    "baseUrlByEnvironment": {
+      "development": "http://localhost:8080",
+      "staging": "https://sec-fsi-pci-dss-frontend.industrysolutions.staging.corp.mongodb.com",
+      "production": "https://sec-fsi-pci-dss-frontend.industrysolutions.prod.corp.mongodb.com"
+    },
     "redirectUris": [
       "http://localhost:8080/api/auth/callback",
       "http://127.0.0.1:8080/api/auth/callback",
@@ -457,7 +477,12 @@
     "clientId": "giam-console",
     "clientName": "IdP administration console",
     "clientType": "public",
-    "logoUri": "http://localhost:8086/app-icon.png",
+    "logoUri": "/app-icon.png",
+    "baseUrlByEnvironment": {
+      "development": "http://localhost:8086",
+      "staging": "https://sec-giam-ui.industrysolutions.staging.corp.mongodb.com",
+      "production": "https://sec-giam-ui.industrysolutions.prod.corp.mongodb.com"
+    },
     "redirectUris": [
       "http://localhost:8086/auth/callback",
       "http://127.0.0.1:8086/auth/callback",

@@ -24,7 +24,9 @@ import { useConsoleResource } from '../../../../../lib/useConsoleResource';
 import { useConfirm } from '../../../../../components/ConfirmProvider';
 import {
   ClientOwner, RegisteredClient, SELF_SERVICE_SCOPES, redirectUriProblem, firstRedirectProblem,
+  firstBaseUrlProblem, filledBaseUrls, sameBaseUrls, type ClientBaseUrls,
 } from '../../../../../lib/clients';
+import { EnvironmentUrlsEditor } from '../../../../../components/EnvironmentUrlsEditor';
 
 const FIELD_LABEL = 'text-[10px] uppercase tracking-wider text-gray-400';
 const FIELD_INPUT = 'mt-1 block w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm text-gray-700 focus:border-[#001E2B] focus:outline-none focus:ring-2 focus:ring-[#001E2B]/10';
@@ -66,6 +68,7 @@ export default function ClientDetailPage() {
   const [postLogout, setPostLogout] = useState<string[]>([]);
   const [scope, setScope] = useState('');
   const [logoUri, setLogoUri] = useState('');
+  const [baseUrls, setBaseUrls] = useState<ClientBaseUrls>({});
   const [saving, setSaving] = useState(false);
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
 
@@ -93,6 +96,7 @@ export default function ClientDetailPage() {
     setPostLogout(client.post_logout_redirect_uris ?? []);
     setScope(client.scope ?? '');
     setLogoUri(client.logo_uri ?? '');
+    setBaseUrls(client.base_url_by_environment ?? {});
     setSaveFailure(null);
   }, [client]);
 
@@ -102,8 +106,9 @@ export default function ClientDetailPage() {
       || !sameList(redirects, client.redirect_uris ?? [])
       || !sameList(postLogout, client.post_logout_redirect_uris ?? [])
       || scope !== (client.scope ?? '')
-      || logoUri !== (client.logo_uri ?? '');
-  }, [client, name, redirects, postLogout, scope, logoUri]);
+      || logoUri !== (client.logo_uri ?? '')
+      || !sameBaseUrls(baseUrls, client.base_url_by_environment ?? {});
+  }, [client, name, redirects, postLogout, scope, logoUri, baseUrls]);
 
   // Browser-level navigation away: a refresh, a closed tab, a typed URL. `beforeunload` is the only
   // hook for any of the three; the confirmation text itself is no longer shown by any browser still
@@ -130,6 +135,8 @@ export default function ClientDetailPage() {
     const logoutUris = postLogout.map((uri) => uri.trim()).filter(Boolean);
     const logoutProblem = firstRedirectProblem(logoutUris);
     if (logoutProblem) { setSaveFailure(logoutProblem); return; }
+    const addressProblem = firstBaseUrlProblem(baseUrls);
+    if (addressProblem) { setSaveFailure(addressProblem); return; }
 
     setSaving(true);
     try {
@@ -142,6 +149,7 @@ export default function ClientDetailPage() {
           post_logout_redirect_uris: logoutUris,
           scope: scope.trim(),
           ...(logoUri.trim() ? { logo_uri: logoUri.trim() } : {}),
+          base_url_by_environment: filledBaseUrls(baseUrls),
         },
       });
       setClient(updated);
@@ -282,9 +290,22 @@ export default function ClientDetailPage() {
                 <input required value={name} onChange={(event) => setName(event.target.value)} className={FIELD_INPUT} />
               </label>
               <label className="block">
-                <span className={FIELD_LABEL}>Logo URI</span>
+                <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+                  Logo URI
+                  <Tooltip text="Shown on the sign-in and consent screens. A full URL, or just a path such as /logo.png to have it resolved against this application's own address for the environment the authority is running in." />
+                </span>
                 <input value={logoUri} onChange={(event) => setLogoUri(event.target.value)} className={FIELD_INPUT_MONO} />
               </label>
+            </div>
+
+            <div className="mt-4">
+              <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+                Application addresses
+                <Tooltip text="Where this application answers in each environment. One registration serves them all, and a relative logo path resolves against the entry for the environment the authority is running in. Leave an environment blank when the application is not deployed to it." />
+              </span>
+              <div className="mt-1">
+                <EnvironmentUrlsEditor values={baseUrls} onChange={setBaseUrls} />
+              </div>
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
