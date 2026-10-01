@@ -170,6 +170,9 @@
       },
       "resourceServer": "leafypay",
       "permissions": {
+        "permissions": [
+          "manage"
+        ],
         "auditEvents": [
           "view"
         ],
@@ -326,6 +329,9 @@
       },
       "resourceServer": "bankcore",
       "permissions": {
+        "permissions": [
+          "manage"
+        ],
         "accounts": [
           "view"
         ],
