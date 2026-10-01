@@ -36,6 +36,12 @@ export async function logoutController(fastify: FastifyInstance) {
    * `client_id` is accepted on its own as the standard allows, and when both arrive they must agree,
    * since a mismatch is either a mistake or an attempt to borrow another client's registration.
    *
+   * A bare `client_id` is a CLAIM, not proof: it is public, and any caller can name any client. What
+   * it buys is narrower than the hint's guarantee. The redirect is held to the addresses THAT client
+   * registered, never to the whole realm's, so the worst a forged claim reaches is another
+   * application's own registered landing page, not an arbitrary address. Only a verified
+   * `id_token_hint` proves who is asking; an application that needs that guarantee sends one.
+   *
    * Returns undefined when neither was sent. The caller then honours no redirect at all, which is
    * what RP-Initiated Logout 1.0 requires: without knowing the client, there is no registration to
    * verify a return address against.
@@ -75,8 +81,8 @@ export async function logoutController(fastify: FastifyInstance) {
    * It used to be any URI any client in the realm had registered, which is a closed list and so not
    * an open redirect, but it let one application end a session and send the browser to another
    * application's address. Each client declares where it wants to land and is held to its own
-   * declaration, which is both what the standard says and the only version that is a boundary
-   * rather than a shared pool.
+   * declaration, which is what the standard says. How strong that is depends on how the client was
+   * identified: proven by a verified `id_token_hint`, merely claimed by a bare `client_id`.
    */
   async function registeredLogoutRedirect(
     realmId: string,
@@ -138,7 +144,10 @@ export async function logoutController(fastify: FastifyInstance) {
           },
           client_id: {
             type: 'string',
-            description: 'The client that is signing out, when no id_token_hint is sent.',
+            description:
+              'The client that is signing out, when no id_token_hint is sent. A claim rather than proof: '
+              + 'it limits the redirect to the addresses registered by that client, and only a verified '
+              + 'id_token_hint establishes who is actually asking.',
           },
         },
       },

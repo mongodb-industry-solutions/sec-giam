@@ -190,7 +190,10 @@ describe('v39 §10.18: one logout ends the session everywhere', () => {
 
 async function endSession(payload: Record<string, unknown>) {
   const session = await signIn();
-  if (!session) return null;
+  // A failed sign-in fails the test. Returning quietly here made every redirect and token-hint
+  // assertion below pass without ever calling logout, which is how a security check goes vacuous.
+  expect(session, 'could not sign in, so no logout was exercised').not.toBeNull();
+  if (!session) throw new Error('unreachable');
   const response = await app.inject({
     method: 'POST',
     url: `/api/v1/realms/${REALM}/protocol/oidc/logout`,
@@ -218,7 +221,6 @@ describe('a post-logout address is held against the registration of the client t
     const client = clients[0];
     const uri = client.postLogoutRedirectUris![0];
     const body = await endSession({ post_logout_redirect_uri: uri, client_id: client.clientId });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBe(uri);
   });
 
@@ -228,14 +230,12 @@ describe('a post-logout address is held against the registration of the client t
       .find((uri) => !(first.postLogoutRedirectUris ?? []).includes(uri));
     expect(foreign, 'the two clients register identical addresses, so this proves nothing').toBeTruthy();
     const body = await endSession({ post_logout_redirect_uri: foreign, client_id: first.clientId });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 
   it('honours nothing when the request does not say which client is asking', async () => {
     const client = clients[0];
     const body = await endSession({ post_logout_redirect_uri: client.postLogoutRedirectUris![0] });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 
@@ -245,7 +245,6 @@ describe('a post-logout address is held against the registration of the client t
       post_logout_redirect_uri: 'https://somewhere-else.example/landing',
       client_id: client.clientId,
     });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 });
@@ -283,13 +282,11 @@ describe('id_token_hint identifies the client that is signing out', () => {
 
   it('honours the address of the client the hint was issued to, with no client_id sent', async () => {
     const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: await mint() });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBe(own);
   });
 
   it('still identifies the client when the hint has expired, because a session ending is when one signs out', async () => {
     const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: await mint({ expiresIn: -3600 }) });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBe(own);
   });
 
@@ -299,7 +296,6 @@ describe('id_token_hint identifies the client that is signing out', () => {
       id_token_hint: await mint(),
       client_id: second.clientId,
     });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 
@@ -307,13 +303,11 @@ describe('id_token_hint identifies the client that is signing out', () => {
     const hint = await mint();
     const forged = `${hint.slice(0, -4)}${hint.endsWith('AAAA') ? 'BBBB' : 'AAAA'}`;
     const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: forged });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 
   it('honours nothing for a token signed as another kind, so an access token cannot stand in for a hint', async () => {
     const body = await endSession({ post_logout_redirect_uri: own, id_token_hint: await mint({ typ: 'at+jwt' }) });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 
@@ -321,7 +315,6 @@ describe('id_token_hint identifies the client that is signing out', () => {
     const foreign = second.postLogoutRedirectUris!.find((uri) => !(first.postLogoutRedirectUris ?? []).includes(uri));
     expect(foreign, 'the two clients register identical addresses, so this proves nothing').toBeTruthy();
     const body = await endSession({ post_logout_redirect_uri: foreign, id_token_hint: await mint() });
-    if (!body) return;
     expect(body.post_logout_redirect_uri).toBeUndefined();
   });
 });

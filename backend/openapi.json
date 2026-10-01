@@ -5323,7 +5323,7 @@
                   },
                   "client_id": {
                     "type": "string",
-                    "description": "The client that is signing out, when no id_token_hint is sent."
+                    "description": "The client that is signing out, when no id_token_hint is sent. A claim rather than proof: it limits the redirect to the addresses registered by that client, and only a verified id_token_hint establishes who is actually asking."
                   }
                 }
               }
