@@ -118,3 +118,16 @@ describe('an application address is parsed, not pattern-matched', () => {
     expect(normalizeBaseUrls({ staging: '  ' })).toEqual({ urls: {} });
   });
 });
+
+describe('an unrecognised environment name costs a logo, not the sign-in', () => {
+  it('drops a relative logo instead of throwing, because this runs on every client read', () => {
+    const metadata = { logoUri: '/icon.png', baseUrlByEnvironment: { production: 'https://example.com' } } as const;
+    expect(() => resolveClientLogoUri(metadata, { NODE_ENV: 'preview' })).not.toThrow();
+    expect(resolveClientLogoUri(metadata, { NODE_ENV: 'preview' })).toBeUndefined();
+  });
+
+  it('still resolves an absolute logo, which never needed the environment', () => {
+    const declared = 'https://acme.example/logo.svg';
+    expect(resolveClientLogoUri({ logoUri: declared }, { NODE_ENV: 'preview' })).toBe(declared);
+  });
+});

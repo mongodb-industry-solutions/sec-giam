@@ -161,6 +161,9 @@ export function isConfidential(client: Pick<OAuthClient, 'clientSecretHash'>): b
  * `scope` is rebuilt space-delimited because that is RFC 7591's shape and the standard's shape is
  * what the wire contract owes, even though the stored form is an array.
  */
+/** Set after the first time an unrecognised environment name is reported, so it is said once. */
+let environmentFailureReported = false;
+
 /**
  * The application's logo as an absolute URL, bound to where it answers in THIS environment.
  *
@@ -182,7 +185,20 @@ export function resolveClientLogoUri(
   const declared = metadata.logoUri?.trim();
   if (!declared) return undefined;
   if (/^https?:\/\//i.test(declared)) return declared;
-  const base = metadata.baseUrlByEnvironment?.[platformEnvironment(env)]?.trim();
+  let base: string | undefined;
+  try {
+    base = metadata.baseUrlByEnvironment?.[platformEnvironment(env)]?.trim();
+  } catch (error) {
+    // An unrecognised environment name throws, which is right for a provider address: a wrong host
+    // there is dangerous. A logo is cosmetic and this runs on every client read, including the ones
+    // behind authorize and token, so a typo in the variable must cost an icon and not the sign-in of
+    // the whole realm. Said once, because it would otherwise repeat on every read.
+    if (!environmentFailureReported) {
+      environmentFailureReported = true;
+      console.error(`[client] logos are not resolved: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return undefined;
+  }
   if (!base) return undefined;
   return `${base.replace(/\/$/, '')}/${declared.replace(/^\//, '')}`;
 }
