@@ -1,6 +1,6 @@
 {
   "name": "giam-backend",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "GIAM API: General Identity and Access Manager. The identity authority for people and systems.",
   "private": true,
   "engines": {
