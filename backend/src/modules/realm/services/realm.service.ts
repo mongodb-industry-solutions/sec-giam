@@ -5,11 +5,18 @@ import { DEFAULT_TENANT_ID, newMeta, touchMeta } from '../../../shared/models/ba
 import { RealmRecord } from '../models/realm.model';
 import { DomainRecord, selfRegistration } from '../models/domain.model';
 import { DEFAULT_TOKEN_POLICY, localDomainRecord } from '../models/realmDefaults';
-import { realmIssuer } from '../../../config';
+import { realmIssuer, realmNameFromIssuer } from '../../../config';
 import { KeyRing } from '../../keys/services/keyRing.service';
 import { MongoSigningKeyStore } from '../../keys/services/signingKeyStore';
 import { keyProviders } from '../../../shared/ports';
 import { config } from '../../../config';
+
+/** What the collection holds: everything but the issuer, which is composed on read. */
+export type StoredRealm = Omit<RealmRecord, 'issuer'>;
+
+export function withIssuer(stored: StoredRealm): RealmRecord {
+  return { ...stored, issuer: realmIssuer(stored.name) };
+}
 
 export type RealmRefusal = { status: number; title: string; detail: string };
 
@@ -28,7 +35,7 @@ export class RealmService {
   constructor(private readonly db: Db) {}
 
   private get realms() {
-    return this.db.collection<RealmRecord>(REALM_COLLECTION);
+    return this.db.collection<StoredRealm>(REALM_COLLECTION);
   }
 
   private get providers() {
@@ -36,7 +43,8 @@ export class RealmService {
   }
 
   async byId(realmId: string): Promise<RealmRecord | null> {
-    return this.realms.findOne({ realmId }, { projection: { _id: 0 } });
+    const stored = await this.realms.findOne({ realmId }, { projection: { _id: 0 } });
+    return stored ? withIssuer(stored) : null;
   }
 
   /**
@@ -56,19 +64,29 @@ export class RealmService {
   async byName(name: string): Promise<RealmRecord | null> {
     const wanted = name.trim();
     if (!wanted) return null;
-    return this.realms.findOne(
+    const stored = await this.realms.findOne(
       { $or: [{ name: wanted }, { aliases: wanted }] },
       { projection: { _id: 0 }, collation: CASE_INSENSITIVE },
     );
+    return stored ? withIssuer(stored) : null;
   }
 
-  /** The realm a token claims to come from, resolved from its issuer. */
+  /**
+   * The realm a token claims to come from, resolved from its issuer.
+   *
+   * By the name inside the issuer, then checked byte for byte against what this deployment issues
+   * for that realm: an issuer under another origin names nobody here.
+   */
   async byIssuer(issuer: string): Promise<RealmRecord | null> {
-    return this.realms.findOne({ issuer }, { projection: { _id: 0 } });
+    const name = realmNameFromIssuer(issuer);
+    if (!name) return null;
+    const realm = await this.byName(name);
+    return realm && realm.issuer === issuer ? realm : null;
   }
 
   async list(): Promise<RealmRecord[]> {
-    return this.realms.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
+    const stored = await this.realms.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
+    return stored.map(withIssuer);
   }
 
   async providersFor(realmId: string): Promise<DomainRecord[]> {
@@ -173,12 +191,11 @@ export class RealmService {
     }
 
     const realmId = uuidv4();
-    const record: RealmRecord = {
+    const record: StoredRealm = {
       realmId,
       tenantId: DEFAULT_TENANT_ID,
       name,
       displayName: input.displayName,
-      issuer: realmIssuer(name),
       enabled: true,
       aliases: [],
       ...(input.notice ? { notice: input.notice } : {}),
@@ -206,7 +223,7 @@ export class RealmService {
     const provider = keyProviders.resolve(config.keys.provider);
     await new KeyRing(new MongoSigningKeyStore(this.db), provider).publishOwnKey(realmId, DEFAULT_TENANT_ID);
 
-    return record;
+    return withIssuer(record);
   }
 
   /**
@@ -228,7 +245,7 @@ export class RealmService {
     const realm = await this.byId(realmId);
     if (!realm) return null;
 
-    const changes: Partial<RealmRecord> = {};
+    const changes: Partial<StoredRealm> = {};
     if (patch.displayName !== undefined) changes.displayName = patch.displayName;
     if (patch.enabled !== undefined) changes.enabled = patch.enabled;
     if (patch.notice !== undefined) changes.notice = patch.notice;

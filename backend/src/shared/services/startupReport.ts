@@ -58,7 +58,10 @@ export function configurationReport(): StartupLine[] {
     { label: 'swagger', value: `${config.server.baseUrl}/doc` },
     { label: 'health', value: `${config.server.baseUrl}/api/v1/system/health` },
     { label: 'posture', value: `${config.server.baseUrl}/api/v1/admin/posture` },
-    { label: 'issuer pattern', value: realmIssuer('<realm>') },
+    {
+      label: 'issuer pattern',
+      value: `${realmIssuer('<realm>')} (composed per token from ${config.server.publicUrl ? 'GIAM_PUBLIC_URL' : 'GIAM_BASE_URL, no public URL set'}, never stored)`,
+    },
     { label: 'database', value: config.mongodb.dbName },
     { label: 'cluster', value: redactMongoUri(config.mongodb.uri) },
     // Its own vault with its own keys. Sharing the applications' vault would defeat the extraction.
@@ -118,8 +121,18 @@ export async function readinessReport(db: Db | undefined, dbError: string | null
 
   try {
     const realms = await db.collection(REALM_COLLECTION)
-      .find({}, { projection: { _id: 0, realmId: 1, name: 1, enabled: 1 } })
-      .toArray() as Array<{ name?: string; enabled?: boolean }>;
+      .find({}, { projection: { _id: 0, realmId: 1, name: 1, enabled: 1, issuer: 1 } })
+      .toArray() as Array<{ name?: string; enabled?: boolean; issuer?: string }>;
+    // A stored issuer is from a release that persisted it. It is ignored, and naming it explains a
+    // database that still shows another deployment's address.
+    const legacy = realms.filter((r) => r.issuer);
+    if (legacy.length > 0) {
+      lines.push({
+        label: 'realms',
+        value: `${legacy.length} realm(s) still carry a stored issuer (${legacy.map((r) => r.issuer).join(', ')}); it is ignored, and the next seed removes it`,
+        level: 'warn',
+      });
+    }
     lines.push(realms.length > 0
       ? { label: 'realms', value: realms.map((r) => `${r.name}${r.enabled === false ? ' (disabled)' : ''}`).join(', ') }
       // With no realm nothing can be issued, and the failure reads as a token bug rather than empty data.

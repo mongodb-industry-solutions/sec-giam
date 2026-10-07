@@ -56,8 +56,8 @@ export function plannedIndexes(): IndexPlan[] {
       keys: { name: 1 },
       options: { name: 'name_unique', unique: true, collation: CASE_INSENSITIVE },
     },
-    // Resolving an issuer URL back to its realm happens on every token verification path.
-    { collection: REALM_COLLECTION, keys: { issuer: 1 }, options: { name: 'issuer_unique', unique: true } },
+    // No issuer index: the issuer is composed from the realm name at runtime, so name_unique is what
+    // makes it unique, and resolving an issuer back to its realm is a lookup by name.
     // The wire alias a caller may use instead of the realm's own name.
     // Same collation as `name_unique`: `byName` looks in both with one query, and an index without
     // it would serve half of that query and scan for the other half.

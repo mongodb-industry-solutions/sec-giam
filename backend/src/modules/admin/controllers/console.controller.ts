@@ -8,6 +8,7 @@ import {
   RESOURCE_COLLECTION, SESSION_COLLECTION, KEY_COLLECTION,
   GRANT_COLLECTION,
 } from '../../../shared/models/collections';
+import { realmIssuer } from '../../../config';
 
 /**
  * What the operator console reads.
@@ -47,7 +48,7 @@ const NO_SUCH_REALM = 'no-such-realm';
 const VIEWS: Record<string, ConsoleView> = {
   realms: {
     collection: REALM_COLLECTION,
-    projection: { _id: 0, realmId: 1, tenantId: 1, name: 1, displayName: 1, issuer: 1, enabled: 1, demoMode: 1, tokenPolicy: 1, branding: 1 },
+    projection: { _id: 0, realmId: 1, tenantId: 1, name: 1, displayName: 1, enabled: 1, demoMode: 1, tokenPolicy: 1, branding: 1 },
     realmScoped: false,
     sort: { name: 1 },
     summary: 'The trust boundaries this authority serves',
@@ -305,6 +306,10 @@ export async function consoleController(fastify: FastifyInstance) {
       collection.countDocuments(filter),
     ]);
 
-    return reply.send({ records, total });
+    // The issuer is composed, not stored, so the realms view adds it here.
+    const shown = view.collection === REALM_COLLECTION
+      ? records.map((record) => ({ ...record, issuer: realmIssuer(String(record.name)) }))
+      : records;
+    return reply.send({ records: shown, total });
   });
 }

@@ -15,7 +15,11 @@ export interface RealmRecord extends Scoped {
   realmId: string;
   name: string;
   displayName: string;
-  /** Absolute issuer URL. It ends up in every token as `iss`, so it must be reachable by a verifier. */
+  /**
+   * Absolute issuer URL, the `iss` of every token. DERIVED from the realm name and this deployment's
+   * public origin each time a record is read, never stored: a stored one would pin the database to
+   * the environment that wrote it, and the database is shared between environments.
+   */
   issuer: string;
   enabled: boolean;
   /**
