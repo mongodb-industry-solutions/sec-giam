@@ -8,7 +8,7 @@ import { assertCryptSharedLib } from '../encryption/qeClient';
 import { findOrphanedDeks } from '../encryption/keyVault';
 import { buildEncryptedFieldsMaps } from '../encryption/encryptedFieldsMaps';
 import { detectDeployment, deployment, capabilities, describeDeployment } from '../mongodb/deployment';
-import { config, keyVaultNamespace } from '../../config';
+import { config, keyVaultNamespace, realmIssuer } from '../../config';
 
 // warning: converges on the next setup and seed. error: rerun setup. reset: only a rebuild fixes it.
 export type CheckSeverity = 'warning' | 'error' | 'reset';
@@ -247,12 +247,12 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
   // A realm with no published key can neither sign nor be verified, and the failure reads as a token
   // bug rather than an unseeded key set.
   const realms = await db.collection(REALM_COLLECTION)
-    .find({}, { projection: { _id: 0, realmId: 1, name: 1, issuer: 1 } })
+    .find({}, { projection: { _id: 0, realmId: 1, name: 1 } })
     .toArray()
-    .catch(() => []) as Array<{ realmId?: string; name?: string; issuer?: string }>;
+    .catch(() => []) as Array<{ realmId?: string; name?: string }>;
   add('at least one realm is seeded', realms.length > 0, `${realms.length} realm(s)`);
   for (const realm of realms) {
-    add(`realm ${realm.name} declares an issuer`, Boolean(realm.issuer), realm.issuer ?? 'missing');
+    add(`realm ${realm.name} issues under a composable issuer`, Boolean(realm.name), realmIssuer(String(realm.name)));
     const keys = await db.collection(KEY_COLLECTION)
       .countDocuments({ realmId: realm.realmId, status: 'active' })
       .catch(() => 0);

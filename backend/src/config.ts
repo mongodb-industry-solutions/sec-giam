@@ -196,8 +196,22 @@ export function keyVaultNamespaceParts(): { database: string; collection: string
   return { database: config.mongodb.dbName, collection: config.mongodb.keyVaultCollection };
 }
 
+// The origin this deployment is known by to the outside, read from the environment on every call.
+export function issuerOrigin(): string {
+  return (config.server.publicUrl || config.server.baseUrl).replace(/\/+$/, '');
+}
+
 // The absolute issuer URL of a realm. Every token names it, and every verifier compares against it.
+// Composed when it is used and never stored, so one database serves every deployment, each issuing
+// under its own origin.
 export function realmIssuer(realmName: string): string {
-  const base = (config.server.publicUrl || config.server.baseUrl).replace(/\/+$/, '');
-  return `${base}${API_PREFIX}/realms/${realmName}`;
+  return `${issuerOrigin()}${API_PREFIX}/realms/${realmName}`;
+}
+
+// The realm an issuer URL of THIS deployment names, or null when it is anyone else's.
+export function realmNameFromIssuer(issuer: string): string | null {
+  const prefix = `${issuerOrigin()}${API_PREFIX}/realms/`;
+  if (!issuer.startsWith(prefix)) return null;
+  const name = issuer.slice(prefix.length);
+  return name && !name.includes('/') ? name : null;
 }

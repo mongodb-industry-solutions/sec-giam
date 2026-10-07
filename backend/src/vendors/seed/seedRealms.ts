@@ -75,8 +75,8 @@ export async function seedRealms(db: Db): Promise<void> {
   const providers = db.collection<DomainRecord>(DOMAIN_COLLECTION);
 
   for (const fixture of fixtures) {
-    // The issuer is COMPOSED from the deployment's public URL, never stored in a fixture. A fixture
-    // carrying a hostname only works in the deployment it was written for.
+    // Shown in the log only. The issuer is composed from the deployment's public URL each time it is
+    // used and is NOT written: the database is shared between deployments, each with its own origin.
     const issuer = realmIssuer(fixture.name);
 
     const realm = await upsertSeed(
@@ -85,7 +85,6 @@ export async function seedRealms(db: Db): Promise<void> {
       {
         name: fixture.name,
         displayName: fixture.displayName,
-        issuer,
         enabled: fixture.enabled ?? true,
         aliases: fixture.aliases ?? [],
         ...(fixture.notice ? { notice: fixture.notice } : {}),
@@ -171,30 +170,20 @@ export async function seedRealms(db: Db): Promise<void> {
     }
   }
 
-  await recomposeIssuers(realms);
+  await retireStoredIssuers(realms);
 }
 
 /**
- * Every persisted realm's issuer, composed again from its name.
+ * Removes the issuer an earlier release stored on each realm.
  *
- * The fixture loop above only reaches realms a fixture declares; a realm created at runtime
- * (`POST /api/v1/realms`) keeps whatever issuer it was stored with. The issuer is always derived
- * (`realmIssuer(name)`, and a realm cannot be renamed), so a stored one that differs is stale: after
- * the address scheme moved under `/api/v1`, it pointed at routes that no longer exist. Idempotent,
- * so a reseed is also the upgrade. Tokens minted under the old issuer stop validating, which is
- * the release's documented breaking change: holders sign in again.
+ * The issuer is derived from the realm name and the deployment's public origin whenever a record is
+ * read, so a stored copy is dead weight at best. At worst it is the origin of whichever deployment
+ * seeded last, which is wrong for every other deployment sharing the database. Idempotent.
  */
-export async function recomposeIssuers(realms: Collection<RealmRecord>): Promise<void> {
-  const stored = await realms
-    .find({}, { projection: { _id: 0, realmId: 1, name: 1, issuer: 1, meta: 1 } })
-    .toArray();
-  for (const realm of stored) {
-    const issuer = realmIssuer(realm.name);
-    if (realm.issuer === issuer) continue;
-    await realms.updateOne(
-      { realmId: realm.realmId },
-      { $set: { issuer, ...(realm.meta ? { meta: touchMeta(realm.meta) } : {}) } },
-    );
-    console.log(`  realm:    ${realm.name} issuer ${realm.issuer} -> ${issuer}`);
+export async function retireStoredIssuers(realms: Collection<RealmRecord>): Promise<number> {
+  const result = await realms.updateMany({ issuer: { $exists: true } }, { $unset: { issuer: '' } });
+  if (result.modifiedCount > 0) {
+    console.log(`  realm:    ${result.modifiedCount} stored issuer(s) removed, now composed at runtime`);
   }
+  return result.modifiedCount;
 }

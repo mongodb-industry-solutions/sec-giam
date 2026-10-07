@@ -10,6 +10,7 @@ import { ActorClaim } from '../models/actor.model';
 import { SessionRecord, RefreshClaims, isLive } from '../../authentication/models/session.model';
 import { getSessionWatch } from '../../../plugins/mongodb';
 import { RealmRecord } from '../../realm/models/realm.model';
+import { realmIssuer } from '../../../config';
 import { DomainRecord } from '../../realm/models/domain.model';
 import { OAuthClient } from '../models/client.model';
 import { JwtTokenFormat } from './jwtTokenFormat';
@@ -681,10 +682,11 @@ export class TokenIssuer {
     // `rt+jwt`, matching what issuance now stamps. Verification checks `typ` strictly, so redemption
     // and issuance have to name the same type or every refresh fails.
     const format = new JwtTokenFormat(this.ring, realmId, 'rt+jwt');
-    const realm = await this.db
-      .collection<{ realmId: string; issuer: string }>(REALM_COLLECTION)
-      .findOne({ realmId }, { projection: { _id: 0, issuer: 1 } });
-    if (!realm) return { ok: false, cause: 'invalid' };
+    const stored = await this.db
+      .collection<{ realmId: string; name: string }>(REALM_COLLECTION)
+      .findOne({ realmId }, { projection: { _id: 0, name: 1 } });
+    if (!stored) return { ok: false, cause: 'invalid' };
+    const realm = { issuer: realmIssuer(stored.name) };
 
     // Verified, not merely decoded. A refresh token is redeemed here and nowhere else, so this is
     // the only place its signature is ever checked, which makes skipping it unrecoverable.
