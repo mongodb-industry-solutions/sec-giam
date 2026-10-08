@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { clientSecretFor } from '@leafypay/platform-links';
+import { clientSecretFor } from '@ist-sec/platform-links';
 
 const DATA = resolve(__dirname, '../../../backend/data');
 

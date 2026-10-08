@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clientSecretFor, CLIENT_SECRET_REFS } from '@leafypay/platform-links';
+import { clientSecretFor, CLIENT_SECRET_REFS } from '@ist-sec/platform-links';
 
 // The client secret derivation is a CROSS-REPO CONTRACT: GIAM seeds the secret, and LeafyPay and the
 // merchant app derive the same value from their own copy of packages/platform-links. Without pinned

@@ -1,6 +1,6 @@
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
 import { RoleHolding } from './principal.model';
-import type { PlatformEnvironment } from '@leafypay/platform-links';
+import type { PlatformEnvironment } from '@ist-sec/platform-links';
 
 /**
  * One collection for every authentication factor, discriminated by type.

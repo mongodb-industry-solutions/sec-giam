@@ -30,7 +30,7 @@ COPY docs/ docs/
 RUN npm install --legacy-peer-deps
 
 # Shared workspace packages: the backend installs them through file:, and their prepare script
-# builds dist/ during the install. @leafypay/mongo-compat is installed here too, before the
+# builds dist/ during the install. @ist-sec/mongo-compat is installed here too, before the
 # crypt_shared download below: that step reads the recommended version FROM its compiled dist, so
 # the deployment and installation steps stay driven by the same source as the PSP's and bankcore's.
 COPY packages/ packages/
@@ -39,7 +39,7 @@ RUN cd packages/platform-links && npm install
 RUN cd packages/mongo-compat && npm install
 
 # Download MongoDB Automatic Encryption Shared Library (mongo_crypt_v1.so).
-# The version comes from @leafypay/mongo-compat's MONGODB_CRYPT_SHARED_LIB_VERSION, the SAME
+# The version comes from @ist-sec/mongo-compat's MONGODB_CRYPT_SHARED_LIB_VERSION, the SAME
 # constant the PSP and bankcore Dockerfiles read, instead of a literal copied into a third
 # Dockerfile. GIAM runs Queryable Encryption against its OWN key vault, so it shares no key
 # material with the other services, but the library version still has to match what the cluster

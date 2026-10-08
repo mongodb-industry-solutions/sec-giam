@@ -4,11 +4,11 @@
 // story to tell.
 //
 // Resolved through the same chain as the PSP and bankcore (explicit path, then platform defaults,
-// then node_modules) via @leafypay/mongo-compat, but still validated and HARD-FAILED at startup: a
+// then node_modules) via @ist-sec/mongo-compat, but still validated and HARD-FAILED at startup: a
 // wrong or missing library fails the whole connection and surfaces as a generic 503, which is
 // expensive to diagnose.
 import { MongoClient, KMSProviders } from 'mongodb';
-import { resolveCryptSharedLibPath } from '@leafypay/mongo-compat';
+import { resolveCryptSharedLibPath } from '@ist-sec/mongo-compat';
 import { config, keyVaultNamespace } from '../../config';
 
 let client: MongoClient | null = null;

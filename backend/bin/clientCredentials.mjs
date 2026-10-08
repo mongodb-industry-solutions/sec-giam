@@ -12,7 +12,7 @@ try {
   config({ path: join(here, '../../../.env'), quiet: true });
 } catch { /* no root .env in this context: every variable then reads as unset, which is true */ }
 
-const { clientSecretFor, CLIENT_SECRET_REFS } = await import('@leafypay/platform-links');
+const { clientSecretFor, CLIENT_SECRET_REFS } = await import('@ist-sec/platform-links');
 
 const clients = JSON.parse(readFileSync(join(here, '../data/clients.json'), 'utf8'));
 

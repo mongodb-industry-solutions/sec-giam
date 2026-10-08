@@ -39,7 +39,7 @@ other service reads GIAM's.
 ### Knowing what the deployment can do
 
 `MONGODB_TYPE` and `MONGODB_VERSION` are the single place a version-sensitive decision is taken
-from, resolved through **`@leafypay/mongo-compat`** - the same package the PSP and bankcore use,
+from, resolved through **`@ist-sec/mongo-compat`** - the same package the PSP and bankcore use,
 vendored here at `packages/mongo-compat` and kept byte-for-byte identical to theirs by hand (there
 is no registry for it). `vendors/mongodb/deployment.ts` is now a thin wrapper around it: the
 capability table, the version-to-query-type naming, and the live `buildInfo`/`hello` probe all live

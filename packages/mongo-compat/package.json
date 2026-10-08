@@ -1,5 +1,5 @@
 {
-  "name": "@leafypay/mongo-compat",
+  "name": "@ist-sec/mongo-compat",
   "version": "3.3.0",
   "description": "Which MongoDB deployment this is (Atlas, Enterprise Advanced or Community Edition, and which version), the full capability set that implies (Queryable Encryption automatic/range/text-search, change streams, time series, Atlas Search, audit log), crypt_shared library resolution, and which setup commands apply. The single source of truth, shared by every service (PSP, bankcore, GIAM) as an identical vendored copy.",
   "private": true,

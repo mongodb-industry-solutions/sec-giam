@@ -1,5 +1,5 @@
 {
-  "name": "@leafypay/eventbus",
+  "name": "@ist-sec/eventbus",
   "version": "1.0.0",
   "description": "Shared domain event bus (in-process, Kafka, RabbitMQ) with a MongoDB event store. Used by the PSP backend and by bankcore.",
   "private": true,

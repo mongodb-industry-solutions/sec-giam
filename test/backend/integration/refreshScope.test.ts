@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { createHash, randomBytes } from 'crypto';
-import { clientSecretFor } from '@leafypay/platform-links';
+import { clientSecretFor } from '@ist-sec/platform-links';
 import { signIn } from './support/authorizationFlow';
 
 const GIAM = process.env.GIAM_URL ?? 'http://127.0.0.1:8085';

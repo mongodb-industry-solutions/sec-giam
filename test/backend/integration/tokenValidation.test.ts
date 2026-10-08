@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createPrivateKey, generateKeyPairSync, sign as cryptoSign } from 'crypto';
-import { clientSecretFor } from '@leafypay/platform-links';
+import { clientSecretFor } from '@ist-sec/platform-links';
 
 const REALM = 'leafypay';
 const CLIENT_ID = 'leafypay-backend';
