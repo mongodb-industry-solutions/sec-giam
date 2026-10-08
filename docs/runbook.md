@@ -39,15 +39,21 @@ other service reads GIAM's.
 ### Knowing what the deployment can do
 
 `MONGODB_TYPE` and `MONGODB_VERSION` are the single place a version-sensitive decision is taken
-from. Setup, the seeder and the encrypted-fields map all need an answer *before* they connect, so
-the pair is declared; once a connection exists the cluster is probed and **the probe wins**. A
+from, resolved through **`@leafypay/mongo-compat`** - the same package the PSP and bankcore use,
+vendored here at `packages/mongo-compat` and kept byte-for-byte identical to theirs by hand (there
+is no registry for it). `vendors/mongodb/deployment.ts` is now a thin wrapper around it: the
+capability table, the version-to-query-type naming, and the live `buildInfo`/`hello` probe all live
+in the shared package, not in GIAM-specific code.
+
+Setup, the seeder and the encrypted-fields map all need an answer *before* they connect, so the
+pair is declared; once a connection exists the cluster is probed and **the probe wins**. A
 declaration that disagrees is reported in the startup log, in `setup:db:validate` and in
 `GET /api/v1/admin/posture`, never silently obeyed.
 
 | Capability | Requires | If absent |
 |---|---|---|
 | Queryable Encryption, automatic | Atlas or `ea`, 7.0+ | **Setup refuses.** Community cannot analyse an encrypted query, so the collection would be built and never readable |
-| Substring search on encrypted names | 9.0+, automatic encryption | Names degrade to equality: still encrypted, still exactly searchable, no search by fragment |
+| Substring search on encrypted names | 8.2+, automatic encryption | Names degrade to equality: still encrypted, still exactly searchable, no search by fragment. 8.2-8.3 uses the `substringPreview` query type, 9.0+ uses the GA `substring` name - the shared package resolves which one, GIAM never hardcodes it |
 | Change streams (live-session cache) | A replica set or a sharded cluster | The cache does not start; revocation holds through the authoritative read and the token lifetime |
 | Time series retention | 5.0+ | The audit trail is created without expiry, and the retention is not enforced |
 

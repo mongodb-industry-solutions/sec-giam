@@ -88,10 +88,10 @@ export async function validateSetup(db: Db): Promise<ValidationResult> {
       + (caps.automaticEncryption ? '' : ': encrypted reads cannot work here. Atlas or Enterprise 7.0+ is required'),
     'reset');
   add('the declared deployment matches the cluster', !current.mismatch, current.mismatch, 'error');
-  add('substring search on encrypted names', caps.qeSubstring,
-    caps.qeSubstring
-      ? 'available'
-      : `needs server 9.0+ (this is ${current.version.raw}); names are stored with equality only`,
+  add('substring search on encrypted names', caps.qeTextSearchProfile.textSearch,
+    caps.qeTextSearchProfile.textSearch
+      ? `available (${caps.qeTextSearchProfile.substring})`
+      : `needs server 8.2+ (this is ${current.version.raw}); names are stored with equality only`,
     'warning');
   add('change streams are available', caps.changeStreams,
     caps.changeStreams

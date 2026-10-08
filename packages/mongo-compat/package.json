@@ -1,0 +1,18 @@
+{
+  "name": "@leafypay/mongo-compat",
+  "version": "3.3.0",
+  "description": "Which MongoDB deployment this is (Atlas, Enterprise Advanced or Community Edition, and which version), the full capability set that implies (Queryable Encryption automatic/range/text-search, change streams, time series, Atlas Search, audit log), crypt_shared library resolution, and which setup commands apply. The single source of truth, shared by every service (PSP, bankcore, GIAM) as an identical vendored copy.",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^5.9.3"
+  }
+}

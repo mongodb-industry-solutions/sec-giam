@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import { isUnsupportedQueryTypeError } from '@leafypay/mongo-compat';
 import { GIAM_COLLECTIONS, AUDIT_COLLECTION } from '../../shared/models/collections';
 import { buildEncryptedFieldsMaps, GiamDeks } from '../encryption/encryptedFieldsMaps';
 import { capabilities, describeDeployment } from '../mongodb/deployment';
@@ -138,7 +139,7 @@ export async function createCollections(db: Db, deks: GiamDeks, reset = false): 
         console.log(`  created: ${spec.name} (QE) (${spec.purpose})`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (!/queryType|substring/i.test(message)) throw err;
+        if (!isUnsupportedQueryTypeError(message)) throw err;
 
         console.warn(
           `  warn:    ${spec.name}: this driver refuses the declared query type, so the encrypted `

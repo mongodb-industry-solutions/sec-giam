@@ -251,7 +251,7 @@ export function buildPostureReport(input: PostureInput): PostureReport {
       reachable: input.databaseReachable,
       keyVault: `${config.mongodb.dbName}.${config.mongodb.keyVaultCollection}`,
       encryptionLibraryPresent,
-      queryableTextSearch: capabilities().qeSubstring,
+      queryableTextSearch: capabilities().qeTextSearchProfile.textSearch,
       deployment: {
         type: current.type,
         version: current.version.raw,
