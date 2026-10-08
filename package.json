@@ -1,6 +1,6 @@
 {
   "name": "sec-giam",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "GIAM: General Identity and Access Manager. The identity authority for people and systems.",
   "private": true,
   "license": "Apache-2.0",

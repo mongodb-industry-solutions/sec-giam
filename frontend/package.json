@@ -1,6 +1,6 @@
 {
   "name": "giam-frontend",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "GIAM Console: General Identity and Access Manager. The identity authority for people and systems.",
   "private": true,
   "scripts": {
