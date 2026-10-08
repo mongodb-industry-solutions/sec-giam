@@ -3,10 +3,12 @@
 // identity system holding the same key material as what it protects has no compromise-containment
 // story to tell.
 //
-// The crypt_shared path is required and validated at startup. A wrong or missing library fails the
-// whole connection and surfaces as a generic 503, which is expensive to diagnose.
-import { existsSync } from 'fs';
+// Resolved through the same chain as the PSP and bankcore (explicit path, then platform defaults,
+// then node_modules) via @leafypay/mongo-compat, but still validated and HARD-FAILED at startup: a
+// wrong or missing library fails the whole connection and surfaces as a generic 503, which is
+// expensive to diagnose.
 import { MongoClient, KMSProviders } from 'mongodb';
+import { resolveCryptSharedLibPath } from '@leafypay/mongo-compat';
 import { config, keyVaultNamespace } from '../../config';
 
 let client: MongoClient | null = null;
@@ -28,17 +30,15 @@ export function buildKmsProviders(): KMSProviders {
 
 // Fails at startup rather than at the first encrypted read, where it looks like a connection outage.
 export function assertCryptSharedLib(): string {
-  const path = config.mongodb.cryptSharedLibPath;
-  if (!path) {
+  const resolved = resolveCryptSharedLibPath(config.mongodb.cryptSharedLibPath);
+  if (!resolved.path) {
     throw new Error(
-      'crypt_shared library path is not set. Set GIAM_CRYPT_SHARED_LIB_PATH, or '
-      + 'MONGODB_CRYPT_SHARED_LIB_PATH to share the platform value.',
+      'crypt_shared library not found. Set GIAM_CRYPT_SHARED_LIB_PATH, or '
+      + 'MONGODB_CRYPT_SHARED_LIB_PATH to share the platform value, or install it at a platform '
+      + 'default location.',
     );
   }
-  if (!existsSync(path)) {
-    throw new Error(`crypt_shared library not found at "${path}" (GIAM_CRYPT_SHARED_LIB_PATH)`);
-  }
-  return path;
+  return resolved.path;
 }
 
 export async function getQEClient(): Promise<MongoClient> {

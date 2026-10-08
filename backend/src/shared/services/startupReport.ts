@@ -75,7 +75,9 @@ export function configurationReport(): StartupLine[] {
     })),
     {
       label: 'QE text search',
-      value: capabilities().qeSubstring ? 'on, substring' : 'off, names degrade to equality',
+      value: capabilities().qeTextSearchProfile.textSearch
+        ? `on, ${capabilities().qeTextSearchProfile.substring}`
+        : 'off, names degrade to equality',
     },
     { label: 'key custody', value: `${config.keys.provider}, ${config.keys.replicas} declared replica(s)` },
     { label: 'event bus', value: `${config.app.eventBusEngine}, own store` },

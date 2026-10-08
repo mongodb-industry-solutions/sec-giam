@@ -38,38 +38,42 @@ export const DEK_ALT_NAMES = {
  * SCIM `emails[]` and `phoneNumbers[]` representation is projected from these at read time, so the
  * wire contract still matches the standard while the stored value stays encrypted and searchable.
  *
- * The substring query type requires server 9.0+, which GA'd it and rejects the earlier
- * `substringPreview` name outright: a collection still carrying the old name fails EVERY encrypted
- * query on it, including the plain equality lookups on the other two fields.
+ * The substring query type comes from the resolved QE text-search profile
+ * (`@leafypay/mongo-compat`'s `resolveQeProfile`), which names it `substringPreview` on an 8.2-8.3
+ * server and `substring` on 9.0+ - the two spellings are mutually exclusive, and a collection
+ * carrying the wrong one fails EVERY encrypted query on it, including the plain equality lookups
+ * on the other two fields.
  *
- * On an older cluster the field degrades to equality rather than failing setup, which keeps it
- * encrypted and exactly searchable instead of trading the whole deployment for one query shape.
+ * On a cluster below 8.2 (or Community, which cannot analyse an encrypted query at all) the field
+ * degrades to equality rather than failing setup, which keeps it encrypted and exactly searchable
+ * instead of trading the whole deployment for one query shape.
  *
  * That degradation is decided in two places, and either one is enough:
- *   1. the DEPLOYMENT cannot do it (MONGODB_TYPE / MONGODB_VERSION say below 9.0, or Community,
- *      which cannot analyse an encrypted query at all). Known before a connection exists;
+ *   1. the DEPLOYMENT cannot do it (MONGODB_TYPE / MONGODB_VERSION say below 8.2, or Community).
+ *      Known before a connection exists;
  *   2. the DRIVER refuses the query type at create time, which `createCollections` catches and
- *      rebuilds the map with `forceEquality`. The last-resort net, for a crypt_shared older than
- *      the server it points at.
+ *      rebuilds the map with `forceEquality`. The last-resort net, for a crypt_shared that does not
+ *      match the server it points at.
  *
  * (1) is what a hand-managed flag used to stand in for, badly: it CLAIMED the capability, so a
- * deployment that declared it on an 8.x cluster failed setup with `principal` left uncreated
+ * deployment that declared it on an older cluster failed setup with `principal` left uncreated
  * instead of degrading. There is no switch for this any more, and so nothing to set wrongly.
  */
 export function buildEncryptedFieldsMaps(
   deks: GiamDeks,
   options: { forceEquality?: boolean } = {},
 ): Record<string, { fields: unknown[] }> {
-  const nameQueries = capabilities().qeSubstring && !options.forceEquality
+  const profile = capabilities().qeTextSearchProfile;
+  const nameQueries = profile.textSearch && !options.forceEquality
     ? {
-      queryType: 'substring',
+      queryType: profile.substring,
       contention: 8,
-      // Within the cluster's default substring limits, so setup needs no parameter-limit override.
-      // The server refuses strMaxLength above 60
-      // outright, and 30 is what the platform already uses for the equivalent field. A longer
-      // formatted name is refused at write time rather than silently truncated.
+      // Within the cluster's default substring limits (10 on 8.2-8.3, 6 on 9.0+), so setup needs
+      // no parameter-limit override. The server refuses strMaxLength above 60 outright, and 30 is
+      // what the platform already uses for the equivalent field. A longer formatted name is
+      // refused at write time rather than silently truncated.
       strMaxLength: 30,
-      strMaxQueryLength: 10,
+      strMaxQueryLength: profile.substringMaxQueryLength,
       strMinQueryLength: 3,
       caseSensitive: false,
       diacriticSensitive: false,

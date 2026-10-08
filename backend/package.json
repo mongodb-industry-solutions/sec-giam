@@ -1,6 +1,6 @@
 {
   "name": "giam-backend",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "GIAM API: General Identity and Access Manager. The identity authority for people and systems.",
   "private": true,
   "engines": {
@@ -28,6 +28,7 @@
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^6.1.0",
     "@leafypay/eventbus": "file:../packages/eventbus",
+    "@leafypay/mongo-compat": "file:../packages/mongo-compat",
     "@leafypay/platform-links": "file:../packages/platform-links",
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.4.2",

@@ -19,7 +19,7 @@
     "demoNote": "Espresso Works Ltd",
     "accountHolderRefs": {
       "leafypay": "b0000001-0000-4000-8000-000000000001",
-      "bankcore": "hld00075-0000-4000-8000-000000000075"
+      "bankcore": "hld00001-0000-4000-8000-000000000001"
     },
     "additionalRoles": [
       "bank_customer"
@@ -160,7 +160,7 @@
     "demoNote": "Leafy Wallet",
     "accountHolderRefs": {
       "leafypay": "b0000058-0000-4000-8000-000000000058",
-      "bankcore": "hld00076-0000-4000-8000-000000000076"
+      "bankcore": "hld00058-0000-4000-8000-000000000058"
     },
     "additionalRoles": [
       "bank_customer"
