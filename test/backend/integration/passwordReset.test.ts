@@ -86,7 +86,8 @@ describe('v43: an administrator resets a principal\'s password', () => {
     } finally {
       await deleteTestPrincipal(created.subjectId);
     }
-  });
+    // Seven sequential calls, two of them password hashes: past the 30s default on a busy authority.
+  }, 120_000);
 
   it('refuses a password under the eight-character floor', async () => {
     // `leafypay` seeds no `passwordPolicy` beyond the JSON-schema `minLength: 8` itself (no domain

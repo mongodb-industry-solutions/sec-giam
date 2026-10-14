@@ -9,9 +9,9 @@ export default defineConfig({
   resolve: {
     // Run the shared packages from source, so a test never sees a stale dist build.
     alias: {
-      '@leafypay/eventbus': resolve(here, 'packages/eventbus/src/index.ts'),
-      '@leafypay/platform-links': resolve(here, 'packages/platform-links/src/index.ts'),
-      '@leafypay/giam-client': resolve(here, 'packages/giam-client/src/index.ts'),
+      '@ist-sec/eventbus': resolve(here, 'packages/eventbus/src/index.ts'),
+      '@ist-sec/platform-links': resolve(here, 'packages/platform-links/src/index.ts'),
+      '@ist-sec/giam-client': resolve(here, 'packages/giam-client/src/index.ts'),
       // The driver is a backend dependency, not a root one, and a test that measures what the
       // driver sends has to import the same copy the backend uses.
       mongodb: resolve(here, 'backend/node_modules/mongodb'),

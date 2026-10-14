@@ -6,7 +6,7 @@
 // access away in the console and the application would keep working until the token expired, which
 // is precisely the failure the centralised model is supposed to prevent.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { clientSecretFor } from '@leafypay/platform-links';
+import { clientSecretFor } from '@ist-sec/platform-links';
 
 const GIAM = process.env.GIAM_URL ?? 'http://127.0.0.1:8085';
 const REALM = 'leafypay';

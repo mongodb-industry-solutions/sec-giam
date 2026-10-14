@@ -1,5 +1,5 @@
 {
-  "name": "@leafypay/platform-links",
+  "name": "@ist-sec/platform-links",
   "version": "1.0.0",
   "description": "Environment aware resolution of the platform's service links. Shared by the PSP and bankcore seeders so the \"which host in which environment\" logic exists once.",
   "private": true,

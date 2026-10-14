@@ -1,4 +1,4 @@
-import { EVENTBUS_COLLECTION } from '@leafypay/eventbus';
+import { EVENTBUS_COLLECTION } from '@ist-sec/eventbus';
 import { RETIRED_CLIENT_FIELDS } from '../../modules/oauth/models/client.model';
 
 /**

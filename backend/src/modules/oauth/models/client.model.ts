@@ -1,4 +1,4 @@
-import { PLATFORM_ENVIRONMENTS, platformEnvironment, type PlatformEnvironment } from '@leafypay/platform-links';
+import { PLATFORM_ENVIRONMENTS, platformEnvironment, type PlatformEnvironment } from '@ist-sec/platform-links';
 import { Meta, Scoped, OwnerRef } from '../../../shared/models/base.model';
 import { CredentialRecord, OAuthClientMetadata } from '../../directory/models/credential.model';
 

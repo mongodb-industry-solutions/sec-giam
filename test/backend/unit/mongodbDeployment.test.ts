@@ -56,21 +56,21 @@ describe('capabilities follow from the deployment', () => {
     const caps = capabilitiesOf(deployment('atlas', '9.0.0'));
     expect(caps).toMatchObject({
       automaticEncryption: true,
-      qeSubstring: true,
       qeRange: true,
       changeStreams: true,
       timeSeriesExpiry: true,
       atlasSearch: true,
     });
+    expect(caps.qeTextSearchProfile).toMatchObject({ textSearch: true, substring: 'substring' });
   });
 
-  // The reference deployment today. Substring is NOT available on it, which is the case the old
-  // static flag got wrong: it declared the query type and setup failed instead of degrading.
-  it('withholds substring search below 9.0', () => {
+  // 8.2-8.3 only knows the preview spellings; declaring the GA name there fails setup.
+  it('uses the preview substring query type on 8.2, and none below it', () => {
     const caps = capabilitiesOf(deployment('ea', '8.2.4'));
     expect(caps.automaticEncryption).toBe(true);
-    expect(caps.qeSubstring).toBe(false);
+    expect(caps.qeTextSearchProfile).toMatchObject({ textSearch: true, substring: 'substringPreview' });
     expect(caps.qeRange).toBe(true);
+    expect(capabilitiesOf(deployment('ea', '8.0.0')).qeTextSearchProfile.textSearch).toBe(false);
   });
 
   it('withholds automatic encryption from Community at every version', () => {
@@ -78,7 +78,7 @@ describe('capabilities follow from the deployment', () => {
       const caps = capabilitiesOf(deployment('ce', version));
       expect(caps.automaticEncryption, version).toBe(false);
       // And with it, every encrypted query type: an index nothing can analyse buys nothing.
-      expect(caps.qeSubstring, version).toBe(false);
+      expect(caps.qeTextSearchProfile.textSearch, version).toBe(false);
       expect(caps.qeRange, version).toBe(false);
     }
   });
@@ -126,7 +126,7 @@ describe('what an operator is told', () => {
   // Degradation is reported without being alarming: the data is still encrypted and still exactly
   // searchable, so this is a lost query shape and not a lost control.
   it('reports the substring fallback as information, not as a warning', () => {
-    const finding = capabilityFindings(deployment('atlas', '8.2.4'))
+    const finding = capabilityFindings(deployment('atlas', '8.0.0'))
       .find((f) => /substring/.test(f.text));
     expect(finding?.warn).toBe(false);
   });

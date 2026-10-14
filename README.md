@@ -245,6 +245,12 @@ Two things to get right in a real deployment:
 per-environment readiness report.
 
 ## References 
+- [OpenID AuthZEN](https://openid.net/specs/authorization-api-1_0.html)
+  - [OpenID AuthZEN Interop](https://authzen-interop.net/)
+  - [AuthZEN Demo Repository](https://github.com/openid/authzen)
+- [eXtensible Access Control Markup Language (XACML) Version 3.0](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html)
+  - [xacml-3.0-core-spec](http://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.pdf)
+  - [JSON Profile of XACML 3.0 Version 1.1](https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/xacml-json-http-v1.1-os.html)
 - [Identity and Access Management for Electric Utilities](https://www.nccoe.nist.gov/publication/1800-2/VolB/index.html)
 - [IAM Reference Architecture (v2)](https://bok.idpro.org/article/id/76/)
 - [OAuth 2.0](https://oauth.net/2/)

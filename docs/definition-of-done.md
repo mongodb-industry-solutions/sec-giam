@@ -65,7 +65,7 @@ provider administers, and `adminHelpers.ts` last changed before this work began.
 identity and it is left failing. Adjusting the assertion to make the count read 1340 of 1340 would
 have been the wrong repair on somebody else's defect.
 
-**The event bus package is namespaced to a consumer.** GIAM imports `@leafypay/eventbus`. Nothing in
+**The event bus package is namespaced to a consumer.** GIAM imports `@ist-sec/eventbus`. Nothing in
 its behaviour is coupled, but the name is, and a product claiming to be industry-neutral should not
 depend on a package named after one of its consumers. Renaming it touches every service in the
 repository, so it is recorded here rather than done quietly at the end of an unrelated phase.

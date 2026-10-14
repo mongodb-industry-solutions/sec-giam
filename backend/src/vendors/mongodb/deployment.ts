@@ -3,7 +3,7 @@
 // Every feature this system depends on that is not universal (Queryable Encryption, the substring
 // query type, change streams, time series expiry, Atlas Search) is gated HERE, in one place, rather
 // than behind a hand-managed boolean per feature. This used to be GIAM's OWN reimplementation of
-// that idea; it is now a thin wrapper around `@leafypay/mongo-compat`, the same package the PSP and
+// that idea; it is now a thin wrapper around `@ist-sec/mongo-compat`, the same package the PSP and
 // bankcore use, vendored into this repo at `packages/mongo-compat` and kept byte-for-byte identical
 // to theirs by hand (there is no registry: the copies ARE the distribution mechanism).
 //
@@ -21,16 +21,16 @@
 // nothing downstream (posture.service.ts, plugins/mongodb.ts, startupReport.ts,
 // encryptedFieldsMaps.ts, the setup/seed scripts, operations.controller.ts) had to change.
 
-import type { MongoClientLike, MongoDeployment, MongoCapabilities } from '@leafypay/mongo-compat';
+import type { MongoClientLike, MongoDeployment, MongoCapabilities } from '@ist-sec/mongo-compat';
 import {
   parseDeploymentType, declaredDeployment as sharedDeclaredDeployment,
   capabilitiesOf, detectDeployment as sharedDetectDeployment, describeDeployment as sharedDescribeDeployment,
   capabilityFindings as sharedCapabilityFindings,
-} from '@leafypay/mongo-compat';
+} from '@ist-sec/mongo-compat';
 import { config } from '../../config';
 
-export type { MongoDeploymentType, MongoVersion, MongoDeployment, MongoCapabilities } from '@leafypay/mongo-compat';
-export { parseVersion, atLeast } from '@leafypay/mongo-compat';
+export type { MongoDeploymentType, MongoVersion, MongoDeployment, MongoCapabilities } from '@ist-sec/mongo-compat';
+export { parseVersion, atLeast, parseDeploymentType, capabilitiesOf, classifyProbe } from '@ist-sec/mongo-compat';
 
 function declaredDeployment(): MongoDeployment {
   const type = parseDeploymentType(config.mongodb.type);

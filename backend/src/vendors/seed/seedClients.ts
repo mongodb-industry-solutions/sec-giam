@@ -1,7 +1,7 @@
 import { Db } from 'mongodb';
 import * as bcrypt from 'bcryptjs';
 import { v5 as uuidv5 } from 'uuid';
-import { clientSecretFor } from '@leafypay/platform-links';
+import { clientSecretFor } from '@ist-sec/platform-links';
 import {
   CREDENTIAL_COLLECTION, REALM_COLLECTION, PRINCIPAL_COLLECTION, ROLE_COLLECTION,
   RESOURCE_COLLECTION,

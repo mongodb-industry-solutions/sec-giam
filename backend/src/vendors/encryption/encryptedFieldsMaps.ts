@@ -39,7 +39,7 @@ export const DEK_ALT_NAMES = {
  * wire contract still matches the standard while the stored value stays encrypted and searchable.
  *
  * The substring query type comes from the resolved QE text-search profile
- * (`@leafypay/mongo-compat`'s `resolveQeProfile`), which names it `substringPreview` on an 8.2-8.3
+ * (`@ist-sec/mongo-compat`'s `resolveQeProfile`), which names it `substringPreview` on an 8.2-8.3
  * server and `substring` on 9.0+ - the two spellings are mutually exclusive, and a collection
  * carrying the wrong one fails EVERY encrypted query on it, including the plain equality lookups
  * on the other two fields.

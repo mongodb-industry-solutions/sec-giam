@@ -9,7 +9,7 @@ import {
   type EventBusSettings,
   type EventStore,
   type EventStoreDb,
-} from '@leafypay/eventbus';
+} from '@ist-sec/eventbus';
 import { config } from '../../config';
 
 function giamSettings(): EventBusSettings {
@@ -36,4 +36,4 @@ export function resolveEventBusEngine(): EventBusEngine {
   return resolveSharedEngine(config.app.eventBusEngine);
 }
 
-export * from '@leafypay/eventbus';
+export * from '@ist-sec/eventbus';

@@ -11,7 +11,7 @@ const REALM = 'leafypay';
 const CLIENT_ID = 'leafypay-backend';
 // Derived exactly as the seeder derives it, so the two cannot disagree and no credential is written
 // down here.
-const { clientSecretFor } = await import('@leafypay/platform-links');
+const { clientSecretFor } = await import('@ist-sec/platform-links');
 const CLIENT_SECRET = clientSecretFor(CLIENT_ID);
 
 const replicas = process.argv.slice(2);

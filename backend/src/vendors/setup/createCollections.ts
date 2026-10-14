@@ -1,5 +1,5 @@
 import { Db } from 'mongodb';
-import { isUnsupportedQueryTypeError } from '@leafypay/mongo-compat';
+import { isUnsupportedQueryTypeError } from '@ist-sec/mongo-compat';
 import { GIAM_COLLECTIONS, AUDIT_COLLECTION } from '../../shared/models/collections';
 import { buildEncryptedFieldsMaps, GiamDeks } from '../encryption/encryptedFieldsMaps';
 import { capabilities, describeDeployment } from '../mongodb/deployment';
