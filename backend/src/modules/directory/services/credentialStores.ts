@@ -30,14 +30,14 @@ function collection(): Db['collection'] extends never ? never : ReturnType<Db['c
 }
 
 async function load(credentialId: string): Promise<CredentialRecord | null> {
-  return collection().findOne({ credentialId }, { projection: { _id: 0 } }) as Promise<CredentialRecord | null>;
+  return collection().findOne({ identifier: credentialId }, { projection: { _id: 0 } }) as Promise<CredentialRecord | null>;
 }
 
 async function markUsed(credentialId: string, patch: Record<string, unknown> = {}): Promise<void> {
   // Bookkeeping only. A failure here must never turn a successful authentication into an error, so
   // callers do not await it.
   await collection().updateOne(
-    { credentialId },
+    { identifier: credentialId },
     { $set: { lastUsedAt: new Date().toISOString(), ...patch } },
   );
 }
@@ -52,7 +52,7 @@ async function markUsed(credentialId: string, patch: Record<string, unknown> = {
  */
 async function advanceSignCount(credentialId: string, from: number): Promise<boolean> {
   const result = await collection().updateOne(
-    { credentialId, $or: [{ signCount: from }, { signCount: { $exists: false } }] },
+    { identifier: credentialId, $or: [{ signCount: from }, { signCount: { $exists: false } }] },
     { $set: { lastUsedAt: new Date().toISOString(), signCount: from + 1 } },
   );
   return result.matchedCount > 0;
@@ -64,8 +64,8 @@ export const bcryptPasswordStore: CredentialStore = {
 
   async verify(credentialId, presented) {
     const credential = await load(credentialId);
-    if (!credential?.hash || !isUsable(credential)) return false;
-    const ok = await bcrypt.compare(presented, credential.hash);
+    if (!credential?.secret || !isUsable(credential)) return false;
+    const ok = await bcrypt.compare(presented, credential.secret);
     if (ok) markUsed(credentialId).catch(() => {});
     return ok;
   },
@@ -73,7 +73,7 @@ export const bcryptPasswordStore: CredentialStore = {
   async issue(subjectId, secret) {
     // Cost 12, matching what the platform already uses, so migrated hashes and new ones are
     // indistinguishable in verification time as well as in shape.
-    return { subjectId, hash: await bcrypt.hash(secret, 12) };
+    return { subjectId, secret: await bcrypt.hash(secret, 12) };
   },
 };
 

@@ -55,6 +55,12 @@ export interface IssueTokensInput {
   /** Roles the authority resolved, for the checks a resource server still expresses in roles. */
   roles?: string[];
   /**
+   * RFC 9449 section 6 / RFC 8705 section 3.1: the proof-of-possession key this token is bound to.
+   * Exactly one of `jkt` (DPoP) or `x5t#S256` (mutual TLS) is ever present, never both, because a
+   * token has exactly one sender-constraining key. Absent means the bearer, unconstrained, profile.
+   */
+  cnf?: { jkt: string } | { 'x5t#S256': string };
+  /**
    * Permissions the CLIENT asked for, to obtain a narrower token than its roles would give.
    *
    * Intersected with what the roles grant, never unioned. Absent means the default, which is roles
@@ -481,6 +487,7 @@ export class TokenIssuer {
       exp: now + ttl.access,
       scope,
       client_id: client.clientId,
+      ...(input.cnf ? { cnf: input.cnf } : {}),
       // Which authentication path the subject came through, so a relying party can apply a policy
       // of its own scoped to that domain without asking this authority first. Absent for a subject
       // with none: a workload (`client_credentials`) or a delegated hop, neither of which was

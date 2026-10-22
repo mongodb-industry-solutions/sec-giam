@@ -348,7 +348,7 @@ export async function enrollmentController(fastify: FastifyInstance) {
     const store = credentialStores.resolve('bcrypt-password');
     let matched: CredentialRecord | null = null;
     for (const credential of held) {
-      if (await store.verify(credential.credentialId, currentPassword)) { matched = credential; break; }
+      if (await store.verify(credential.identifier, currentPassword)) { matched = credential; break; }
     }
     if (!matched) {
       return reply.status(403).send(
@@ -369,12 +369,12 @@ export async function enrollmentController(fastify: FastifyInstance) {
     const issued = await store.issue(principal.subjectId, newPassword);
     const credentials = fastify.db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
     await credentials.updateOne(
-      { credentialId: matched.credentialId },
-      { $set: { hash: issued?.hash as string, 'meta.lastModified': new Date().toISOString() } },
+      { identifier: matched.identifier },
+      { $set: { secret: issued?.secret as string, 'meta.lastModified': new Date().toISOString() } },
     );
 
     const after = await credentials.findOne(
-      { credentialId: matched.credentialId },
+      { identifier: matched.identifier },
       { projection: { _id: 0 } },
     ) as unknown as Record<string, unknown>;
 
@@ -385,7 +385,7 @@ export async function enrollmentController(fastify: FastifyInstance) {
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       what: 'credential',
-      ref: matched.credentialId,
+      ref: matched.identifier,
       operation: 'reset',
       actorSubjectId: principal.subjectId,
       before: matched as unknown as Record<string, unknown>,

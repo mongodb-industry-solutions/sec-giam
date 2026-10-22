@@ -97,17 +97,17 @@ export async function credentialAdminController(fastify: FastifyInstance) {
 
     if (existing) {
       await credentials.updateOne(
-        { credentialId: existing.credentialId },
-        { $set: { hash: issued?.hash as string, 'meta.lastModified': new Date().toISOString() } },
+        { identifier: existing.identifier },
+        { $set: { secret: issued?.secret as string, 'meta.lastModified': new Date().toISOString() } },
       );
     } else {
       await credentials.insertOne({
         realmId: realm.realmId,
         tenantId: realm.tenantId,
-        credentialId: newCredentialId,
+        identifier: newCredentialId,
         subjectId: id,
         type: 'password',
-        hash: issued?.hash as string,
+        secret: issued?.secret as string,
         status: 'active',
         assurance: { level: 'aal1', method: 'password', verifiedAt: new Date().toISOString() },
         createdAt: new Date().toISOString(),
@@ -136,12 +136,12 @@ export async function credentialAdminController(fastify: FastifyInstance) {
         realmId: realm.realmId,
         tenantId: realm.tenantId,
         what: 'credential',
-        ref: existing?.credentialId ?? newCredentialId,
+        ref: existing?.identifier ?? newCredentialId,
         operation: existing ? 'reset' : 'created',
         actorSubjectId: request.authorityCaller.subjectId,
         before: existing ? (existing as unknown as Record<string, unknown>) : null,
         after,
-        ignore: ['meta', '_id', 'hash'],
+        ignore: ['meta', '_id', 'secret'],
       });
     } else {
       void new SecurityEventService(fastify.db).record({
@@ -185,11 +185,14 @@ export async function credentialAdminController(fastify: FastifyInstance) {
   } as const;
 
   function redact(credential: CredentialRecord) {
+    const isClientLike = credential.type === 'oauth_client' || credential.type === 'api_key';
     return {
-      credentialId: credential.credentialId,
+      credentialId: credential.identifier,
       type: credential.type,
       ...(credential.label ? { label: credential.label } : {}),
-      ...(credential.clientId ? { clientId: credential.clientId } : {}),
+      // Same stored value as `credentialId` now (see `CredentialRecord.identifier`); shown under this
+      // name too, and only for the types where "client id" is the term a caller expects.
+      ...(isClientLike ? { clientId: credential.identifier } : {}),
       ...(credential.metadata?.clientName ? { clientName: credential.metadata.clientName } : {}),
       status: credential.status,
       // Falls back to the envelope's own `created`: every insert sets that one, even the couple of
@@ -301,7 +304,7 @@ export async function credentialAdminController(fastify: FastifyInstance) {
 
     const credentials = fastify.db.collection<CredentialRecord>(CREDENTIAL_COLLECTION);
     const existing = await credentials.findOne(
-      { realmId: realm.realmId, subjectId: id, credentialId },
+      { realmId: realm.realmId, subjectId: id, identifier: credentialId },
       { projection: { _id: 0 } },
     );
     if (!existing) return reply.status(404).send(problem(404, 'No such credential for this principal'));
@@ -323,7 +326,7 @@ export async function credentialAdminController(fastify: FastifyInstance) {
     }
 
     const retired = await credentials.findOne(
-      { realmId: realm.realmId, subjectId: id, credentialId },
+      { realmId: realm.realmId, subjectId: id, identifier: credentialId },
       { projection: { _id: 0 } },
     );
     return reply.send(redact(retired as CredentialRecord));

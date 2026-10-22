@@ -137,11 +137,14 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
     byType[fixture.type] = (byType[fixture.type] ?? 0) + 1;
     await upsertSeed<CredentialRecord>(
       credentials,
-      { credentialId: fixture.credentialId },
+      { identifier: fixture.credentialId },
       {
         subjectId: fixture.subjectId,
         type: fixture.type,
-        ...(fixture.hash ? { hash: fixture.hash } : {}),
+        // `credentials.json` still spells this `hash`, the plain description of what the value is;
+        // the model's own field is `secret` now (see `CredentialRecord.secret`), paired with
+        // `identifier` above instead of a separate `credentialId`.
+        ...(fixture.hash ? { secret: fixture.hash } : {}),
         ...(fixture.publicKeyPem ? { publicKeyPem: fixture.publicKeyPem } : {}),
         ...(fixture.algorithm ? { algorithm: fixture.algorithm } : {}),
         ...(fixture.signCount !== undefined ? { signCount: fixture.signCount } : {}),
@@ -150,7 +153,7 @@ export async function seedIdentities(db: Db, fixtureName = 'identities.json', cr
         assurance: fixture.assurance,
         createdAt: now,
       },
-      { credentialId: fixture.credentialId, subjectId: fixture.subjectId, realmId, tenantId: DEFAULT_TENANT_ID },
+      { identifier: fixture.credentialId, subjectId: fixture.subjectId, realmId, tenantId: DEFAULT_TENANT_ID },
       'Credential',
     );
   }

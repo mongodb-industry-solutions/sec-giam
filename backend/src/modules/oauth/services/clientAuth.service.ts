@@ -127,7 +127,7 @@ export async function findOAuthClient(
 ): Promise<OAuthClient | null> {
   const found = await db
     .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
-    .find({ realmId, clientId, type: 'oauth_client' }, { projection: { _id: 0 } })
+    .find({ realmId, identifier: clientId, type: 'oauth_client' }, { projection: { _id: 0 } })
     .toArray();
   const usable = found
     .filter((credential) => isUsable(credential))
@@ -143,10 +143,9 @@ export async function listOAuthClients(db: Db, realmId: string): Promise<OAuthCl
     .toArray();
   const newestByClientId = new Map<string, CredentialRecord>();
   for (const credential of found) {
-    if (!credential.clientId) continue;
-    const held = newestByClientId.get(credential.clientId);
+    const held = newestByClientId.get(credential.identifier);
     if (!held || (credential.createdAt ?? '') > (held.createdAt ?? '')) {
-      newestByClientId.set(credential.clientId, credential);
+      newestByClientId.set(credential.identifier, credential);
     }
   }
   return [...newestByClientId.values()].map(clientFromCredential);
@@ -170,7 +169,7 @@ export class ClientAuthService {
   private async registrations(realmId: string, clientId: string): Promise<CredentialRecord[]> {
     const found = await this.db
       .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
-      .find({ realmId, clientId, type: 'oauth_client' }, { projection: { _id: 0 } })
+      .find({ realmId, identifier: clientId, type: 'oauth_client' }, { projection: { _id: 0 } })
       .toArray();
     return found.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   }
@@ -237,8 +236,8 @@ export class ClientAuthService {
       // secret was the right one.
       let matched: CredentialRecord | null = null;
       for (const registration of usable) {
-        if (!registration.hash) continue;
-        const valid = await bcrypt.compare(presented.clientSecret, registration.hash);
+        if (!registration.secret) continue;
+        const valid = await bcrypt.compare(presented.clientSecret, registration.secret);
         if (valid && !matched) matched = registration;
       }
       if (!matched) return { error: 'invalid_client', description: 'invalid client_secret' };

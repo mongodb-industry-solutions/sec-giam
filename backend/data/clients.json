@@ -513,6 +513,13 @@
     "firstParty": true,
     "audience": [
       "leafypay"
+    ],
+    "owners": [
+      {
+        "kind": "principal",
+        "ref": "a1000102-0000-4000-8000-000000000102",
+        "displayName": "Nina Berg"
+      }
     ]
   },
   {

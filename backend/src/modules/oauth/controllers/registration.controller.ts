@@ -473,7 +473,7 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
       return reply.status(status as 400).send(problem(status, title, detail));
     };
 
-    if (await clients().findOne(clientFilter({ realmId: realm.realmId, clientName: body.client_name }), { projection: { _id: 0, clientId: 1 } })) {
+    if (await clients().findOne(clientFilter({ realmId: realm.realmId, clientName: body.client_name }), { projection: { _id: 0, identifier: 1 } })) {
       return refuse(409, 'Already registered', 'That application name is already registered in this realm.', 'name_taken');
     }
 
@@ -557,21 +557,24 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     /**
      * The registration IS a credential, of type `oauth_client`.
      *
-     * `ownerId` is the principal it acts as and answers for, which is a token subject and so
-     * is singular. `administrators` is who may manage it, which is a set. The two are separate
-     * fields because a `client_credentials` token has exactly one `sub`.
+     * `subjectId` is the principal it acts as and answers for, which is a token subject and so is
+     * singular, and must name a principal that exists rather than the client's own wire identity
+     * (`clientId`, kept in its own field below). `administrators` is who may manage it, which is a
+     * set. The two are separate fields because a `client_credentials` token has exactly one `sub`.
+     *
+     * NOTE (pre-existing, not introduced here): when an operator registers on behalf of a tenant
+     * with no authenticated caller, `body.owner_ref` names a `tenant`, not a principal, and lands
+     * here as-is. That credential's `subjectId` will not resolve in the principal collection until
+     * this path is hardened to require an actual principal reference.
      */
     const credential: CredentialRecord = {
       realmId: realm.realmId,
       tenantId: realm.tenantId,
-      credentialId: randomUUID(),
-      // A credential belongs to the subject it authenticates, which for a client is the client.
-      subjectId: clientId,
+      identifier: clientId,
+      subjectId: caller.subjectId ?? (body.owner_ref as string),
       type: 'oauth_client',
-      ownerId: caller.subjectId ?? (body.owner_ref as string),
       administrators: owners as CredentialRecord['administrators'],
-      clientId,
-      ...(hash ? { hash: hash } : {}),
+      ...(hash ? { secret: hash } : {}),
       ...(prefix ? { secretPrefix: prefix } : {}),
       metadata: clientMetadata({
         clientName: body.client_name,
@@ -796,13 +799,17 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     await clients().insertOne({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
-      credentialId: randomUUID(),
-      subjectId: clientId,
+      // Same identifier as the registration it rotates: this is a second secret for one client, not
+      // a second client, so the two documents must resolve as the same credential on every lookup.
+      identifier: clientId,
+      // A rotated secret is a new document for the same registration, so it answers for the same
+      // principal the registration already does: the rotating caller if there is one, the client's
+      // own wire identity only as the last resort a self-rotation with no authenticated caller falls
+      // back to.
+      subjectId: caller.subjectId ?? clientId,
       type: 'oauth_client',
-      ownerId: caller.subjectId ?? clientId,
       ...(existing.owners ? { administrators: existing.owners } : {}),
-      clientId,
-      hash: hash,
+      secret: hash,
       secretPrefix: prefix,
       // The same registration metadata: this is a second secret for one client, not a second client.
       metadata: stored?.metadata ?? clientMetadata(existing),
@@ -865,10 +872,10 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     await clients().updateMany(
       clientFilter({ realmId: realm.realmId, clientId }),
       {
-        // The hash is dropped as well as the status changed. A revoked client whose secret is still
+        // The secret is dropped as well as the status changed. A revoked client whose secret is still
         // stored is a credential waiting for somebody to reactivate the record.
         $set: { status: 'revoked', 'meta.lastModified': new Date().toISOString() },
-        $unset: { hash: '' },
+        $unset: { secret: '' },
       },
     );
 
@@ -881,27 +888,27 @@ export async function clientRegistrationController(fastify: FastifyInstance) {
     });
 
     /**
-     * The subject is the client's `ownerId`, not its `clientId`.
+     * The subject is the client's `subjectId`, not its `clientId`.
      *
      * That is the principal the credential acts as, so it is what appears as `sub` in every token
      * this client was issued, and therefore the only identifier a receiver can match a token it is
      * already holding against. Signalling the `clientId` would name something no token carries as
      * its subject.
      *
-     * Read straight from the credential because the client VIEW does not carry it: the mapping
-     * folds `ownerId` into `owners[0]`, and the administrators are a different set of people from
-     * the one principal the credential acts as.
+     * Read straight from the credential because the client VIEW does not carry it: the mapping folds
+     * `subjectId` into `owners[0]` as a fallback, and the administrators are a different set of
+     * people from the one principal the credential acts as.
      */
     const acting = await clients().findOne(
       clientFilter({ realmId: realm.realmId, clientId }),
-      { projection: { _id: 0, ownerId: 1 } },
+      { projection: { _id: 0, subjectId: 1 } },
     );
 
     void new SignalDispatcher(fastify.db).dispatch({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
       event: 'credential-change',
-      subjectId: acting?.ownerId ?? clientId,
+      subjectId: acting?.subjectId ?? clientId,
       reason: 'the client registration was withdrawn',
       category: 'credential',
       target: { type: 'client', ref: clientId },

@@ -134,10 +134,10 @@ export async function upsertHolding(
  */
 export async function upsertCredentialHolding(
   credentials: Collection<CredentialRecord>,
-  key: { realmId: string; credentialId: string },
+  key: { realmId: string; identifier: string },
   holding: RoleHolding,
 ): Promise<SeedOutcome> {
-  return upsertRoleHolding(credentials, key, holding, `credential ${key.credentialId} in realm ${key.realmId}`);
+  return upsertRoleHolding(credentials, key, holding, `credential ${key.identifier} in realm ${key.realmId}`);
 }
 
 // Unsets only the fields a model DECLARES retired: no document is deleted, no other field is touched.

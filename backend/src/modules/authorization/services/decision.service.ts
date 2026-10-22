@@ -61,7 +61,7 @@ export class DecisionService {
   private async liveCredentialHoldings(realmId: string, credentialId: string): Promise<RoleHolding[] | null> {
     const credential = await this.db
       .collection<CredentialRecord>(CREDENTIAL_COLLECTION)
-      .findOne({ realmId, credentialId }, { projection: { _id: 0, roles: 1 } });
+      .findOne({ realmId, identifier: credentialId }, { projection: { _id: 0, roles: 1 } });
     if (!credential?.roles || credential.roles.length === 0) return null;
     return activeHoldings(credential);
   }

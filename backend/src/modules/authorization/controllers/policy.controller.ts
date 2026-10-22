@@ -634,10 +634,24 @@ export async function policyController(fastify: FastifyInstance) {
    * describe the same `subject`/`resource`/`action`/`context` rather than two copies that could
    * drift. `resource` and `action` are required standalone (the single endpoint's own body needs
    * them); the batch endpoint relaxes that by wrapping them, not by declaring a second shape.
+   *
+   * THESE FOUR ACCEPT UNKNOWN MEMBERS, and that is a conformance requirement rather than laxity.
+   * Authorization API 1.0 section 10.1.1: "receivers MUST ignore unknown fields present in request
+   * or response bodies." Rejecting them is the opposite of ignoring them, and it breaks the one
+   * property the clause exists to protect: a conforming client carrying members this authority does
+   * not know about, whether a later revision's or its own, must still get an answer rather than a
+   * 400. An enforcement point that layers its own request attributes on top of the standard shape is
+   * the ordinary case, not an abuse.
+   *
+   * Ignoring is safe here because nothing reads an unrecognised member. A misspelled condition input
+   * resolves to absent, and every condition treats absent as unsatisfied, so the mistake lands on
+   * deny. Note the contrast with `conditionSchema` above, which stays closed: that one governs what
+   * a policy may SAY, and widening it would widen the language. This one governs what a caller may
+   * SEND, and narrowing it only breaks interoperability.
    */
   const decisionSubjectSchema = {
     type: 'object',
-    additionalProperties: false,
+    additionalProperties: true,
     description: 'Omitted means the caller. Naming somebody else requires the policy-reading tier.',
     properties: {
       type: { type: 'string', description: 'AuthZEN subject type. Recorded, not interpreted: this authority has one kind of principal.' },
@@ -648,7 +662,7 @@ export async function policyController(fastify: FastifyInstance) {
   const decisionResourceSchema = {
     type: 'object',
     required: ['type'],
-    additionalProperties: false,
+    additionalProperties: true,
     properties: {
       type: { type: 'string', minLength: 1, description: 'The enforcement point\'s resource name, such as `roles`.' },
       id: { type: 'string', description: 'A particular instance. Recorded on the trace; no condition reads it today.' },
@@ -658,14 +672,16 @@ export async function policyController(fastify: FastifyInstance) {
   const decisionActionSchema = {
     type: 'object',
     required: ['name'],
-    additionalProperties: false,
+    additionalProperties: true,
     properties: { name: { type: 'string', minLength: 1, examples: ['view'] } },
   } as const;
 
   const decisionContextSchema = {
     type: 'object',
-    additionalProperties: false,
-    description: 'Identity context only, matching the condition vocabulary a policy may use.',
+    additionalProperties: true,
+    description:
+      'Identity context. The members named below are the ones a policy condition can read; anything '
+      + 'else is accepted and ignored, per Authorization API 1.0 section 10.1.1.',
     properties: {
       audience: { type: 'string', description: 'The resource server the roles are resolved against. Defaults to this authority\'s own.' },
       assuranceLevel: { type: 'string', enum: ['aal1', 'aal2', 'aal3'] },

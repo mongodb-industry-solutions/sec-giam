@@ -83,7 +83,7 @@ const VIEWS: Record<string, ConsoleView> = {
     collection: CREDENTIAL_COLLECTION,
     filter: { type: 'oauth_client' },
     projection: {
-      _id: 0, realmId: 1, clientId: 1, status: 1, ownerId: 1, administrators: 1,
+      _id: 0, realmId: 1, clientId: 1, status: 1, subjectId: 1, administrators: 1,
       secretPrefix: 1, createdAt: 1, metadata: 1,
     },
     realmScoped: true,

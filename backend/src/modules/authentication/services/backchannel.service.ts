@@ -286,14 +286,14 @@ export class BackchannelService {
     };
 
     const credential = await this.db.collection<CredentialRecord>(CREDENTIAL_COLLECTION)
-      .findOne({ credentialId: input.credentialId, status: 'active' }, { projection: { _id: 0 } });
+      .findOne({ identifier: input.credentialId, status: 'active' }, { projection: { _id: 0 } });
     if (!credential || !isUsable(credential)) return rejected('credential_not_found');
     // The authenticator must belong to the person the request named, or a valid signature from any
     // enrolled device would approve any request.
     if (credential.subjectId !== request.subjectId) return rejected('owner_mismatch');
 
     const store = credentialStores.resolve('public-key');
-    const verified = await store.verify(credential.credentialId, `${request.challenge}.${input.signature}`);
+    const verified = await store.verify(credential.identifier, `${request.challenge}.${input.signature}`);
     if (!verified) return rejected('bad_signature');
 
     // Only a still-pending request may be approved, and the transition is the claim. An already
@@ -307,7 +307,7 @@ export class BackchannelService {
           // approval already copies from the session onto its own ticket. Without it, a token
           // minted from this request could only ever read the PRINCIPAL's roles, never a narrower
           // grant held by the authenticator that actually signed the approval.
-          credentialId: credential.credentialId,
+          credentialId: credential.identifier,
           'meta.lastModified': new Date().toISOString(),
         },
       },
@@ -319,7 +319,7 @@ export class BackchannelService {
       outcome: 'success',
       subjectId: request.subjectId,
       clientId: request.clientId,
-      detail: { authReqId, credentialId: credential.credentialId },
+      detail: { authReqId, credentialId: credential.identifier },
     });
     return { status: 'approved', clientId: request.clientId };
   }
@@ -341,10 +341,10 @@ export class BackchannelService {
     let authorized = Boolean(input.sessionSubjectId && input.sessionSubjectId === request.subjectId);
     if (!authorized && input.credentialId && input.signature) {
       const credential = await this.db.collection<CredentialRecord>(CREDENTIAL_COLLECTION)
-        .findOne({ credentialId: input.credentialId, status: 'active' }, { projection: { _id: 0 } });
+        .findOne({ identifier: input.credentialId, status: 'active' }, { projection: { _id: 0 } });
       if (credential && credential.subjectId === request.subjectId) {
         const store = credentialStores.resolve('public-key');
-        authorized = await store.verify(credential.credentialId, `${request.challenge}.${input.signature}`);
+        authorized = await store.verify(credential.identifier, `${request.challenge}.${input.signature}`);
       }
     }
     if (!authorized) return refuse(401, 'invalid_grant', 'a denial requires the owner proof');

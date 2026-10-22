@@ -13,7 +13,7 @@ import { TokenIssuer } from '../../../backend/src/modules/oauth/services/tokenIs
 import { enforcementFor } from '../../../backend/src/modules/realm/models/realm.model';
 import type { RealmRecord } from '../../../backend/src/modules/realm/models/realm.model';
 import type { OAuthClient } from '../../../backend/src/modules/oauth/models/client.model';
-import { clientMetadata } from '../../../backend/src/modules/oauth/models/client.model';
+import { clientMetadata, clientFromCredential } from '../../../backend/src/modules/oauth/models/client.model';
 import type { CredentialRecord } from '../../../backend/src/modules/directory/models/credential.model';
 import { newMeta } from '../../../backend/src/shared/models/base.model';
 import { config } from '../../../backend/src/config';
@@ -71,13 +71,11 @@ async function registeredClient(overrides: Partial<OAuthClient> = {}): Promise<C
   return {
     realmId: 'realm-1',
     tenantId: 'default',
-    credentialId: 'cred-orders-web',
+    identifier: flat.clientId as string,
     subjectId: flat.clientId as string,
     type: 'oauth_client',
-    ownerId: 'subject-1',
-    clientId: flat.clientId as string,
     ...(overrides.clientSecretHash === undefined
-      ? { hash: await bcrypt.hash(KNOWN_SECRET, 4) }
+      ? { secret: await bcrypt.hash(KNOWN_SECRET, 4) }
       : {}),
     metadata: clientMetadata(flat),
     status: (overrides.status ?? 'active') as CredentialRecord['status'],
@@ -96,13 +94,13 @@ async function registeredClient(overrides: Partial<OAuthClient> = {}): Promise<C
 function dbOf(credentials: CredentialRecord[]): Db {
   return {
     collection: () => ({
-      find: (filter: { clientId?: string }) => ({
+      find: (filter: { identifier?: string }) => ({
         toArray: async () => credentials.filter(
-          (credential) => !filter.clientId || credential.clientId === filter.clientId,
+          (credential) => !filter.identifier || credential.identifier === filter.identifier,
         ),
       }),
-      findOne: async (filter: { clientId?: string }) => credentials.find(
-        (credential) => !filter.clientId || credential.clientId === filter.clientId,
+      findOne: async (filter: { identifier?: string }) => credentials.find(
+        (credential) => !filter.identifier || credential.identifier === filter.identifier,
       ) ?? null,
     }),
   } as unknown as Db;
@@ -265,7 +263,11 @@ describe('client enforcement: a soft-admitted token genuinely carries less autho
 
   const input = async () => ({
     realm: realmOf('soft'),
-    client: await registeredClient(),
+    // Through the real projection, not the stored shape directly: `TokenIssuer.issue` reads an
+    // `OAuthClient` (`clientId`), and the stored `CredentialRecord` now carries that same value
+    // under `identifier` (see dev.v01.plan-fix-credential-id.md §A). Passing the raw credential
+    // worked only by incidental field overlap before that rename; it no longer does.
+    client: clientFromCredential(await registeredClient()),
     subjectId: 'subject-1',
     scope: ['openid', 'read:orders', 'write:orders'],
     // Permission STRINGS: the same spelling a role holds and a policy governs.

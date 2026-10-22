@@ -55,13 +55,13 @@ export const passwordMethod: AuthenticationMethod = {
 
     const store = credentialStores.resolve('bcrypt-password');
     for (const credential of await service.credentialsFor(identity.subjectId, 'password')) {
-      if (await store.verify(credential.credentialId, password)) {
+      if (await store.verify(credential.identifier, password)) {
         return {
           subjectId: identity.subjectId,
           realmId: identity.realmId,
           assuranceLevel: 'aal1',
           method: this.name,
-          credentialId: credential.credentialId,
+          credentialId: credential.identifier,
         };
       }
     }
@@ -91,13 +91,13 @@ export const publicKeyMethod: AuthenticationMethod = {
 
     const store = credentialStores.resolve('public-key');
     for (const credential of await service.credentialsFor(subjectId, 'public_key')) {
-      if (await store.verify(credential.credentialId, proof)) {
+      if (await store.verify(credential.identifier, proof)) {
         return {
           subjectId,
           realmId: identity.realmId,
           assuranceLevel: 'aal2',
           method: this.name,
-          credentialId: credential.credentialId,
+          credentialId: credential.identifier,
         };
       }
     }

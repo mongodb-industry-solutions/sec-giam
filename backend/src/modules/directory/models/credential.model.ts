@@ -80,6 +80,22 @@ export interface OAuthClientMetadata {
   backchannel?: Record<string, unknown>;
   /** RFC 8705: the certificate a client is bound to, when it authenticates with one. */
   mtls?: { certificateThumbprint?: string };
+  /**
+   * RFC 9449: whether this client's access tokens must be DPoP-bound.
+   *
+   * A `DPoP` proof header on a token request is itself sufficient for a conforming authorization
+   * server to bind the issued token (RFC 9449 section 4); no registration is required for that.
+   * `required: true` here is the stricter, opt-in layer on top: a token request for THIS client that
+   * arrives without a valid proof is refused, rather than silently falling back to a plain bearer
+   * token.
+   *
+   * Mutually exclusive with `mtls` in the token that gets issued, not by a check this type enforces:
+   * a `cnf` carries one proof-of-possession key, `jkt` or `x5t#S256`, never both.
+   *
+   * NOT YET ENFORCED. Declared so a registration can state the requirement; the token endpoint does
+   * not read it yet.
+   */
+  dpop?: { required: boolean };
   claimMappings?: Record<string, string>;
 
   /**
@@ -102,26 +118,57 @@ export interface OAuthClientMetadata {
 }
 
 export interface CredentialRecord extends Scoped {
-  credentialId: string;
-  subjectId: string;
-  type: CredentialType;
+  /**
+   * The one identifying value for this credential, unique per `{realmId, identifier}` across every
+   * type in the collection, not just within one type: the generic admin route
+   * (`.../credentials/:credentialId`, the route segment name kept stable on purpose, see
+   * `.agents/specs/dev.v01.plan-fix-credential-id.md` §A.3) resolves by this one value regardless of
+   * which type it names.
+   *
+   * There used to be two fields here, `credentialId` (an app-minted UUID, every type) and `clientId`
+   * (the OAuth wire identifier, `oauth_client`/`api_key` only). They answered the same question twice
+   * for exactly the types that had both: `clientId` already IS this credential's unique identifying
+   * value for those types, so a second, independently-generated UUID alongside it was pure
+   * duplication, not a second fact about the credential.
+   *
+   * Per type, where the value comes from:
+   * - `oauth_client`: the RFC 6749 `client_id`. Public by the spec's own threat model, so carrying it
+   *   here and echoing it on the wire is not an exposure.
+   * - `api_key`: a `keyId`-shaped value, generated the same way a `credentialId` used to be.
+   * - `password`, `public_key`, `totp`, `recovery_code`: no protocol defines a public identifier for
+   *   any of these (this codebase's `public_key` is a bare challenge-response factor, not WebAuthn,
+   *   so there is no authenticator-issued id to adopt instead). Generated the same way a
+   *   `credentialId` used to be. No information is lost: this is the same value under a name that no
+   *   longer implies a second, different field exists beside it.
+   */
+  identifier: string;
 
   /**
-   * The principal this credential ACTS AS, and which answers for what it does.
+   * The principal this credential ACTS AS, and which answers for what it does. Always terminates at
+   * a real row in the principal collection; never a value nothing else resolves.
    *
-   * Required, and flat: it always terminates at a principal. Making an application a principal
-   * instead would allow a principal to own a principal, which is recursive, and every ownership
-   * query would then have to decide how deep to look.
+   * For a human factor (password, public key, TOTP, recovery code) this is simply the principal the
+   * factor belongs to. For `oauth_client` or `api_key` it is the `sub` of a `client_credentials`
+   * token, so it must name a principal of kind `service` or `workload` when the credential acts as
+   * its own machine identity, or the registering human's principal when it does not have one of its
+   * own. Either way, it is never the credential's own wire identifier (`clientId`) UNLESS that value
+   * is also a real principal's `subjectId`: a dangling self-reference used to be tolerated here under
+   * a separate `ownerId` field, and that field is exactly the unattributable-credential defect every
+   * audit flags, now removed rather than fixed around.
    *
-   * This is the `sub` of a `client_credentials` token, so it must be a principal of kind `service`
-   * or `workload`. That is better than an abstract application entity, not a workaround: a service
-   * token is then attributable to a real subject with a lifecycle and an owner.
+   * There used to be a second field, `ownerId`, carrying this same answer. It was never read by a
+   * single query anywhere in the service (confirmed: no `find` or `findOne` against this collection
+   * filtered by it) and the index built for it (`ownerId`, `createIndexes.ts`) served no read path
+   * either. Two fields answering one question is exactly the drift this collection's own
+   * `administrators` comment warns against conflating; removing the one with zero readers is the fix,
+   * not renaming it.
    *
    * Deliberately SINGULAR and deliberately not the same thing as `administrators` below. A token has
    * exactly one subject, so the identity a credential acts as cannot be a set; who may administer
    * the registration can be, and conflating the two is what makes the question look unanswerable.
    */
-  ownerId: string;
+  subjectId: string;
+  type: CredentialType;
 
   /**
    * Who may administer this credential. A SET, because two people sharing one integration is normal.
@@ -156,10 +203,8 @@ export interface CredentialRecord extends Scoped {
   /** The authentication path this credential belongs to, when it belongs to one. */
   domainId?: string;
 
-  /** The wire identifier for an `oauth_client` or an `api_key`. Not unique on its own: see below. */
-  clientId?: string;
   /**
-   * The leading, non-secret part of a key, so an operator can tell two apart in a list without
+   * The leading, non-secret part of `secret`, so an operator can tell two apart in a list without
    * either being recoverable from what they are looking at.
    */
   secretPrefix?: string;
@@ -167,8 +212,13 @@ export interface CredentialRecord extends Scoped {
   /** Type-specific, unindexed. Present for `oauth_client`. */
   metadata?: OAuthClientMetadata;
 
-  /** bcrypt, for `password`, `client_secret`, `api_key` and `oauth_client`. Salted, so it is verified rather than looked up. */
-  hash?: string;
+  /**
+   * bcrypt, for `password`, `client_secret`, `api_key` and `oauth_client`: the password, the
+   * `client_secret`, the hashed key, whichever the type calls it. Salted, so it is verified rather
+   * than looked up. Renamed from `hash`: the previous name described the storage mechanism, not what
+   * the value IS, which is the credential's own secret half, paired with `identifier` above.
+   */
+  secret?: string;
 
   /** For `public_key`: what the authenticator registered. Public material only, by definition. */
   publicKeyPem?: string;

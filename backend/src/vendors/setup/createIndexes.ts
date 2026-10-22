@@ -101,24 +101,34 @@ export function plannedIndexes(): IndexPlan[] {
     // Elevations in force, and the sweep that removes lapsed entries.
     { collection: PRINCIPAL_COLLECTION, keys: { realmId: 1, 'roles.ephemeral': 1 }, options: { name: 'realm_roles_ephemeral', sparse: true } },
 
-    { collection: CREDENTIAL_COLLECTION, keys: { credentialId: 1 }, options: { name: 'credentialId_unique', unique: true } },
+    /**
+     * `identifier` is unique per realm for every type EXCEPT `oauth_client`, which is the one type
+     * that deliberately breaks it: rotating a secret with an overlap window means two active
+     * credentials share one `identifier` for the length of that window (`MAX_ACTIVE_CLIENT_SECRETS`).
+     * A blanket unique index would make the overlap impossible and rotation would be back to a single
+     * field swapped instantaneously. The exclusion is scoped to the one type that needs it, not
+     * dropped for every type, so a password, a TOTP enrollment, a registered key, a recovery code or
+     * an API key keeps the same global-uniqueness guarantee a single merged `credentialId` used to
+     * give unconditionally.
+     */
+    {
+      collection: CREDENTIAL_COLLECTION,
+      keys: { realmId: 1, identifier: 1 },
+      options: { name: 'realm_identifier_unique', unique: true, partialFilterExpression: { type: { $ne: 'oauth_client' } } },
+    },
     // The authentication hot path: every factor a subject holds of a given type, active ones first.
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, subjectId: 1, type: 1, status: 1 }, options: { name: 'realm_subject_type_status' } },
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, expiresAt: 1 }, options: { name: 'realm_expiresAt', sparse: true } },
     /**
-     * The client authentication hot path. NOT unique on {realmId, clientId}, deliberately.
-     *
-     * Rotating a secret with an overlap window means two active credentials share one clientId, so a
-     * unique index there would make the overlap impossible and rotation would be back to a single
-     * field swapped instantaneously. Uniqueness lives on credentialId, which is global above, and
-     * the "at most two active" rule is enforced in the service, because an index can only express
-     * "exactly one".
+     * The `oauth_client` authentication hot path, NOT unique, for exactly the reason named above:
+     * during a rotation overlap window two active documents share one `identifier`, and the
+     * "at most two active" rule is enforced in the service (`withinActiveSecretCap`), because an
+     * index can only express "exactly one", never "at most two".
      */
-    { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, clientId: 1, status: 1 }, options: { name: 'realm_clientId_status', sparse: true } },
+    { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, identifier: 1, status: 1 }, options: { name: 'realm_identifier_status', sparse: true } },
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, type: 1 }, options: { name: 'realm_type' } },
     // Which registrations a principal administers, for the self-service listing and its limit.
     { collection: CREDENTIAL_COLLECTION, keys: { realmId: 1, 'administrators.kind': 1, 'administrators.ref': 1 }, options: { name: 'realm_administrators', sparse: true } },
-    { collection: CREDENTIAL_COLLECTION, keys: { ownerId: 1 }, options: { name: 'ownerId', sparse: true } },
     // RFC 8705: locating the credential bound to a presented certificate.
     { collection: CREDENTIAL_COLLECTION, keys: { 'metadata.mtls.certificateThumbprint': 1 }, options: { name: 'mtls_thumbprint', sparse: true } },
 

@@ -145,10 +145,10 @@ export async function registrationController(fastify: FastifyInstance) {
     await fastify.db.collection<CredentialRecord>(CREDENTIAL_COLLECTION).insertOne({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
-      credentialId: `cred-${randomUUID()}`,
+      identifier: `cred-${randomUUID()}`,
       subjectId,
       type: 'password',
-      hash: issued?.hash as string,
+      secret: issued?.secret as string,
       status: 'active',
       assurance: { level: 'aal1', method: 'password', verifiedAt: now },
       createdAt: now,

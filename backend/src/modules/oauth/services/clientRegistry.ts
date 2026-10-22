@@ -16,13 +16,22 @@ import { CredentialRecord } from '../../directory/models/credential.model';
 
 /** Fields that stay first class on the credential, under the same name. */
 const FIRST_CLASS = new Set([
-  'realmId', 'tenantId', 'clientId', 'status', 'credentialId', 'type',
-  'ownerId', 'domainId', 'createdAt', 'lastUsedAt', 'expiresAt', 'meta',
+  'realmId', 'tenantId', 'status', 'type',
+  'subjectId', 'domainId', 'createdAt', 'lastUsedAt', 'expiresAt', 'meta',
 ]);
 
-/** Fields renamed on the way in, because the credential already had its own name for them. */
+/**
+ * Fields renamed on the way in, because the credential already had its own name for them.
+ *
+ * `clientId` and `credentialId` both resolve to `identifier`: the two view-layer names for the same
+ * stored value (the OAuth wire identifier doubling as the row's own unique handle, see
+ * `CredentialRecord.identifier`). A call site naming either one still works unchanged; only this one
+ * map needed to learn there is now a single field behind both names.
+ */
 const RENAMED: Record<string, string> = {
-  clientSecretHash: 'hash',
+  clientId: 'identifier',
+  credentialId: 'identifier',
+  clientSecretHash: 'secret',
   clientSecretPrefix: 'secretPrefix',
   // A set of administrators, which is not the same thing as the principal the credential acts as.
   owners: 'administrators',
@@ -32,7 +41,7 @@ const RENAMED: Record<string, string> = {
 const METADATA_FIELDS = new Set([
   'clientName', 'clientType', 'redirectUris', 'postLogoutRedirectUris', 'grantTypes',
   'requirePkce', 'tokenEndpointAuthMethod', 'applicationType', 'tokenPolicy',
-  'logoUri', 'clientUri', 'baseUrlByEnvironment', 'demoRoster', 'firstParty', 'backchannel', 'mtls', 'claimMappings',
+  'logoUri', 'clientUri', 'baseUrlByEnvironment', 'demoRoster', 'firstParty', 'backchannel', 'mtls', 'dpop', 'claimMappings',
   'provisioning',
 ]);
 

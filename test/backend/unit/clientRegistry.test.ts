@@ -12,13 +12,17 @@ import {
 
 describe('v40 P3: a client field maps to exactly one credential path', () => {
   it('keeps the identifiers and the lifecycle first class', () => {
-    for (const field of ['realmId', 'tenantId', 'clientId', 'status', 'credentialId', 'ownerId']) {
+    for (const field of ['realmId', 'tenantId', 'status', 'subjectId']) {
       expect(credentialPath(field), field).toBe(field);
     }
   });
 
   it('renames the fields the credential already had its own name for', () => {
-    expect(credentialPath('clientSecretHash')).toBe('hash');
+    // `clientId` and `credentialId` are the view's two names for the one stored field,
+    // `CredentialRecord.identifier` (see dev.v01.plan-fix-credential-id.md §A).
+    expect(credentialPath('clientId')).toBe('identifier');
+    expect(credentialPath('credentialId')).toBe('identifier');
+    expect(credentialPath('clientSecretHash')).toBe('secret');
     expect(credentialPath('clientSecretPrefix')).toBe('secretPrefix');
     // Who may administer the registration, which is NOT the principal it acts as.
     expect(credentialPath('owners')).toBe('administrators');
@@ -55,7 +59,7 @@ describe('v40 P3: a translated filter always narrows to an OAuth client', () => 
       $or: [{ clientName: 'a' }, { clientId: 'b' }],
     })).toEqual({
       realmId: 'r1',
-      $or: [{ 'metadata.clientName': 'a' }, { clientId: 'b' }],
+      $or: [{ 'metadata.clientName': 'a' }, { identifier: 'b' }],
       type: 'oauth_client',
     });
 

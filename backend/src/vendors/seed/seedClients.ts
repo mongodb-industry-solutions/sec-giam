@@ -250,6 +250,27 @@ export async function seedClients(db: Db): Promise<void> {
       : undefined;
 
     /**
+     * Who this credential answers for, per `CredentialRecord.subjectId`'s own contract: it is the
+     * `sub` of a `client_credentials` token, so it must name a principal that actually exists.
+     *
+     * Self-reference (`subjectId: fixture.clientId`) is correct ONLY when `serviceIdentity` is
+     * present below, because that is what creates the matching `PrincipalRecord`. A fixture with no
+     * `serviceIdentity` has no such principal, so pointing there is a dangling reference to a record
+     * that was never written, not an instance of a service answering for itself. For those, the
+     * answerable party is the human registrant already named in `owners`, which is exactly what
+     * `registration.controller.ts` does for a live registration. This seeder previously diverged from
+     * that and manufactured the one kind of credential every audit flags, an unattributable one.
+     */
+    const registrant = fixture.owners?.find((owner) => owner.kind === 'principal');
+    const ownerId = fixture.serviceIdentity ? fixture.clientId : registrant?.ref;
+    if (!ownerId) {
+      throw new Error(
+        `clients.json: "${fixture.clientId}" has no serviceIdentity and no principal-kind entry in `
+        + '`owners`, so nobody would answer for this credential. Name a registering principal.',
+      );
+    }
+
+    /**
      * A client registration is a credential of type `oauth_client`.
      *
      * The hash goes in ON INSERT ONLY, never as a field the seeder owns and compares. bcrypt salts
@@ -259,7 +280,7 @@ export async function seedClients(db: Db): Promise<void> {
      */
     await upsertSeed<CredentialRecord>(
       clients,
-      { realmId, clientId: fixture.clientId, type: 'oauth_client' },
+      { realmId, identifier: fixture.clientId, type: 'oauth_client' },
       {
         // Owned and compared: the registration metadata, which a fixture edit should propagate.
         metadata: clientMetadata({
@@ -287,18 +308,17 @@ export async function seedClients(db: Db): Promise<void> {
       {
         realmId,
         tenantId: DEFAULT_TENANT_ID,
-        credentialId: uuidv5(`oauth-client:${realmId}:${fixture.clientId}`, CLIENT_NAMESPACE),
-        subjectId: fixture.clientId,
+        // The row's own unique value, under its single field now (see `CredentialRecord.identifier`):
+        // the RFC 6749 `client_id`, not a second, independently generated UUID.
+        identifier: fixture.clientId,
+        subjectId: ownerId,
         type: 'oauth_client',
-        clientId: fixture.clientId,
-        // The principal the client acts as. A service client is its own subject.
-        ownerId: fixture.clientId,
         // The fixture says WHETHER a client is confidential and never what its secret is: a literal
         // in a checked-in file is indistinguishable from a leaked credential, to a scanner and to a
         // reader. What is STORED is the hash either way.
         ...(clientSecret
           ? {
-            hash: await bcrypt.hash(clientSecret, 12),
+            secret: await bcrypt.hash(clientSecret, 12),
             secretPrefix: clientSecret.slice(0, 8),
           }
           : {}),
@@ -407,7 +427,7 @@ export async function seedClients(db: Db): Promise<void> {
 
       await upsertCredentialHolding(
         clients,
-        { realmId, credentialId: uuidv5(`oauth-client:${realmId}:${fixture.clientId}`, CLIENT_NAMESPACE) },
+        { realmId, identifier: fixture.clientId },
         { roleId, grantedAt: SEED_GRANTED_AT },
       );
     }

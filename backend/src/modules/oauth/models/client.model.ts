@@ -25,15 +25,21 @@ export type GrantType =
 export type BackchannelDeliveryMode = 'poll' | 'ping' | 'push';
 
 export interface OAuthClient extends Scoped {
+  /**
+   * The OAuth wire identifier (RFC 6749 `client_id`) AND the row's own `credentialId` for ADR-004
+   * grant resolution are now the same stored value, `CredentialRecord.identifier`. Exposed here under
+   * both names because each has its own external contract: OAuth routes address a client by
+   * `:clientId` (never `:credentialId`, verified against every route in `registration.controller.ts`)
+   * and a credential-scoped grant resolves against `credentialId` (ADR-004). Neither name changes on
+   * its own wire/consumer surface; only the single internal field they both read from does.
+   */
   clientId: string;
   /**
-   * The `credential` document this view was projected from.
-   *
-   * ADR-004: this is what a decision resolves a credential-scoped grant against. Absent for
-   * `provisionalClient`'s soft-admission stand-in, which is built in memory and never written and so
-   * has no `credential` document to name; every OTHER client is projected by `clientFromCredential`
-   * and always has one. Either way, an absent `credentialId` falls back to the owning principal's
-   * roles exactly as every client behaved before this field existed.
+   * See `clientId` above: the same `identifier` value, under the name ADR-004's grant resolution
+   * expects. Absent for `provisionalClient`'s soft-admission stand-in, which is built in memory and
+   * never written and so has no `credential` document to name; every OTHER client is projected by
+   * `clientFromCredential` and always has one. Either way, an absent `credentialId` falls back to the
+   * owning principal's roles exactly as every client behaved before this field existed.
    */
   credentialId?: string;
   /** bcrypt. Absent on a public client, which relies on PKCE instead. */
@@ -115,6 +121,9 @@ export interface OAuthClient extends Scoped {
   mtls?: {
     certificateThumbprint: string;
   };
+
+  /** RFC 9449: whether this client's access tokens must be DPoP-bound. See `OAuthClientMetadata.dpop`. */
+  dpop?: { required: boolean };
 
   /** Where to send identity lifecycle notices, when this application asked for them. */
   provisioning?: {
@@ -248,11 +257,11 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
   return {
     realmId: credential.realmId,
     tenantId: credential.tenantId,
-    credentialId: credential.credentialId,
-    clientId: credential.clientId as string,
-    ...(credential.hash ? { clientSecretHash: credential.hash } : {}),
+    credentialId: credential.identifier,
+    clientId: credential.identifier,
+    ...(credential.secret ? { clientSecretHash: credential.secret } : {}),
     ...(credential.secretPrefix ? { clientSecretPrefix: credential.secretPrefix } : {}),
-    clientName: metadata.clientName ?? (credential.clientId as string),
+    clientName: metadata.clientName ?? credential.identifier,
     clientType: metadata.clientType ?? 'public',
     redirectUris: metadata.redirectUris ?? [],
     ...(metadata.postLogoutRedirectUris ? { postLogoutRedirectUris: metadata.postLogoutRedirectUris } : {}),
@@ -270,11 +279,12 @@ export function clientFromCredential(credential: CredentialRecord): OAuthClient 
     ...(metadata.firstParty !== undefined ? { firstParty: metadata.firstParty } : {}),
     ...(metadata.backchannel ? { backchannel: metadata.backchannel as OAuthClient['backchannel'] } : {}),
     ...(metadata.mtls ? { mtls: metadata.mtls as OAuthClient['mtls'] } : {}),
+    ...(metadata.dpop ? { dpop: metadata.dpop } : {}),
     ...(metadata.provisioning ? { provisioning: metadata.provisioning } : {}),
     ...(metadata.claimMappings ? { claimMappings: metadata.claimMappings } : {}),
     // Who may administer the registration. Distinct from the principal it acts as, which is
-    // `ownerId` and is a token subject rather than a set of people.
-    owners: credential.administrators ?? [{ kind: 'principal', ref: credential.ownerId } as OwnerRef],
+    // `subjectId` and is a token subject rather than a set of people.
+    owners: credential.administrators ?? [{ kind: 'principal', ref: credential.subjectId } as OwnerRef],
     status: credential.status,
     meta: credential.meta,
   };
@@ -302,6 +312,7 @@ export function clientMetadata(client: Partial<OAuthClient>): OAuthClientMetadat
     ...(client.firstParty !== undefined ? { firstParty: client.firstParty } : {}),
     ...(client.backchannel ? { backchannel: client.backchannel as Record<string, unknown> } : {}),
     ...(client.mtls ? { mtls: client.mtls } : {}),
+    ...(client.dpop ? { dpop: client.dpop } : {}),
     ...(client.provisioning ? { provisioning: client.provisioning } : {}),
     ...(client.claimMappings ? { claimMappings: client.claimMappings } : {}),
   };

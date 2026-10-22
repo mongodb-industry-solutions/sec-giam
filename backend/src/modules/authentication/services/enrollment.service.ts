@@ -88,7 +88,7 @@ export interface CredentialView {
 
 function view(credential: CredentialRecord): CredentialView {
   return {
-    credentialId: credential.credentialId,
+    credentialId: credential.identifier,
     algorithm: credential.algorithm as CredentialAlgorithm,
     ...(credential.label ? { label: credential.label } : {}),
     status: credential.status,
@@ -168,7 +168,7 @@ export class EnrollmentService {
     }
 
     const credentialId = input.credentialId ?? randomUUID();
-    if (await this.credentials.findOne({ credentialId }, { projection: { _id: 0, credentialId: 1 } })) {
+    if (await this.credentials.findOne({ identifier: credentialId }, { projection: { _id: 0, identifier: 1 } })) {
       this.audit(realm, subjectId, 'credential.registered', 'failure', { credentialId }, 'credential_id_taken');
       return refuse(409, 'invalid_request', 'that credential id is already registered');
     }
@@ -177,7 +177,7 @@ export class EnrollmentService {
     await this.credentials.insertOne({
       realmId: realm.realmId,
       tenantId: realm.tenantId,
-      credentialId,
+      identifier: credentialId,
       subjectId,
       type: 'public_key',
       publicKeyPem: input.publicKeyPem,
@@ -191,7 +191,7 @@ export class EnrollmentService {
     } as CredentialRecord);
 
     this.audit(realm, subjectId, 'credential.registered', 'success', { credentialId, algorithm: input.algorithm });
-    const stored = await this.credentials.findOne({ credentialId }, { projection: { _id: 0 } });
+    const stored = await this.credentials.findOne({ identifier: credentialId }, { projection: { _id: 0 } });
     return view(stored as CredentialRecord);
   }
 
@@ -220,7 +220,7 @@ export class EnrollmentService {
     // back to the owner in that case would misattribute the act to the very person it was done to.
     const attributedTo = actor ? actor.subjectId : subjectId;
     const result = await this.credentials.updateOne(
-      { credentialId, subjectId, status: 'active' },
+      { identifier: credentialId, subjectId, status: 'active' },
       { $set: { status: 'revoked', 'meta.lastModified': new Date().toISOString() } },
     );
     if (result.matchedCount === 0) {
@@ -267,8 +267,8 @@ export class EnrollmentService {
    */
   async rotate(realm: RealmRecord, subjectId: string, credentialId: string, input: RegisterInput): Promise<CredentialView | EnrollmentFailure> {
     const existing = await this.credentials.findOne(
-      { credentialId, subjectId, status: 'active' },
-      { projection: { _id: 0, credentialId: 1 } },
+      { identifier: credentialId, subjectId, status: 'active' },
+      { projection: { _id: 0, identifier: 1 } },
     );
     if (!existing) {
       this.audit(realm, subjectId, 'credential.rotated', 'failure', { credentialId }, 'no_such_credential');
